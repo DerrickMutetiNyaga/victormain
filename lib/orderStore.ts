@@ -203,7 +203,7 @@ class OrderStore {
     }
 
     try {
-      const response = await fetch("/api/catha/menu-orders", {
+      const response = await fetch("/api/menu-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newOrder),
@@ -232,7 +232,7 @@ class OrderStore {
     this.orders[index] = updated
 
     try {
-      const response = await fetch("/api/catha/menu-orders", {
+      const response = await fetch("/api/menu-orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, ...patch }),
