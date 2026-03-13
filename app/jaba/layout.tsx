@@ -33,6 +33,7 @@ import {
   Menu,
   X,
   Shield,
+  QrCode,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -84,6 +85,7 @@ const navigationGroups = [
     icon: BarChart3,
     items: [
       { name: "Reports", href: "/jaba/reports/batches", icon: FileBarChart, pageId: "reports-batches" },
+      { name: "Barcode Labels", href: "/jaba/barcodes", icon: QrCode, pageId: "barcodes" },
     ],
   },
   {
@@ -107,6 +109,7 @@ const NAV_ITEM_PERMISSION_MAP: Record<string, string> = {
   '/jaba/distribution': 'distribution.main',
   '/jaba/suppliers': 'distribution.suppliers',
   '/jaba/reports/batches': 'reports.batches',
+  '/jaba/barcodes': 'system.dashboard',
   '/jaba/users': 'system.users',
   '/jaba/settings': 'system.settings',
 }
