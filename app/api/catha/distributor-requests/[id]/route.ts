@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { updateDistributorRequest } from '@/lib/models/distributor-request'
+import { updateDistributorRequest, deleteDistributorRequest } from '@/lib/models/distributor-request'
 import { requireCathaPermission } from '@/lib/auth-catha'
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -31,5 +31,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   } catch (error) {
     console.error('[catha/distributor-requests] PUT error:', error)
     return NextResponse.json({ success: false, error: 'Failed to update request' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { allowed, response } = await requireCathaPermission('management.distributorRequests', 'delete')
+  if (!allowed && response) return response
+  try {
+    const { id } = await params
+    const ok = await deleteDistributorRequest(id)
+    if (!ok) {
+      return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 })
+    }
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[catha/distributor-requests] DELETE error:', error)
+    return NextResponse.json({ success: false, error: 'Failed to delete request' }, { status: 500 })
   }
 }

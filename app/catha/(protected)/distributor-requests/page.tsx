@@ -42,73 +42,8 @@ export interface DistributorRequest {
   notes?: string
 }
 
-const defaultRequests: DistributorRequest[] = [
-  {
-    id: "1",
-    name: "Premium Spirits Ltd",
-    contact: "John Mwangi",
-    email: "sales@premiumspirits.co.ke",
-    phone: "0722 111 333",
-    address: "Westlands, Nairobi",
-    products: "Whisky, Vodka, Gin",
-    status: "pending",
-    submittedAt: new Date("2024-12-15"),
-    notes: "Specializes in premium imported spirits",
-  },
-  {
-    id: "2",
-    name: "Craft Beer Co.",
-    contact: "Sarah Wanjiku",
-    email: "info@craftbeer.co.ke",
-    phone: "0700 222 444",
-    address: "Kilimani, Nairobi",
-    products: "Craft Beer, Local Brews",
-    status: "approved",
-    submittedAt: new Date("2024-12-10"),
-    reviewedAt: new Date("2024-12-12"),
-    notes: "Local craft brewery with excellent quality",
-  },
-  {
-    id: "3",
-    name: "Soft Drinks Distributors",
-    contact: "Peter Ochieng",
-    email: "support@softdrinks.co.ke",
-    phone: "0799 555 777",
-    address: "Industrial Area, Nairobi",
-    products: "Mixers, Energy Drinks, Juices",
-    status: "rejected",
-    submittedAt: new Date("2024-12-05"),
-    reviewedAt: new Date("2024-12-07"),
-    notes: "Does not meet quality standards",
-  },
-  {
-    id: "4",
-    name: "Wine Importers Kenya",
-    contact: "Mary Kamau",
-    email: "contact@wineimporters.co.ke",
-    phone: "0711 888 999",
-    address: "Karen, Nairobi",
-    products: "Premium Wines, Champagne",
-    status: "pending",
-    submittedAt: new Date("2024-12-18"),
-    notes: "Exclusive wine distributor",
-  },
-  {
-    id: "5",
-    name: "Bar Supplies Pro",
-    contact: "David Kipchoge",
-    email: "sales@barsupplies.co.ke",
-    phone: "0723 444 555",
-    address: "Parklands, Nairobi",
-    products: "Bar Equipment, Glassware, Accessories",
-    status: "pending",
-    submittedAt: new Date("2024-12-20"),
-    notes: "Complete bar supply solutions",
-  },
-]
-
 export default function DistributorRequestsPage() {
-  const [requests, setRequests] = useState<DistributorRequest[]>(defaultRequests)
+  const [requests, setRequests] = useState<DistributorRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | DistributorRequest["status"]>("all")
@@ -184,6 +119,27 @@ export default function DistributorRequestsPage() {
       }
     } catch (err) {
       console.error('Failed to reject:', err)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this distributor request? This cannot be undone.")) return
+    try {
+      const res = await fetch(`/api/catha/distributor-requests/${id}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.success === false) {
+        alert(data?.error || 'Failed to delete request')
+        return
+      }
+      setRequests((prev) => prev.filter((req) => req.id !== id))
+      if (viewingRequest?.id === id) {
+        setViewingRequest(null)
+      }
+    } catch (err) {
+      console.error('Failed to delete:', err)
+      alert('Failed to delete request')
     }
   }
 
@@ -408,6 +364,14 @@ export default function DistributorRequestsPage() {
                                   </Button>
                                 </>
                               )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(req.id)}
+                                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
