@@ -1,0 +1,264 @@
+/* Scoped styles for ProductCard component - Premium luxury design with color */
+
+.productCard {
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid #E8E6E1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 0 !important;
+  gap: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.productCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.1), rgba(182, 139, 46, 0.1));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.productCard:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #16A34A;
+  filter: brightness(1.05);
+}
+
+.productCard:hover::before {
+  opacity: 1;
+}
+
+.productCard:active {
+  transform: translateY(-6px) scale(1.01);
+}
+
+.imageContainer {
+  position: relative;
+  aspect-ratio: 1 / 1.2;
+  width: 100%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #F8F7F4, #FAFAF7);
+  margin: 0;
+  padding: 0;
+  border-radius: 20px 20px 0 0;
+}
+
+.productImage {
+  object-fit: cover;
+  object-position: center top;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.productCard:hover .productImage {
+  transform: scale(1.1);
+}
+
+.tagBadge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid;
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.95);
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: badgeBounce 0.5s ease-out;
+}
+
+@keyframes badgeBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.tagPopular {
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.15), rgba(16, 185, 129, 0.15));
+  color: #16A34A;
+  border-color: #16A34A;
+  box-shadow: 0 2px 12px rgba(22, 163, 74, 0.2);
+}
+
+.tagBestSeller {
+  background: linear-gradient(135deg, rgba(182, 139, 46, 0.15), rgba(245, 158, 11, 0.15));
+  color: #B68B2E;
+  border-color: #B68B2E;
+  box-shadow: 0 2px 12px rgba(182, 139, 46, 0.2);
+}
+
+.tagPremium {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.15));
+  color: #8B5CF6;
+  border-color: #8B5CF6;
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.2);
+}
+
+.tagHouseFavorite {
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(251, 113, 133, 0.15));
+  color: #F43F5E;
+  border-color: #F43F5E;
+  box-shadow: 0 2px 12px rgba(244, 63, 94, 0.2);
+}
+
+.tagStaffPick {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(96, 165, 250, 0.15));
+  color: #3B82F6;
+  border-color: #3B82F6;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.2);
+}
+
+.tagBestValue {
+  background: linear-gradient(135deg, rgba(182, 139, 46, 0.15), rgba(245, 158, 11, 0.15));
+  color: #B68B2E;
+  border-color: #B68B2E;
+  box-shadow: 0 2px 12px rgba(182, 139, 46, 0.2);
+}
+
+.outOfStock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+}
+
+.outOfStockText {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.addButton {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  height: 48px;
+  width: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.4), 0 2px 8px rgba(22, 163, 74, 0.2);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 10;
+}
+
+.addButton:hover {
+  background: linear-gradient(135deg, #15803D, #16A34A);
+  transform: scale(1.15) rotate(90deg);
+  box-shadow: 0 8px 24px rgba(22, 163, 74, 0.5), 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+.addButton:active {
+  transform: scale(1.05) rotate(90deg);
+}
+
+.addButton:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.addButtonDesktop {
+  opacity: 0;
+}
+
+.productCard:hover .addButtonDesktop {
+  opacity: 1;
+  animation: buttonSlideIn 0.3s ease-out;
+}
+
+@keyframes buttonSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5) rotate(-90deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.addButtonMobile {
+  opacity: 1;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+}
+
+@media (min-width: 768px) {
+  .addButtonMobile {
+    display: none;
+  }
+}
+
+.cardContent {
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.brandName {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #16A34A;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.productName {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  color: #111827;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  letter-spacing: -0.01em;
+}
+
+.productDescription {
+  font-size: 0.75rem;
+  color: #6B7280;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.priceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.375rem;
+  margin-top: 0.125rem;
+  border-top: 1px solid rgba(243, 244, 246, 0.8);
+}
+
+.price {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.02em;
+}

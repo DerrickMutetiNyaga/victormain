@@ -1,0 +1,116 @@
+/* Scoped styles for StickyCartBar - Premium luxury design */
+
+.stickyBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 1.25rem;
+  pointer-events: none;
+}
+
+.barContainer {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.cartButton {
+  width: 100%;
+  height: 4rem;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #16A34A 0%, #22C55E 100%);
+  color: white;
+  border: 0;
+  box-shadow: 0 8px 32px rgba(22, 163, 74, 0.4), 0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.75rem;
+  font-weight: 600;
+}
+
+.cartButton:hover {
+  background: linear-gradient(135deg, #15803D 0%, #16A34A 100%);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 12px 40px rgba(22, 163, 74, 0.5), 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.cartButton:active {
+  transform: translateY(0) scale(1);
+}
+
+.cartButtonLeft {
+  display: flex;
+  align-items: center;
+  gap: 1.125rem;
+}
+
+.cartIconWrapper {
+  position: relative;
+}
+
+.cartIcon {
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+.cartBadge {
+  position: absolute;
+  top: -0.5rem;
+  right: -0.5rem;
+  height: 1.375rem;
+  min-width: 1.375rem;
+  padding: 0 0.25rem;
+  border-radius: 9999px;
+  background: white;
+  color: #16A34A;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.cartInfo {
+  text-align: left;
+}
+
+.cartItemCount {
+  font-size: 0.875rem;
+  font-weight: 500;
+  opacity: 0.95;
+  letter-spacing: 0.01em;
+}
+
+.cartTotal {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.cartButtonRight {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.viewOrderText {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.chevronIcon {
+  height: 1.375rem;
+  width: 1.375rem;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}

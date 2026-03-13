@@ -1,0 +1,351 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Nest Hub Max / 1280×800 tablet landscape optimization zone */
+@custom-variant nest-hub-max (@media (max-width: 1366px) and (max-height: 820px));
+
+:root {
+  /* Liquor Industry Premium Theme - Clean & Inviting */
+
+  /* App background & text */
+  --background: #F3F4F6; /* Soft Gray */
+  --foreground: #1F2937; /* Dark Gray */
+
+  /* Surfaces (cards, popovers, navbar) */
+  --card: #FFFFFF; /* White */
+  --card-foreground: #1F2937;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F2937;
+
+  /* Primary: Soft Mint Green */
+  --primary: #10B981;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary: Soft Gray */
+  --secondary: #F3F4F6;
+  --secondary-foreground: #1F2937;
+
+  /* Muted text / subtle backgrounds */
+  --muted: #F3F4F6;
+  --muted-foreground: #6B7280;
+
+  /* Accent: Soft Mint Green */
+  --accent: #10B981;
+  --accent-foreground: #FFFFFF;
+
+  --destructive: #8B1A26;
+  --destructive-foreground: #FFFFFF;
+
+  /* Status colors */
+  --success: #10B981; /* Soft Mint Green */
+  --success-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+
+  /* Borders / inputs / focus ring */
+  --border: #E5E7EB;
+  --input: #FFFFFF;
+  --ring: #10B981;
+
+  /* Chart colors using the palette */
+  --chart-1: #10B981;
+  --chart-2: #10B981;
+  --chart-3: #1F2937;
+  --chart-4: #F59E0B;
+  --chart-5: #10B981;
+
+  --radius: 1rem; /* xl rounded corners */
+
+  /* Sidebar / navigation */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #1F2937;
+  --sidebar-primary: #10B981;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F3F4F6;
+  --sidebar-accent-foreground: #1F2937;
+  --sidebar-border: #E5E7EB;
+  --sidebar-ring: #10B981;
+
+  /* Premium color variables */
+  --dark-crimson: #B91C1C;
+  --wine-red: #8B1A26;
+  --deep-herbal-green: #0E9F6E;
+  --soft-mint-green: #10B981; /* Primary Green */
+  --dark-gray: #1F2937;
+  --soft-gray: #F3F4F6;
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+}
+
+/* Premium Typography - Fonts imported at top */
+
+/* Scrollbar with dark crimson accent */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F3F4F6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #10B981;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0E9F6E;
+}
+
+/* Premium glow effects */
+.glow-red {
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.3), 0 0 60px rgba(16, 185, 129, 0.15);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.15);
+}
+
+.glow-primary {
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.25), 0 0 60px rgba(16, 185, 129, 0.1);
+}
+
+/* Clean white cards with soft shadows */
+.glass {
+  background: #FFFFFF;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border: 1px solid #E5E7EB;
+}
+
+.glass-light {
+  background: #FFFFFF;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid #E5E7EB;
+}
+
+/* Gradient text effects */
+.text-gradient-red {
+  background: linear-gradient(135deg, #10B981 0%, #0E9F6E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-green {
+  background: linear-gradient(135deg, #10B981 0%, #0E9F6E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth hover effects */
+.hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Pulse animation for badges */
+@keyframes pulse-blue {
+  0%, 100% {
+    opacity: 0.9;
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.3);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 30px rgba(37, 99, 235, 0.5);
+  }
+}
+
+.pulse-blue {
+  animation: pulse-blue 2s ease-in-out infinite;
+}
+
+/* Float animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Bounce animation */
+@keyframes bounce-gentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.bounce-gentle {
+  animation: bounce-gentle 2s ease-in-out infinite;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Animation delay utilities */
+.delay-75 {
+  animation-delay: 75ms;
+}
+
+.delay-150 {
+  animation-delay: 150ms;
+}
+
+/* Touch manipulation for better mobile performance */
+.touch-manipulation {
+  touch-action: manipulation;
+}
+
+/* POS responsive: touch target minimum (accessibility + touch screens) */
+.pos-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* POS max-width container for 16–17.3" screens (avoid over-stretching) */
+.pos-container {
+  width: 100%;
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Subtle pulse for low-stock badge */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.88; }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* Smooth, reliable scrolling for POS/tablet - ONE scroll container */
+.pos-scroll {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+/* ============================================
+   POS 1280×800 (Nest Hub Max / Landscape Tablet) Optimization
+   Matte emerald, compact layout, touch-friendly
+   ============================================ */
+.pos-landscape {
+  --pos-primary: #047857;   /* Matte emerald */
+  --pos-primary-hover: #059669;
+  --pos-primary-muted: #d1fae5;
+  --pos-card-bg: #fafafa;
+  --pos-border: #e5e7eb;
+  --pos-radius: 12px;
+}
+
+/* Compact height: reduce padding when screen height ≤ 820px */
+@media (max-height: 820px) {
+  .pos-landscape .pos-header-compact {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    max-height: 70px;
+  }
+  .pos-landscape .pos-sidebar-compact {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .pos-landscape .pos-card-compact {
+    padding: 0.5rem 0.75rem;
+  }
+  .pos-landscape .pos-order-compact {
+    padding: 0.5rem 0.75rem;
+  }
+  .pos-landscape .pos-items-scroll {
+    max-height: 160px;
+  }
+}
