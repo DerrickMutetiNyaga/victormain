@@ -4,6 +4,7 @@
  */
 import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
+import Credentials from 'next-auth/providers/credentials'
 import { NextResponse } from 'next/server'
 import {
   getCathaUserByEmail,
@@ -20,6 +21,7 @@ import {
   normalizePermissions,
   hasCathaPermission,
 } from '@/lib/catha-permissions-model'
+import { verifyCashierPin } from '@/lib/catha-pin'
 
 const isProduction = process.env.NODE_ENV === 'production'
 const CATHA_SECRET = process.env.AUTH_SECRET_CATHA || (!isProduction ? process.env.NEXTAUTH_SECRET : undefined)
@@ -88,39 +90,90 @@ export const cathaAuth = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: { params: { prompt: 'consent', access_type: 'offline', response_type: 'code' } },
     }),
+    Credentials({
+      id: 'catha-pin',
+      name: 'Catha Cashier PIN',
+      credentials: {
+        pin: { label: 'PIN', type: 'password' },
+      },
+      async authorize(credentials, req) {
+        const pin = (credentials as any)?.pin as string | undefined
+        if (!pin || !/^\d{4}$/.test(pin)) {
+          return null
+        }
+        try {
+          const ip =
+            (req as any)?.headers?.get?.('x-forwarded-for') ||
+            (req as any)?.ip ||
+            ''
+          const result = await verifyCashierPin(pin, typeof ip === 'string' ? ip : '')
+          if (!result.ok) {
+            return null
+          }
+          const { user } = result
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          }
+        } catch (e: any) {
+          console.error('[Catha Auth] PIN authorize error:', e?.message)
+          return null
+        }
+      },
+    }),
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider !== 'google' || !user.email) {
-        console.error('[Catha Auth] No email from Google')
-        return false
-      }
-      try {
-        await ensureCathaIndexesOnce()
-        let cu = await getCathaUserByEmail(user.email)
-        if (cu) {
-          await updateCathaUserLastLogin(user.email)
-          return true
+      if (!account) return false
+
+      // Google OAuth: normal Catha user lifecycle
+      if (account.provider === 'google') {
+        if (!user.email) {
+          console.error('[Catha Auth] No email from Google')
+          return false
         }
-        const role: CathaUserRole = SUPER_ADMIN_EMAIL && user.email === SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'PENDING'
-        const status: CathaUserStatus = role === 'SUPER_ADMIN' ? 'ACTIVE' : 'PENDING'
-        await createCathaUser({
-          email: user.email,
-          name: user.name ?? 'User',
-          image: user.image ?? undefined,
-          role,
-          status,
-          permissions: [],
-        })
-        await updateCathaUserLastLogin(user.email)
-        if (role === 'SUPER_ADMIN') {
-          console.log('[Catha Auth] Super admin seeded:', user.email)
+        try {
+          await ensureCathaIndexesOnce()
+          let cu = await getCathaUserByEmail(user.email)
+          if (cu) {
+            await updateCathaUserLastLogin(user.email)
+            return true
+          }
+          const role: CathaUserRole =
+            SUPER_ADMIN_EMAIL && user.email === SUPER_ADMIN_EMAIL ? 'SUPER_ADMIN' : 'PENDING'
+          const status: CathaUserStatus = role === 'SUPER_ADMIN' ? 'ACTIVE' : 'PENDING'
+          await createCathaUser({
+            email: user.email,
+            name: user.name ?? 'User',
+            image: user.image ?? undefined,
+            role,
+            status,
+            permissions: [],
+          })
+          await updateCathaUserLastLogin(user.email)
+          if (role === 'SUPER_ADMIN') {
+            console.log('[Catha Auth] Super admin seeded:', user.email)
+          }
+          return true
+        } catch (e: any) {
+          console.error('[Catha Auth] signIn error:', e?.message)
+          return false
+        }
+      }
+
+      // Cashier PIN (credentials) – user is already a valid Catha cashier if authorize() returned them.
+      if (account.provider === 'catha-pin') {
+        if (!user?.email) {
+          console.error('[Catha Auth] PIN sign-in missing email')
+          return false
         }
         return true
-      } catch (e: any) {
-        console.error('[Catha Auth] signIn error:', e?.message)
-        return false
       }
+
+      // Any other unexpected provider: deny.
+      console.error('[Catha Auth] Unknown provider:', account.provider)
+      return false
     },
     async jwt({ token, user, account, trigger }) {
       ;(token as any).app = 'catha'
@@ -134,7 +187,7 @@ export const cathaAuth = NextAuth({
         return 'PENDING'
       }
 
-      if (user && account?.provider === 'google' && user.email) {
+      if (user && account?.provider && user.email) {
         ;(token as any).email = user.email
         const cu = await getCathaUserByEmail(user.email)
         if (cu) {

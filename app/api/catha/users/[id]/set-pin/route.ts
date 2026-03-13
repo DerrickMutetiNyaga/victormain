@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { MongoServerError } from 'mongodb'
 import { requireSuperAdminApi } from '@/lib/catha-auth'
-import { getBarUserById, updateBarUserPinFields } from '@/lib/models/bar-user'
+import clientPromise from '@/lib/mongodb'
+import { ObjectId } from 'mongodb'
+import { computePinLookup } from '@/lib/catha-pin'
 
-/** POST /api/catha/users/[id]/set-pin - Set or reset cashier PIN. SUPER_ADMIN only. */
+const DB_NAME = 'infusion_jaba'
+const COLLECTION = 'catha_users'
+
+/** POST /api/catha/users/[id]/set-pin - Set, reset, or remove cashier PIN. SUPER_ADMIN only. */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,53 +18,71 @@ export async function POST(
   if (err) return err
 
   const { id } = await params
-  try {
-    const body = await request.json()
-    const pin = body?.pin
+  if (!id || !ObjectId.isValid(id)) {
+    return NextResponse.json({ ok: false, error: 'Invalid user id' }, { status: 400 })
+  }
 
-    if (typeof pin !== 'string') {
-      return NextResponse.json({ ok: false, error: 'PIN required' }, { status: 400 })
+  try {
+    const body = await request.json().catch(() => ({}))
+    const rawPin = typeof body?.pin === 'string' ? body.pin.trim() : ''
+
+    const client = await clientPromise
+    const col = client.db(DB_NAME).collection(COLLECTION)
+
+    const user = await col.findOne({ _id: new ObjectId(id) })
+    if (!user) return NextResponse.json({ ok: false, error: 'User not found' }, { status: 404 })
+
+    const role = String(user.role ?? '').toUpperCase()
+    const status = String(user.status ?? '').toUpperCase()
+
+    if (role !== 'CASHIER') {
+      return NextResponse.json({ ok: false, error: 'Only CASHIER users can have a PIN' }, { status: 400 })
     }
-    if (!/^\d{4}$/.test(pin)) {
+    if (status !== 'ACTIVE') {
+      return NextResponse.json({ ok: false, error: 'User must be ACTIVE to set PIN' }, { status: 400 })
+    }
+
+    // Remove PIN if empty string explicitly sent
+    if (rawPin === '') {
+      await col.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $unset: { pinHash: '', pinLookup: '', pinFailedAttempts: '', pinLockedUntil: '' },
+          $set: { updatedAt: new Date() },
+        }
+      )
+      return NextResponse.json({ ok: true })
+    }
+
+    if (!/^\d{4}$/.test(rawPin)) {
       return NextResponse.json({ ok: false, error: 'PIN must be exactly 4 digits' }, { status: 400 })
     }
 
-    const user = await getBarUserById(id)
-    if (!user) return NextResponse.json({ ok: false, error: 'User not found' }, { status: 404 })
+    const pinHash = await bcrypt.hash(rawPin, 10)
+    const pinLookup = computePinLookup(rawPin)
 
-    if (user.role !== 'cashier_admin') {
-      return NextResponse.json({ ok: false, error: 'Only cashiers can have a PIN' }, { status: 400 })
+    try {
+      await col.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            pinHash,
+            pinLookup,
+            pinFailedAttempts: 0,
+            pinLockedUntil: null,
+            updatedAt: new Date(),
+          },
+        }
+      )
+    } catch (e: any) {
+      if (e instanceof MongoServerError && e.code === 11000 && e.keyPattern?.pinLookup) {
+        return NextResponse.json(
+          { ok: false, error: 'This PIN is already in use' },
+          { status: 409 }
+        )
+      }
+      throw e
     }
-    if (user.status !== 'active') {
-      return NextResponse.json({ ok: false, error: 'User must be active to set PIN' }, { status: 400 })
-    }
-
-    const hash = await bcrypt.hash(pin, 10)
-    const now = new Date()
-
-    let cashierCode = user.cashierCode
-    if (!cashierCode) {
-      const client = await (await import('@/lib/mongodb')).default
-      const db = client.db('infusion_jaba')
-      const maxCode = await db
-        .collection('bar_users')
-        .aggregate<{ maxNum: number }>([
-          { $match: { cashierCode: { $regex: /^CSH-\d+$/ } } },
-          { $project: { num: { $toInt: { $arrayElemAt: [{ $split: ['$cashierCode', '-'] }, 1] } } } },
-          { $group: { _id: null, maxNum: { $max: '$num' } } },
-        ])
-        .toArray()
-      const nextNum = (maxCode[0]?.maxNum ?? 0) + 1
-      cashierCode = `CSH-${String(nextNum).padStart(4, '0')}`
-    }
-
-    await updateBarUserPinFields(id, {
-      cashierPinHash: hash,
-      cashierPinSetAt: now,
-      cashierPinFailedAttempts: 0,
-      cashierPinLockedUntil: null,
-      cashierCode,
-    })
 
     return NextResponse.json({ ok: true })
   } catch (error) {

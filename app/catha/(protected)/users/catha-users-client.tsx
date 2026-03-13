@@ -60,6 +60,7 @@ import {
   Warehouse,
   FileBarChart,
   UserCheck,
+  KeyRound as KeyIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -84,6 +85,7 @@ type CathaUser = {
   permissions: CathaPermissions
   createdAt: string
   lastLogin: string | null
+  hasPin?: boolean
 }
 
 const ROLE_OPTIONS = [
@@ -157,6 +159,10 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
   const [updating, setUpdating] = useState<string | null>(null)
   const [updatingOperation, setUpdatingOperation] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [pinDialogUser, setPinDialogUser] = useState<CathaUser | null>(null)
+  const [pinValue, setPinValue] = useState('')
+  const [pinError, setPinError] = useState<string | null>(null)
+  const [pinSubmitting, setPinSubmitting] = useState(false)
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -166,13 +172,14 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
         if (!res.ok || !data?.success) {
           throw new Error(data?.error || 'Failed to fetch users')
         }
-            const list: UserRow[] = data.users ?? data?.users ?? []
+        const list: UserRow[] = data.users ?? data?.users ?? []
         setUsers(
           list.map((u) => ({
             ...u,
             role: (u.role || 'PENDING').toUpperCase() as CathaUserRole,
             status: (u.status || 'PENDING').toUpperCase() as CathaUserStatus,
-                permissions: normalizePermissions(u.permissions),
+            permissions: normalizePermissions(u.permissions),
+            hasPin: !!(u as any).pinLookup,
           }))
         )
       } catch (e: any) {
@@ -398,6 +405,65 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
       toast.error(e?.message || 'Failed to delete user')
     } finally {
       setUpdating(null)
+    }
+  }
+
+  const openPinDialog = (user: CathaUser) => {
+    setPinDialogUser(user)
+    setPinValue('')
+    setPinError(null)
+  }
+
+  const handlePinChange = (value: string) => {
+    const numeric = value.replace(/\D/g, '').slice(0, 4)
+    setPinValue(numeric)
+    setPinError(null)
+  }
+
+  const submitPin = async (remove = false) => {
+    if (!pinDialogUser?.id) {
+      setPinError('Missing user id')
+      return
+    }
+    if (!remove) {
+      if (!/^\d{4}$/.test(pinValue)) {
+        setPinError('PIN must be exactly 4 digits')
+        return
+      }
+    }
+    setPinSubmitting(true)
+    try {
+      const res = await fetch(`/api/catha/users/${pinDialogUser.id}/set-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: remove ? '' : pinValue }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        const msg: string = data?.error || (remove ? 'Failed to remove PIN' : 'Failed to set PIN')
+        if (msg.includes('exactly 4 digits')) {
+          setPinError('PIN must be exactly 4 digits')
+        } else if (msg.includes('already in use')) {
+          setPinError('This PIN is already in use')
+        } else {
+          setPinError(msg)
+        }
+        return
+      }
+      toast.success(remove ? 'PIN removed' : 'PIN updated')
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.email === pinDialogUser.email ? { ...u, hasPin: !remove } : u
+        )
+      )
+      setPinDialogUser(null)
+      setPinValue('')
+      setPinError(null)
+    } catch (e: any) {
+      console.error(e)
+      setPinError(remove ? 'Failed to remove PIN' : 'Failed to set PIN')
+    } finally {
+      setPinSubmitting(false)
     }
   }
 
@@ -688,6 +754,12 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                                 <Shield className="h-4 w-4 mr-2" />
                                 Edit permissions
                               </DropdownMenuItem>
+                              {user.role === 'CASHIER' && (
+                                <DropdownMenuItem onClick={() => openPinDialog(user)}>
+                                  <KeyIcon className="h-4 w-4 mr-2" />
+                                  {user.hasPin ? 'Update cashier PIN' : 'Set cashier PIN'}
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive"
@@ -910,6 +982,75 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
             >
               Delete
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!pinDialogUser} onOpenChange={() => setPinDialogUser(null)}>
+        <DialogContent className="rounded-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {pinDialogUser?.hasPin ? 'Update cashier PIN' : 'Set cashier PIN'}
+            </DialogTitle>
+            <DialogDescription>
+              PIN must be exactly 4 digits and unique for each Catha cashier.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label className="text-xs font-medium">Cashier</Label>
+              <p className="text-sm text-foreground">
+                {pinDialogUser?.name}{' '}
+                <span className="text-xs text-muted-foreground">({pinDialogUser?.email})</span>
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">PIN</Label>
+              <Input
+                inputMode="numeric"
+                pattern="\d*"
+                maxLength={4}
+                autoComplete="one-time-code"
+                className="h-11 text-center text-xl tracking-[0.35em] caret-transparent"
+                value={pinValue}
+                onChange={(e) => handlePinChange(e.target.value)}
+              />
+              {pinError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                  {pinError}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-between gap-2 pt-4">
+            {pinDialogUser?.hasPin && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pinSubmitting}
+                onClick={() => submitPin(true)}
+                className="rounded-xl h-10"
+              >
+                Remove PIN
+              </Button>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPinDialogUser(null)}
+                className="rounded-xl h-10"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={pinSubmitting}
+                onClick={() => submitPin(false)}
+                className="rounded-xl h-10"
+              >
+                {pinSubmitting ? 'Saving…' : 'Save PIN'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

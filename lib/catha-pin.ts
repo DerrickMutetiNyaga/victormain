@@ -1,10 +1,15 @@
 /**
- * CATHA Cashier PIN verification - server-side utility.
- * Used by Credentials provider in NextAuth authorize().
+ * Catha Cashier PIN verification - server-side utility.
+ * Pure Catha-only implementation using catha_users collection.
  */
 
 import bcrypt from 'bcryptjs'
-import { getBarUserById, updateBarUserPinFields } from '@/lib/models/bar-user'
+import crypto from 'crypto'
+import {
+  getCathaUserByPinLookup,
+  updateCathaUserPinFields,
+  type CathaUser,
+} from '@/lib/models/catha-user'
 
 const MAX_FAILURES = 5
 const LOCK_MINUTES = 15
@@ -49,12 +54,25 @@ export type PinVerifyResult =
   | { ok: false; reason: 'no_pin' }
   | { ok: false; reason: 'rate_limited' }
 
+function getPinPepper(): string {
+  const fromEnv = process.env.CATHA_PIN_PEPPER || process.env.NEXTAUTH_SECRET
+  if (!fromEnv) {
+    throw new Error('[catha-pin] CATHA_PIN_PEPPER or NEXTAUTH_SECRET must be set')
+  }
+  return fromEnv
+}
+
+export function computePinLookup(pin: string): string {
+  const pepper = getPinPepper()
+  return crypto.createHmac('sha256', pepper).update(pin).digest('hex')
+}
+
 /**
- * Verify cashier PIN. Increments failures, locks after 5 failures for 15 minutes.
+ * Verify cashier PIN against catha_users.
+ * Increments failures, locks after MAX_FAILURES for LOCK_MINUTES.
  * On success, resets failures and lock.
  */
 export async function verifyCashierPin(
-  cashierId: string,
   pin: string,
   clientIp?: string
 ): Promise<PinVerifyResult> {
@@ -62,38 +80,39 @@ export async function verifyCashierPin(
     return { ok: false, reason: 'rate_limited' }
   }
 
-  const user = await getBarUserById(cashierId)
+  const lookup = computePinLookup(pin)
+  const user = await getCathaUserByPinLookup(lookup)
   if (!user) return { ok: false, reason: 'not_found' }
 
-  if (user.role !== 'cashier_admin') return { ok: false, reason: 'not_cashier' }
-  if (user.status !== 'active') return { ok: false, reason: 'inactive' }
-  if (!user.cashierPinHash) return { ok: false, reason: 'no_pin' }
+  if (user.role !== 'CASHIER') return { ok: false, reason: 'not_cashier' }
+  if (user.status !== 'ACTIVE') return { ok: false, reason: 'inactive' }
+  if (!user.pinHash) return { ok: false, reason: 'no_pin' }
 
   const now = new Date()
-  const lockedUntil = user.cashierPinLockedUntil
+  const lockedUntil = user.pinLockedUntil
   if (lockedUntil && new Date(lockedUntil) > now) {
     return { ok: false, reason: 'locked', lockedUntil: new Date(lockedUntil) }
   }
 
-  const match = await bcrypt.compare(pin, user.cashierPinHash)
+  const match = await bcrypt.compare(pin, user.pinHash)
   if (!match) {
-    const failures = (user.cashierPinFailedAttempts ?? 0) + 1
+    const failures = (user.pinFailedAttempts ?? 0) + 1
     let lockUntil: Date | null = null
     if (failures >= MAX_FAILURES) {
       lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60 * 1000)
     }
-    await updateBarUserPinFields(cashierId, {
-      cashierPinFailedAttempts: failures,
-      cashierPinLockedUntil: lockUntil,
+    await updateCathaUserPinFields((user._id as any).toString(), {
+      pinFailedAttempts: failures,
+      pinLockedUntil: lockUntil,
     })
     if (clientIp) recordIpAttempt(clientIp)
     return { ok: false, reason: 'invalid' }
   }
 
   // Success: reset attempts and lock
-  await updateBarUserPinFields(cashierId, {
-    cashierPinFailedAttempts: 0,
-    cashierPinLockedUntil: null,
+  await updateCathaUserPinFields((user._id as any).toString(), {
+    pinFailedAttempts: 0,
+    pinLockedUntil: null,
   })
 
   const id = (user._id as { toString: () => string }).toString()
