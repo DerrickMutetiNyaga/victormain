@@ -345,6 +345,12 @@ export default function POSPage() {
           const orderData = JSON.parse(editOrderData)
           setEditingOrderId(orderData.id)
           setSelectedTable(orderData.table)
+
+          // Prefill Glovo number for reopened Glovo-paid orders.
+          // This keeps the saved Glovo order number visible in the Glovo confirm flow.
+          if (String(orderData.paymentMethod || "").toLowerCase() === "glovo") {
+            setGlovoOrderNumber((orderData.glovoOrderNumber || "").toString())
+          }
           
           // Find cashier and waiter IDs from staff
           const cashier = staff.find(s => s.name === orderData.cashier)
@@ -1157,7 +1163,24 @@ export default function POSPage() {
 
     // Handle Glovo payment - require Glovo order number
     if (method === "glovo") {
-      setGlovoOrderNumber("")
+      // If editing an existing order, re-fetch so the modal shows the saved Glovo number.
+      if (editingOrderId) {
+        try {
+          const orderResponse = await fetch(`/api/catha/orders?id=${editingOrderId}`, { cache: "no-store" })
+          if (orderResponse.ok) {
+            const order = await orderResponse.json()
+            setGlovoOrderNumber((order.glovoOrderNumber || "").toString())
+          } else {
+            setGlovoOrderNumber("")
+          }
+        } catch {
+          setGlovoOrderNumber("")
+        }
+      } else {
+        // New order: keep what's typed (if any), otherwise start empty.
+        if (!glovoOrderNumber.trim()) setGlovoOrderNumber("")
+      }
+
       setShowGlovoDialog(true)
       return
     }

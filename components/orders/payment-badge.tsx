@@ -1,4 +1,4 @@
-import { Banknote, CreditCard, Smartphone } from "lucide-react"
+import { Banknote, CreditCard, Smartphone, Truck } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type PaymentMethod = "CASH" | "MPESA" | "CARD" | "OTHER"
@@ -20,6 +20,12 @@ const paymentConfig: Record<string, { bg: string; text: string; icon: typeof Ban
     text: "text-[#5b21b6]",
     icon: Smartphone,
     label: "M-Pesa",
+  },
+  glovo: {
+    bg: "bg-orange-50",
+    text: "text-orange-700",
+    icon: Truck,
+    label: "Glovo",
   },
   card: {
     bg: "bg-blue-50",

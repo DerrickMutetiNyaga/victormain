@@ -93,16 +93,16 @@ export function getPaymentStyle(method: string | null | undefined): {
   const m = method.toUpperCase()
   
   if (m === "CASH") {
-    return { label: "Cash", bgClass: "bg-[#ecfdf5]", textClass: "text-[#065f46]" }
+    return { label: "Paid via Cash", bgClass: "bg-[#ecfdf5]", textClass: "text-[#065f46]" }
   }
   if (m === "MPESA" || m === "M-PESA") {
-    return { label: "M-Pesa", bgClass: "bg-[#ede9fe]", textClass: "text-[#5b21b6]" }
+    return { label: "Paid via M-Pesa", bgClass: "bg-[#ede9fe]", textClass: "text-[#5b21b6]" }
   }
   if (m === "GLOVO") {
-    return { label: "Glovo", bgClass: "bg-[#fff7ed]", textClass: "text-[#9a3412]" }
+    return { label: "Paid via Glovo", bgClass: "bg-[#fff7ed]", textClass: "text-[#9a3412]" }
   }
   if (m === "CARD") {
-    return { label: "Card", bgClass: "bg-[#dbeafe]", textClass: "text-[#1e40af]" }
+    return { label: "Paid via Card", bgClass: "bg-[#dbeafe]", textClass: "text-[#1e40af]" }
   }
   
   return { label: method, bgClass: "bg-gray-100", textClass: "text-gray-600" }

@@ -38,6 +38,8 @@ interface MpesaTransaction {
   responseCode?: string
   resultDesc?: string
   mpesaReceiptNumber?: string
+  linked?: boolean
+  linkedOrderId?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -454,6 +456,9 @@ export default function MpesaTransactionsPage() {
                               ) : (
                                 <span className="text-xs text-slate-500 truncate block">{tx.accountReference || "—"}</span>
                               )}
+                              <span className={`text-[10px] ${tx.linked ? "text-emerald-700" : "text-slate-400"}`}>
+                                {tx.linked ? `Linked: ${tx.linkedOrderId || tx.accountReference || "Order"}` : "Not linked"}
+                              </span>
                               {tx.phoneNumber && (
                                 <span className="text-[10px] text-slate-400 font-mono">{maskPhone(tx.phoneNumber)}</span>
                               )}
@@ -540,6 +545,9 @@ export default function MpesaTransactionsPage() {
                             ) : (
                               <span className="text-sm text-slate-500">{tx.accountReference || "—"}</span>
                             )}
+                            <p className={`text-xs mt-1 ${tx.linked ? "text-emerald-700" : "text-slate-400"}`}>
+                              {tx.linked ? `Linked: ${tx.linkedOrderId || tx.accountReference || "Order"}` : "Not linked"}
+                            </p>
                           </TableCell>
                           <TableCell className="py-5 pr-6 text-right border-0 align-top">
                             <span
@@ -619,9 +627,12 @@ export default function MpesaTransactionsPage() {
                         <span className="font-mono text-sm text-slate-900 text-right">{selectedTx.phoneNumber}</span>
                       </div>
                       <div className="flex justify-between items-start gap-3">
-                        <span className="text-sm text-slate-500 shrink-0">Order</span>
+                      <span className="text-sm text-slate-500 shrink-0">Order</span>
                         <div className="text-right">
                           <span className="text-sm font-medium text-slate-900">{selectedTx.accountReference || "—"}</span>
+                          <p className={`text-xs mt-1 ${selectedTx.linked ? "text-emerald-700" : "text-slate-500"}`}>
+                            {selectedTx.linked ? `Linked to ${selectedTx.linkedOrderId || selectedTx.accountReference || "order"}` : "Not linked"}
+                          </p>
                           {selectedTx.accountReference?.startsWith("TXN") && (
                             <a
                               href={`/catha/orders?search=${selectedTx.accountReference}`}

@@ -47,6 +47,13 @@ export async function GET(request: Request) {
         { phone_number: { $regex: search, $options: 'i' } },
       ]
     }
+    const exactAmount = searchParams.get('exactAmount')
+    if (exactAmount != null && exactAmount !== '') {
+      const parsed = Number(exactAmount)
+      if (!Number.isNaN(parsed)) {
+        query.amount = parsed
+      }
+    }
 
     // Get transactions
     const transactions = await db
@@ -56,8 +63,47 @@ export async function GET(request: Request) {
       .limit(1000)
       .toArray()
 
+    // Resolve linked order status for each transaction (used by lightweight link flow in Orders)
+    const accountRefs = Array.from(
+      new Set(
+        transactions
+          .map((tx: any) => (typeof tx.account_reference === 'string' ? tx.account_reference.trim() : ''))
+          .filter(Boolean)
+      )
+    )
+    const transactionIds = transactions.map((tx: any) => tx._id?.toString()).filter(Boolean)
+    const linkedOrders = await db
+      .collection('orders')
+      .find({
+        $or: [
+          { id: { $in: accountRefs } },
+          { mpesaTransactionId: { $in: transactionIds } },
+        ],
+      })
+      .project({ id: 1, mpesaTransactionId: 1, paymentMethod: 1, paymentStatus: 1 })
+      .toArray()
+    const orderByMpesaTxId = new Map<string, any>()
+    const orderById = new Map<string, any>()
+    for (const o of linkedOrders) {
+      if (o?.mpesaTransactionId) orderByMpesaTxId.set(String(o.mpesaTransactionId), o)
+      if (o?.id) orderById.set(String(o.id), o)
+    }
+
     // Format transactions
     const formattedTransactions = transactions.map((tx: any) => ({
+      ...(function () {
+        const txId = tx._id?.toString()
+        const linkedOrder =
+          (txId ? orderByMpesaTxId.get(txId) : null) ||
+          (tx.account_reference ? orderById.get(String(tx.account_reference)) : null) ||
+          null
+        const linkedOrderId = linkedOrder?.id || tx.linked_order_id || null
+        return {
+          linked: Boolean(linkedOrderId),
+          linkedOrderId,
+          mpesaRef: tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null,
+        }
+      })(),
       id: tx._id.toString(),
       transactionType: tx.transaction_type,
       transactionId: tx.transaction_id,

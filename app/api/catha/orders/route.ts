@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
@@ -55,7 +56,10 @@ export async function GET(request: Request) {
         total: order.total,
         paymentMethod: order.paymentMethod,
         paymentStatus: order.paymentStatus || (order.status === 'completed' ? 'PAID' : 'PENDING'),
+        mpesaTransactionId: order.mpesaTransactionId || null,
         mpesaReceiptNumber: order.mpesaReceiptNumber || null,
+        linkedAt: order.linkedAt || null,
+        linkedBy: order.linkedBy || null,
         glovoOrderNumber: order.glovoOrderNumber || null,
         cashAmount: order.cashAmount || null,
         cashBalance: order.cashBalance || null,
@@ -92,7 +96,10 @@ export async function GET(request: Request) {
       total: order.total,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus || (order.status === 'completed' ? 'PAID' : 'PENDING'),
+      mpesaTransactionId: order.mpesaTransactionId || null,
       mpesaReceiptNumber: order.mpesaReceiptNumber || null,
+      linkedAt: order.linkedAt || null,
+      linkedBy: order.linkedBy || null,
       glovoOrderNumber: order.glovoOrderNumber || null,
       cashAmount: order.cashAmount || null,
       cashBalance: order.cashBalance || null,
@@ -300,8 +307,18 @@ export async function PUT(request: Request) {
       const raw = updateData.glovoOrderNumber
       updateData.glovoOrderNumber = typeof raw === 'string' ? raw.trim() || null : null
     }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'mpesaTransactionId')) {
+      const raw = updateData.mpesaTransactionId
+      updateData.mpesaTransactionId = raw ? String(raw).trim() : null
+    }
     if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'glovo' && !Object.prototype.hasOwnProperty.call(updateData, 'glovoOrderNumber')) {
       updateData.glovoOrderNumber = null
+    }
+    if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'mpesa') {
+      updateData.mpesaTransactionId = null
+      updateData.mpesaReceiptNumber = null
+      updateData.linkedAt = null
+      updateData.linkedBy = null
     }
     
     console.log('[Orders API] Updating order:', {
@@ -339,6 +356,15 @@ export async function PUT(request: Request) {
       }
       updateData.stockDeducted = false
       updateData.stockReleasedAt = new Date()
+      if (existingOrder.mpesaTransactionId) {
+        const txId = String(existingOrder.mpesaTransactionId)
+        if (ObjectId.isValid(txId)) {
+          await db.collection('mpesa_transactions').updateOne(
+            { _id: new ObjectId(txId) },
+            { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
+          )
+        }
+      }
     } else if (!wasStockDeducted && !isTerminalStatus && nextItems.length > 0) {
       const validation = await validateStockForItems(db, nextItems)
       if (!validation.ok) {

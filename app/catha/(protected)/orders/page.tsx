@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { type Transaction } from "@/lib/dummy-data"
-import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2 } from "lucide-react"
+import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2, Truck, RefreshCw } from "lucide-react"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
 import { normalizeMpesaStatus } from "@/lib/mpesa-status"
 import { toast } from "sonner"
@@ -56,6 +56,7 @@ function PaymentBadge({ method }: { method: string | null }) {
   const config: Record<string, { icon: React.ReactNode; label: string; bg: string; text: string }> = {
     cash: { icon: <Banknote className="h-3 w-3" />, label: "Cash", bg: "bg-emerald-50", text: "text-emerald-700" },
     mpesa: { icon: <Smartphone className="h-3 w-3" />, label: "M-Pesa", bg: "bg-green-50", text: "text-green-700" },
+    glovo: { icon: <Truck className="h-3 w-3" />, label: "Glovo", bg: "bg-orange-50", text: "text-orange-700" },
     card: { icon: <Smartphone className="h-3 w-3" />, label: "Card", bg: "bg-blue-50", text: "text-blue-700" },
   }
   const cfg = config[method?.toLowerCase() || ""] || { icon: null, label: method || "—", bg: "bg-slate-50", text: "text-slate-600" }
@@ -157,21 +158,29 @@ export default function OrdersPage() {
   const [view, setView] = useState<"table" | "cards">("cards")
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "PAID" | "PARTIALLY_PAID" | "NOT_PAID">("all")
-  const [paymentFilter, setPaymentFilter] = useState<"all" | "cash" | "card" | "mpesa">("all")
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "glovo" | "card" | "mpesa">("all")
   const [orders, setOrders] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [editingOrder, setEditingOrder] = useState<Transaction | null>(null)
   const [viewingOrder, setViewingOrder] = useState<Transaction | null>(null)
   const [draftStatus, setDraftStatus] = useState<Transaction["status"] | "">("")
-  const [draftPayment, setDraftPayment] = useState<"cash" | "card" | "mpesa" | "">("")
+  const [draftPayment, setDraftPayment] = useState<"glovo" | "card" | "mpesa" | "">("")
   const [draftItems, setDraftItems] = useState<Transaction["items"]>([])
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set())
   const [addingItemsToOrder, setAddingItemsToOrder] = useState<Transaction | null>(null)
   const [newItems, setNewItems] = useState<{ productId: string; quantity: number }[]>([])
   const [addItemsSearchQuery, setAddItemsSearchQuery] = useState("")
   const [processingPayment, setProcessingPayment] = useState<Transaction | null>(null)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"cash" | "mpesa" | "">("")
-  const [cashAmountReceived, setCashAmountReceived] = useState<string>("")
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"glovo" | "mpesa" | "">("")
+  const [glovoOrderNumber, setGlovoOrderNumber] = useState("")
+  const [isProcessingGlovoPayment, setIsProcessingGlovoPayment] = useState(false)
+  const [mpesaFlowTab, setMpesaFlowTab] = useState<"link" | "request">("link")
+  const [mpesaExactAmountSearch, setMpesaExactAmountSearch] = useState("")
+  const [mpesaLinkCandidates, setMpesaLinkCandidates] = useState<any[]>([])
+  const [loadingMpesaCandidates, setLoadingMpesaCandidates] = useState(false)
+  const [selectedMpesaTransactionId, setSelectedMpesaTransactionId] = useState<string | null>(null)
+  const [linkingMpesaTransaction, setLinkingMpesaTransaction] = useState(false)
+  const [mpesaRequestStatus, setMpesaRequestStatus] = useState<"idle" | "sent" | "waiting" | "paid" | "failed">("idle")
   const [printingOrder, setPrintingOrder] = useState<Transaction | null>(null)
   // M-Pesa STK push states
   const [showMpesaDialog, setShowMpesaDialog] = useState(false)
@@ -391,6 +400,8 @@ export default function OrdersPage() {
         cashier: order.cashier,
         waiter: order.waiter,
         paymentMethod: order.paymentMethod,
+        mpesaReceiptNumber: (order as any).mpesaReceiptNumber,
+        glovoOrderNumber: (order as any).glovoOrderNumber,
         status: order.status,
         subtotal: order.subtotal,
         vat: order.vat,
@@ -570,7 +581,7 @@ export default function OrdersPage() {
     })
   }
 
-  const handleBulkPayment = async (paymentMethod: "cash" | "card" | "mpesa") => {
+  const handleBulkPayment = async (paymentMethod: "card" | "mpesa") => {
     if (selectedOrders.size === 0) {
       alert("Please select at least one order to pay")
       return
@@ -617,10 +628,16 @@ export default function OrdersPage() {
     }
     setProcessingPayment(order)
     setSelectedPaymentMethod("")
-    setCashAmountReceived(order.total != null ? String(order.total.toFixed(2)) : "")
+    setGlovoOrderNumber("")
+    setMpesaFlowTab("link")
+    setMpesaExactAmountSearch(order.total != null ? String(order.total.toFixed(2)) : "")
+    setMpesaLinkCandidates([])
+    setSelectedMpesaTransactionId(null)
+    setMpesaPhoneNumber((order as any).customerPhone || "")
+    setMpesaRequestStatus("idle")
   }
 
-  const markOrderPaid = async (orderId: string, method: "cash" | "mpesa", extra: Record<string, unknown> = {}) => {
+  const markOrderPaid = async (orderId: string, method: "glovo" | "mpesa", extra: Record<string, unknown> = {}) => {
     const payload: Record<string, unknown> = {
       id: orderId,
       paymentMethod: method,
@@ -652,6 +669,80 @@ export default function OrdersPage() {
     )
   }
 
+  const loadMpesaLinkCandidates = useCallback(async (exactAmount: number) => {
+    if (!processingPayment || Number.isNaN(exactAmount)) return
+    try {
+      setLoadingMpesaCandidates(true)
+      const response = await fetch(`/api/mpesa/transactions?exactAmount=${encodeURIComponent(String(exactAmount))}`, { cache: 'no-store' })
+      const data = await response.json()
+      const txs = Array.isArray(data?.transactions) ? data.transactions : []
+      setMpesaLinkCandidates(txs)
+    } catch {
+      setMpesaLinkCandidates([])
+    } finally {
+      setLoadingMpesaCandidates(false)
+    }
+  }, [processingPayment])
+
+  useEffect(() => {
+    if (!processingPayment || selectedPaymentMethod !== "mpesa" || mpesaFlowTab !== "link") return
+    const due = Number(processingPayment.total || 0)
+    loadMpesaLinkCandidates(due)
+  }, [processingPayment, selectedPaymentMethod, mpesaFlowTab, loadMpesaLinkCandidates])
+
+  const handleLinkMpesaTransaction = async () => {
+    if (!processingPayment || !selectedMpesaTransactionId) {
+      toast.error("Select a valid M-Pesa transaction first.")
+      return
+    }
+    setLinkingMpesaTransaction(true)
+    try {
+      const response = await fetch('/api/catha/orders/link-mpesa', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: processingPayment.id, transactionId: selectedMpesaTransactionId }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'Failed to link transaction')
+      await markOrderPaid(processingPayment.id, "mpesa", {
+        mpesaTransactionId: selectedMpesaTransactionId,
+        mpesaReceiptNumber: data?.mpesaReceiptNumber || null,
+        linkedAt: data?.linkedAt || new Date().toISOString(),
+        linkedBy: data?.linkedBy || ((session?.user as any)?.name ?? null),
+      })
+      toast.success(`Order ${processingPayment.id} linked and paid via M-Pesa`)
+      setProcessingPayment(null)
+      setSelectedPaymentMethod("")
+      setSelectedMpesaTransactionId(null)
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to link M-Pesa transaction')
+    } finally {
+      setLinkingMpesaTransaction(false)
+    }
+  }
+
+  const handleConfirmGlovoPayment = async () => {
+    if (!processingPayment || isProcessingGlovoPayment) return
+    const normalizedGlovoOrderNumber = glovoOrderNumber.trim()
+    if (!normalizedGlovoOrderNumber) {
+      toast.error("Glovo order number is required.")
+      return
+    }
+    setIsProcessingGlovoPayment(true)
+    try {
+      await markOrderPaid(processingPayment.id, "glovo", { glovoOrderNumber: normalizedGlovoOrderNumber })
+      toast.success(`Order ${processingPayment.id} paid via Glovo`)
+      setProcessingPayment(null)
+      setSelectedPaymentMethod("")
+      setGlovoOrderNumber("")
+    } catch {
+      toast.error("Failed to process Glovo payment.")
+    } finally {
+      setIsProcessingGlovoPayment(false)
+    }
+  }
+
   const handleProcessPayment = async () => {
     if (!processingPayment || !selectedPaymentMethod) {
       alert("Please select a payment method")
@@ -661,52 +752,10 @@ export default function OrdersPage() {
     // M-Pesa: open STK push dialog (don't process here)
     if (selectedPaymentMethod === "mpesa") {
       setShowMpesaDialog(true)
+      setMpesaFlowTab("request")
       return
     }
-
-    // Cash
-    const total = processingPayment.total ?? 0
-    const received = cashAmountReceived ? parseFloat(cashAmountReceived) || 0 : total
-    const isPartial = received > 0 && received < total
-    const isFullPayment = received >= total
-
-    try {
-      if (isFullPayment) {
-        await markOrderPaid(processingPayment.id, "cash", { cashAmount: total })
-        setProcessingPayment(null)
-        setSelectedPaymentMethod("")
-        setCashAmountReceived("")
-        toast.success(`Order ${processingPayment.id} paid via Cash`)
-      } else if (isPartial) {
-        await fetch('/api/catha/orders', {
-          method: 'PUT',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: processingPayment.id,
-            paymentMethod: "cash",
-            paymentStatus: "PARTIALLY_PAID",
-            cashAmount: received,
-          }),
-        })
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === processingPayment!.id
-              ? { ...o, paymentMethod: "cash", paymentStatus: "PARTIALLY_PAID", cashAmount: received } as any
-              : o,
-          ),
-        )
-        setProcessingPayment(null)
-        setSelectedPaymentMethod("")
-        setCashAmountReceived("")
-        toast.success(`Recorded Ksh ${received.toFixed(2)}. Balance: Ksh ${(total - received).toFixed(2)}`)
-      } else {
-        alert("Amount received cannot be zero")
-      }
-    } catch (error) {
-      console.error('Error processing payment:', error)
-      alert('Failed to process payment')
-    }
+    await handleConfirmGlovoPayment()
   }
 
   // M-Pesa polling — same logic as POS
@@ -750,6 +799,7 @@ export default function OrdersPage() {
           if (isTerminal) stopPolling()
 
           if (status === 'COMPLETED') {
+            setMpesaRequestStatus("paid")
             toast.success("M-Pesa payment confirmed!")
             await markOrderPaid(currentOrderId, "mpesa", {
               mpesaReceiptNumber: transaction.mpesaReceiptNumber || null,
@@ -763,6 +813,7 @@ export default function OrdersPage() {
             setProcessingPayment(null)
             setSelectedPaymentMethod("")
           } else if (status === 'CANCELLED' || status === 'FAILED') {
+            setMpesaRequestStatus("failed")
             const errMsg = transaction.result_desc ||
               (status === 'CANCELLED'
                 ? "Payment was cancelled by the customer. Please try again."
@@ -780,6 +831,7 @@ export default function OrdersPage() {
       const elapsed = Date.now() - startTime
       if (elapsed >= POLL_CAP_MS) {
         stopPolling()
+        setMpesaRequestStatus("failed")
         setMpesaError({ message: "Payment confirmation timeout (3 minutes). Please check the phone or try again.", status: 'TIMEOUT' })
         setPendingMpesaOrderId(null)
         setMpesaProcessing(false)
@@ -814,6 +866,7 @@ export default function OrdersPage() {
     }
     setMpesaError(null)
     setMpesaProcessing(true)
+    setMpesaRequestStatus("sent")
     try {
       toast.loading("Initiating M-Pesa payment...", { id: "mpesa-push" })
       const stkResponse = await fetch('/api/mpesa/stk-push', {
@@ -829,6 +882,7 @@ export default function OrdersPage() {
       })
       const stkData = await stkResponse.json()
       if (stkData.success) {
+        setMpesaRequestStatus("waiting")
         toast.loading("Payment request sent! Waiting for confirmation...", { id: "mpesa-push" })
         setPendingMpesaOrderId(processingPayment.id)
         setMpesaCheckoutRequestId(stkData.data?.checkoutRequestID || null)
@@ -836,11 +890,13 @@ export default function OrdersPage() {
         toast.dismiss("mpesa-push")
         setMpesaError({ message: stkData.error || "Failed to initiate payment. Please try again.", status: 'INITIATION_FAILED' })
         setMpesaProcessing(false)
+        setMpesaRequestStatus("failed")
       }
     } catch (error: any) {
       toast.dismiss("mpesa-push")
       setMpesaError({ message: error.message || "Failed to process M-Pesa payment.", status: 'ERROR' })
       setMpesaProcessing(false)
+      setMpesaRequestStatus("failed")
     }
   }
 
@@ -904,6 +960,8 @@ export default function OrdersPage() {
       case "mpesa":
       case "m-pesa":
         return "bg-purple-50 text-purple-700 border-purple-200"
+      case "glovo":
+        return "bg-orange-50 text-orange-700 border-orange-200"
       default:
         return "bg-muted text-muted-foreground border-border"
     }
@@ -1116,7 +1174,7 @@ export default function OrdersPage() {
             
             {/* Payment filter pills - compact on tablet */}
             <div className="flex items-center gap-2 nest-hub-max:gap-1.5 nest-hub-max:flex-shrink-0">
-              {(["all", "cash", "mpesa", "card"] as const).map((method) => (
+              {(["all", "glovo", "mpesa", "card"] as const).map((method) => (
                 <button
                   key={method}
                   onClick={() => setPaymentFilter(method)}
@@ -1153,14 +1211,6 @@ export default function OrdersPage() {
                   <span className="text-sm font-semibold text-foreground">
                     {selectedOrders.size} selected
                   </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleBulkPayment("cash")}
-                    className="bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
-                  >
-                    Pay Cash
-                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1298,10 +1348,10 @@ export default function OrdersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All payments</SelectItem>
-                        <SelectItem value="cash">
+                        <SelectItem value="glovo">
                           <span className="flex items-center gap-2">
-                            <Banknote className="h-3.5 w-3.5 text-[#16a34a]" />
-                            Cash
+                            <Truck className="h-3.5 w-3.5 text-[#ea580c]" />
+                            Glovo
                           </span>
                         </SelectItem>
                         <SelectItem value="mpesa">
@@ -1437,10 +1487,10 @@ export default function OrdersPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All payments</SelectItem>
-                          <SelectItem value="cash">
+                          <SelectItem value="glovo">
                             <span className="flex items-center gap-2">
-                              <Banknote className="h-3.5 w-3.5 text-[#16a34a]" />
-                              Cash
+                              <Truck className="h-3.5 w-3.5 text-[#ea580c]" />
+                              Glovo
                             </span>
                           </SelectItem>
                           <SelectItem value="mpesa">
@@ -1530,7 +1580,7 @@ export default function OrdersPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All payments</SelectItem>
-                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="glovo">Glovo</SelectItem>
                           <SelectItem value="mpesa">M-Pesa</SelectItem>
                           <SelectItem value="card">Card</SelectItem>
                         </SelectContent>
@@ -1883,7 +1933,7 @@ export default function OrdersPage() {
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#94a3b8] mb-3">Payment</p>
                 <div className="flex flex-wrap gap-2">
-                  {(["all", "cash", "mpesa", "card"] as const).map((m) => (
+                  {(["all", "glovo", "mpesa", "card"] as const).map((m) => (
                     <button
                       key={m}
                       onClick={() => { setPaymentFilter(m); setFilterSheetOpen(false) }}
@@ -2288,9 +2338,19 @@ export default function OrdersPage() {
                     viewingOrder.paymentMethod,
                   )}`}
                 >
-                  {viewingOrder.paymentMethod.toLowerCase()}
+                  {viewingOrder.paymentMethod?.toLowerCase() === "mpesa"
+                    ? "Paid via M-Pesa"
+                    : viewingOrder.paymentMethod?.toLowerCase() === "glovo"
+                    ? "Paid via Glovo"
+                    : (viewingOrder.paymentMethod || "—").toLowerCase()}
                 </span>
               </div>
+              {viewingOrder.paymentMethod?.toLowerCase() === "mpesa" && viewingOrder.mpesaReceiptNumber && (
+                <p className="text-xs text-green-700 font-medium">M-Pesa Ref: {viewingOrder.mpesaReceiptNumber}</p>
+              )}
+              {viewingOrder.paymentMethod?.toLowerCase() === "glovo" && (viewingOrder as any).glovoOrderNumber && (
+                <p className="text-xs text-orange-700 font-medium">Glovo Order #: {(viewingOrder as any).glovoOrderNumber}</p>
+              )}
 
               {/* Items List - Compact */}
               <div className="space-y-1.5">
@@ -2450,13 +2510,13 @@ export default function OrdersPage() {
                   <Label className="text-xs">Payment Method</Label>
                   <Select
                     value={draftPayment}
-                    onValueChange={(v) => setDraftPayment(v as "cash" | "card" | "mpesa")}
+                    onValueChange={(v) => setDraftPayment(v as "glovo" | "card" | "mpesa")}
                   >
                     <SelectTrigger className="h-9 text-xs">
                       <SelectValue placeholder="Payment" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="glovo">Glovo</SelectItem>
                       <SelectItem value="card">Card</SelectItem>
                       <SelectItem value="mpesa">M-Pesa</SelectItem>
                     </SelectContent>
@@ -2619,23 +2679,22 @@ export default function OrdersPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => {
-                      setSelectedPaymentMethod("cash")
-                      setCashAmountReceived(processingPayment.total != null ? String(processingPayment.total.toFixed(2)) : "")
+                      setSelectedPaymentMethod("glovo")
                     }}
                     className={`p-4 rounded-lg border-2 transition-all ${
-                      selectedPaymentMethod === "cash"
-                        ? "border-emerald-500 bg-emerald-50 shadow-md"
+                      selectedPaymentMethod === "glovo"
+                        ? "border-orange-500 bg-orange-50 shadow-md"
                         : "border-gray-200 hover:border-gray-300 bg-white"
                     }`}
                   >
                     <div className="flex flex-col items-center gap-2">
                       <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                        selectedPaymentMethod === "cash" ? "bg-emerald-100" : "bg-gray-100"
+                        selectedPaymentMethod === "glovo" ? "bg-orange-100" : "bg-gray-100"
                       }`}>
-                        <Banknote className={`h-6 w-6 ${selectedPaymentMethod === "cash" ? "text-emerald-600" : "text-gray-600"}`} />
+                        <Truck className={`h-6 w-6 ${selectedPaymentMethod === "glovo" ? "text-orange-600" : "text-gray-600"}`} />
                       </div>
-                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "cash" ? "text-emerald-700" : "text-gray-700"}`}>
-                        Cash
+                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "glovo" ? "text-orange-700" : "text-gray-700"}`}>
+                        Glovo
                       </span>
                     </div>
                   </button>
@@ -2662,21 +2721,134 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              {selectedPaymentMethod === "cash" && (
+              {selectedPaymentMethod === "glovo" && (
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold">Amount received (Ksh)</Label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={cashAmountReceived}
-                    onChange={(e) => setCashAmountReceived(e.target.value)}
-                    placeholder={String(processingPayment.total?.toFixed(2) ?? "0")}
-                    className="w-full h-11 px-4 rounded-lg border border-[#e5e7eb] bg-white text-sm font-medium"
+                  <Label className="text-sm font-semibold">Glovo Order Number</Label>
+                  <Input
+                    type="text"
+                    value={glovoOrderNumber}
+                    onChange={(e) => setGlovoOrderNumber(e.target.value)}
+                    placeholder="Enter Glovo order number"
+                    className="h-11 text-sm font-medium"
                   />
-                  <p className="text-xs text-[#64748b]">
-                    Enter less than total for partial payment. Balance due: Ksh {Math.max(0, (processingPayment.total ?? 0) - (parseFloat(cashAmountReceived) || 0)).toFixed(2)}
-                  </p>
+                  {!glovoOrderNumber.trim() && <p className="text-xs text-red-600">Glovo order number is required.</p>}
+                </div>
+              )}
+
+              {selectedPaymentMethod === "mpesa" && (
+                <div className="space-y-3 rounded-lg border border-green-200 bg-green-50/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-green-800">M-Pesa Payment Flow</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={mpesaFlowTab === "link" ? "default" : "outline"}
+                      className={mpesaFlowTab === "link" ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+                      onClick={() => setMpesaFlowTab("link")}
+                    >
+                      Link Existing Transaction
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mpesaFlowTab === "request" ? "default" : "outline"}
+                      className={mpesaFlowTab === "request" ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+                      onClick={() => setMpesaFlowTab("request")}
+                    >
+                      Send M-Pesa Request
+                    </Button>
+                  </div>
+
+                  {mpesaFlowTab === "link" && (
+                    <div className="space-y-3 rounded-md bg-white p-3 border border-green-200">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Auto-matched transactions for KSh {(processingPayment.total ?? 0).toFixed(2)}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => loadMpesaLinkCandidates(Number(processingPayment.total || 0))}
+                          disabled={loadingMpesaCandidates}
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loadingMpesaCandidates ? "animate-spin" : ""}`} />
+                          Refresh
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Search exact M-Pesa amount</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={mpesaExactAmountSearch}
+                            onChange={(e) => setMpesaExactAmountSearch(e.target.value)}
+                            placeholder="e.g. 500"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => loadMpesaLinkCandidates(Number(mpesaExactAmountSearch))}
+                            disabled={!mpesaExactAmountSearch.trim()}
+                          >
+                            Search
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="max-h-52 overflow-y-auto space-y-2">
+                        {!loadingMpesaCandidates && mpesaLinkCandidates.length === 0 && (
+                          <p className="text-xs text-slate-500">No transactions found for KSh {Number(mpesaExactAmountSearch || processingPayment.total || 0).toFixed(2)}</p>
+                        )}
+                        {mpesaLinkCandidates.map((tx) => {
+                          const alreadyLinked = Boolean(tx.linked && tx.linkedOrderId && tx.linkedOrderId !== processingPayment.id)
+                          return (
+                            <label
+                              key={tx.id}
+                              className={`block rounded-md border p-2 text-xs ${alreadyLinked ? "bg-slate-100 border-slate-300 opacity-70" : "bg-white border-slate-200 cursor-pointer"}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <input
+                                  type="radio"
+                                  name="selected-mpesa-transaction"
+                                  className="mt-1"
+                                  disabled={alreadyLinked}
+                                  checked={selectedMpesaTransactionId === tx.id}
+                                  onChange={() => setSelectedMpesaTransactionId(tx.id)}
+                                />
+                                <div className="flex-1 space-y-0.5">
+                                  <p className="font-semibold">Receipt: {tx.mpesaReceiptNumber || tx.mpesaRef || tx.transactionId || "—"}</p>
+                                  <p>M-Pesa Ref: {tx.checkoutRequestId || tx.transactionId || "—"}</p>
+                                  <p>Amount: KSh {Number(tx.amount || 0).toFixed(2)}</p>
+                                  <p>Phone: {tx.phoneNumber || "—"}</p>
+                                  <p>Date/Time: {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "—"}</p>
+                                  <p>Type: {tx.transactionType || "—"}</p>
+                                  <p className={alreadyLinked ? "text-amber-700 font-semibold" : "text-emerald-700 font-semibold"}>
+                                    {alreadyLinked ? `Already linked to ${tx.linkedOrderId}` : "Not linked"}
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {mpesaFlowTab === "request" && (
+                    <div className="space-y-2 rounded-md bg-white p-3 border border-green-200">
+                      <Label htmlFor="orders-mpesa-request-phone" className="text-xs font-medium">Customer Phone Number</Label>
+                      <Input
+                        id="orders-mpesa-request-phone"
+                        type="tel"
+                        placeholder="0712345678 or 254712345678"
+                        value={mpesaPhoneNumber}
+                        onChange={(e) => setMpesaPhoneNumber(e.target.value)}
+                      />
+                      <p className="text-xs text-slate-500">Status: {mpesaRequestStatus === "idle" ? "Ready" : mpesaRequestStatus === "sent" ? "Request Sent" : mpesaRequestStatus === "waiting" ? "Waiting for Payment" : mpesaRequestStatus === "paid" ? "Paid" : "Failed"}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2684,21 +2856,31 @@ export default function OrdersPage() {
               <Button variant="outline" onClick={() => {
                 setProcessingPayment(null)
                 setSelectedPaymentMethod("")
-                setCashAmountReceived("")
+                setGlovoOrderNumber("")
               }}>
                 Cancel
               </Button>
-              <Button
-                onClick={handleProcessPayment}
-                disabled={!selectedPaymentMethod}
-                className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
-              >
-                {selectedPaymentMethod === "mpesa" ? (
-                  <><Smartphone className="h-4 w-4 mr-2" />Send M-Pesa Request</>
-                ) : (
-                  <><Wallet2 className="h-4 w-4 mr-2" />Confirm Payment</>
-                )}
-              </Button>
+              {selectedPaymentMethod === "mpesa" && mpesaFlowTab === "link" ? (
+                <Button
+                  onClick={handleLinkMpesaTransaction}
+                  disabled={!selectedMpesaTransactionId || linkingMpesaTransaction}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {linkingMpesaTransaction ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Linking...</> : <><Smartphone className="h-4 w-4 mr-2" />Link & Mark Paid</>}
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleProcessPayment}
+                  disabled={!selectedPaymentMethod || (selectedPaymentMethod === "glovo" && (!glovoOrderNumber.trim() || isProcessingGlovoPayment))}
+                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+                >
+                  {selectedPaymentMethod === "mpesa" ? (
+                    <><Smartphone className="h-4 w-4 mr-2" />Send M-Pesa Request</>
+                  ) : (
+                    <><Truck className="h-4 w-4 mr-2" />Confirm Glovo Payment</>
+                  )}
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>
