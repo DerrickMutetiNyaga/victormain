@@ -58,7 +58,7 @@ export const POSProductCard = memo(function POSProductCard({
           <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-gray-800 text-white text-[9px] font-bold z-20">
             Out
           </div>
-        ) : isLowStock && (
+        ) : isLowStock ? (
           <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-destructive text-destructive-foreground text-[9px] font-bold z-20">
             Low
           </div>
