@@ -2653,11 +2653,11 @@ export default function OrdersPage() {
       {/* Process Payment Modal */}
       {processingPayment && (
         <Dialog open={!!processingPayment} onOpenChange={(open) => !open && setProcessingPayment(null)}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
+          <DialogContent className="w-[96vw] max-w-md sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+            <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b">
               <DialogTitle className="text-xl font-bold">Process Payment - Order #{processingPayment.id}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
               <div className="p-4 bg-muted/30 rounded-lg space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
@@ -2852,7 +2852,7 @@ export default function OrdersPage() {
                 </div>
               )}
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t">
+            <div className="px-4 sm:px-6 py-3 border-t bg-background flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
               <Button variant="outline" onClick={() => {
                 setProcessingPayment(null)
                 setSelectedPaymentMethod("")
@@ -2900,8 +2900,8 @@ export default function OrdersPage() {
             }
           }}
         >
-          <DialogContent className="max-w-md">
-            <DialogHeader>
+          <DialogContent className="w-[96vw] max-w-md sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+            <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b">
               <DialogTitle className="text-2xl font-bold flex items-center gap-3">
                 <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
                   <Smartphone className="h-6 w-6 text-green-600" />
@@ -2914,7 +2914,7 @@ export default function OrdersPage() {
                   : "Enter the customer's phone number to send an M-Pesa payment request"}
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
               {mpesaError && (
                 <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3">
                   <div className="h-5 w-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -2970,7 +2970,7 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-1 pb-1">
                 {mpesaError ? (
                   <>
                     <Button
