@@ -61,7 +61,17 @@ export async function GET(request: Request) {
       query.status = 'COMPLETED'
     }
 
-    const findLimit = recentLimit > 0 ? recentLimit : 1000
+    const linkableOnlyRaw = searchParams.get('linkableOnly')
+    const linkableOnly =
+      linkableOnlyRaw === '1' ||
+      linkableOnlyRaw === 'true' ||
+      linkableOnlyRaw === 'yes'
+
+    // Oversample when filtering to linkable-only so we still return enough rows after dropping reserved txs
+    let findLimit = recentLimit > 0 ? recentLimit : 1000
+    if (linkableOnly && recentLimit > 0) {
+      findLimit = Math.min(500, Math.max(recentLimit * 8, recentLimit + 60))
+    }
 
     // Get transactions
     const transactions = await db
@@ -106,14 +116,22 @@ export async function GET(request: Request) {
     const formattedTransactions = transactions.map((tx: any) => ({
       ...(function () {
         const txId = tx._id?.toString()
-        const linkedOrder =
-          (txId ? orderByMpesaTxId.get(txId) : null) ||
-          (tx.account_reference ? orderById.get(String(tx.account_reference)) : null) ||
+        const orderFromTxId = txId ? orderByMpesaTxId.get(txId) : null
+        const docLinked = tx.linked_order_id != null && String(tx.linked_order_id).trim() !== ''
+        const paymentLinkedOrderId =
+          (orderFromTxId?.id != null ? String(orderFromTxId.id) : null) ||
+          (docLinked ? String(tx.linked_order_id).trim() : null) ||
           null
-        const linkedOrderId = linkedOrder?.id || tx.linked_order_id || null
+        /** Reserved = already attached to an order (DB); not merely account_reference match (STK may still need linking). */
+        const reservedByPayment = Boolean(paymentLinkedOrderId)
+
+        const refOrder = tx.account_reference ? orderById.get(String(tx.account_reference).trim()) : null
+        const linkedOrderId = paymentLinkedOrderId || refOrder?.id || null
+
         return {
           linked: Boolean(linkedOrderId),
           linkedOrderId,
+          reservedByPayment,
           mpesaRef: tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null,
         }
       })(),
@@ -134,10 +152,19 @@ export async function GET(request: Request) {
       updatedAt: tx.updatedAt instanceof Date ? tx.updatedAt.toISOString() : tx.updatedAt,
     }))
 
+    let out = formattedTransactions
+    if (linkableOnly) {
+      out = out.filter((t: any) => !t.reservedByPayment)
+      if (recentLimit > 0) {
+        out = out.slice(0, recentLimit)
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      transactions: formattedTransactions,
-      count: formattedTransactions.length,
+      transactions: out,
+      count: out.length,
+      linkableOnly: linkableOnly || undefined,
     })
   } catch (error: any) {
     console.error('[M-Pesa Transactions] Error:', error)

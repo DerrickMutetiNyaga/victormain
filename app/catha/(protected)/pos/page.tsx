@@ -62,6 +62,40 @@ interface CartItem extends Product {
   isCustom?: boolean
 }
 
+/** API line items: inventory rows use productId; custom rows never hit stock validation */
+function mapCartToOrderLineItems(cart: CartItem[]) {
+  return cart.map((item) => {
+    if (item.isCustom) {
+      return {
+        isCustomItem: true,
+        lineType: "custom" as const,
+        productId: null,
+        name: item.name.trim(),
+        quantity: item.quantity,
+        price: item.price,
+      }
+    }
+    return {
+      productId: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+    }
+  })
+}
+
+async function readOrderApiError(response: Response, fallback: string) {
+  try {
+    const err = await response.json()
+    const msg = typeof err?.error === "string" ? err.error : typeof err?.message === "string" ? err.message : fallback
+    console.error("[POS] Order API error:", response.status, err)
+    return msg
+  } catch {
+    console.error("[POS] Order API error:", response.status, "(no JSON body)")
+    return fallback
+  }
+}
+
 interface ProductWithSize extends Product {
   size?: string
 }
@@ -361,6 +395,24 @@ export default function POSPage() {
           
           // Load items into cart - try multiple matching strategies
           const cartItems: CartItem[] = orderData.items.map((item: any) => {
+            if (item.isCustomItem === true || item.lineType === "custom") {
+              return {
+                id: `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+                name: item.name || "Custom item",
+                category: "custom",
+                price: Number(item.price) || 0,
+                cost: 0,
+                stock: 999999,
+                minStock: 0,
+                image: "/placeholder.svg?height=150&width=200&query=custom",
+                barcode: "",
+                unit: "custom",
+                supplier: "Custom",
+                quantity: Number(item.quantity) || 1,
+                isCustom: true,
+              } as CartItem
+            }
+
             // Try exact ID match first
             let product = products.find(p => p.id === item.productId)
             
@@ -962,12 +1014,7 @@ export default function POSPage() {
 
     setMpesaError(null)
     setMpesaProcessing(true)
-    const orderItems = cart.map((item) => ({
-      productId: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-    }))
+    const orderItems = mapCartToOrderLineItems(cart)
 
     try {
       // Create order first with pending status
@@ -999,7 +1046,10 @@ export default function POSPage() {
         body: JSON.stringify(orderData),
       })
 
-      if (!orderResponse.ok) throw new Error('Failed to create order')
+      if (!orderResponse.ok) {
+        const msg = await readOrderApiError(orderResponse, "Failed to create order")
+        throw new Error(msg)
+      }
 
       // Initiate STK Push
       toast.loading("Initiating M-Pesa payment...", { id: "mpesa-push" })
@@ -1053,12 +1103,7 @@ export default function POSPage() {
 
     setIsProcessingGlovoPayment(true)
     const cartSnapshot = [...cart]
-    const orderItems = cartSnapshot.map((item) => ({
-      productId: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-    }))
+    const orderItems = mapCartToOrderLineItems(cartSnapshot)
     const normalizedPhone = customerPhone ? normalizeKenyaPhone(customerPhone) : null
     const orderData = {
       table: selectedTable || 0,
@@ -1084,9 +1129,9 @@ export default function POSPage() {
           body: JSON.stringify({ id: editingOrderId, ...orderData }),
         })
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          toast.error(errorData.error || errorData.message || 'Failed to update order')
-          throw new Error(errorData.message || 'Unknown error')
+          const msg = await readOrderApiError(response, "Failed to update order")
+          toast.error(msg)
+          throw new Error(msg)
         }
         setLastCartSnapshot(cartSnapshot)
         setLastPaymentMethod("glovo")
@@ -1115,9 +1160,9 @@ export default function POSPage() {
           body: JSON.stringify(completedOrder),
         })
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          toast.error(errorData.error || errorData.message || 'Failed to create order')
-          throw new Error(errorData.message || 'Unknown error')
+          const msg = await readOrderApiError(response, "Failed to create order")
+          toast.error(msg)
+          throw new Error(msg)
         }
         const createdOrder = await response.json()
         if (!createdOrder || !createdOrder.id) throw new Error('Invalid order creation response')
@@ -1133,21 +1178,16 @@ export default function POSPage() {
         setSelectedTable(null)
         setWaiterId("")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing Glovo payment:', error)
-      toast.error('Failed to process Glovo payment. Please try again.')
+      toast.error(error?.message || 'Failed to process Glovo payment. Please try again.')
     } finally {
       setIsProcessingGlovoPayment(false)
     }
   }
 
   const handleCheckout = async (method: string) => {
-    const orderItems = cart.map((item) => ({
-      productId: item.id,
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-    }))
+    const orderItems = mapCartToOrderLineItems(cart)
 
     // Handle M-Pesa STK Push
     if (method === "mpesa") {
@@ -1207,6 +1247,15 @@ export default function POSPage() {
     // Snapshot cart BEFORE clearing so the receipt can display items
     const cartSnapshot = [...cart]
 
+    console.log("[POS] Checkout payload:", {
+      editingOrderId,
+      method,
+      itemCount: orderItems.length,
+      lines: orderItems,
+      subtotal,
+      total,
+    })
+
     try {
       if (editingOrderId) {
         const response = await fetch('/api/catha/orders', {
@@ -1215,7 +1264,10 @@ export default function POSPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingOrderId, ...orderData }),
         })
-        if (!response.ok) throw new Error('Failed to update order')
+        if (!response.ok) {
+          const msg = await readOrderApiError(response, "Failed to update order")
+          throw new Error(msg)
+        }
 
         if (method === "pay-later") {
           alert(`Order ${editingOrderId} updated successfully!`)
@@ -1258,7 +1310,11 @@ export default function POSPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newOrder),
           })
-          if (!response.ok) throw new Error('Failed to create order')
+          if (!response.ok) {
+            const msg = await readOrderApiError(response, "Failed to create order")
+            toast.error(msg)
+            throw new Error(msg)
+          }
 
           const createdOrder = await response.json()
           setCreatedOrderId(createdOrder.id)
@@ -1287,7 +1343,11 @@ export default function POSPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(completedOrder),
         })
-        if (!response.ok) throw new Error('Failed to create order')
+        if (!response.ok) {
+          const msg = await readOrderApiError(response, "Failed to create order")
+          toast.error(msg)
+          throw new Error(msg)
+        }
 
         setLastCartSnapshot(cartSnapshot)
         setLastPaymentMethod(method)
@@ -1302,9 +1362,9 @@ export default function POSPage() {
         setSelectedPaymentMethod(null)
         setWaiterId("")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving order:', error)
-      alert('Failed to save order. Please try again.')
+      toast.error(error?.message || 'Failed to save order. Please try again.')
     }
   }
 

@@ -18,6 +18,7 @@ import {
 } from '@/lib/inventory-ops'
 import { formatCathaOrderForApi } from '@/lib/catha-order-payments'
 import { baseLinkedListFromOrder } from '@/lib/catha-append-mpesa-payment'
+import { filterInventoryStockLineItems, orderLineFingerprintParts } from '@/lib/catha-order-inventory-lines'
 
 function orderDocumentToJson(order: any) {
   const pay = formatCathaOrderForApi(order)
@@ -153,6 +154,14 @@ export async function POST(request: Request) {
       paymentStatus: order.paymentStatus,
       status: order.status,
       receivedPaymentStatus: body.paymentStatus,
+      itemCount: (order.items || []).length,
+      lineSummary: (order.items || []).map((it: any) => ({
+        isCustom: Boolean(it?.isCustomItem || it?.lineType === 'custom'),
+        productId: it?.productId ?? null,
+        name: it?.name,
+        quantity: it?.quantity,
+        price: it?.price,
+      })),
     })
 
     // Primary dedup: if an order with the same id already exists, return it (idempotent upsert)
@@ -164,11 +173,7 @@ export async function POST(request: Request) {
 
     // Secondary duplicate detection: Check for similar orders created within the last 5 seconds
     const fiveSecondsAgo = new Date(Date.now() - 5000)
-    const itemsFingerprint = JSON.stringify(
-      order.items
-        .map((item: any) => ({ productId: item.productId, quantity: item.quantity }))
-        .sort((a: any, b: any) => (a.productId || '').localeCompare(b.productId || ''))
-    )
+    const itemsFingerprint = JSON.stringify(orderLineFingerprintParts(order.items))
     const recentOrders = await db.collection('orders').find({
       table: order.table,
       total: order.total,
@@ -177,19 +182,15 @@ export async function POST(request: Request) {
     }).toArray()
 
     for (const recentOrder of recentOrders) {
-      const recentItemsFingerprint = JSON.stringify(
-        (recentOrder.items || [])
-          .map((item: any) => ({ productId: item.productId, quantity: item.quantity }))
-          .sort((a: any, b: any) => (a.productId || '').localeCompare(b.productId || ''))
-      )
+      const recentItemsFingerprint = JSON.stringify(orderLineFingerprintParts(recentOrder.items))
       if (recentItemsFingerprint === itemsFingerprint) {
         console.log('[Orders API] Duplicate order detected:', { existingId: recentOrder.id, newId: order.id })
         return noStoreJson(recentOrder, { status: 200 })
       }
     }
     
-    // Stock validation and deduction happen on order creation, regardless of payment status.
-    const items = (order.items || []).filter((i: any) => i.productId && i.quantity > 0)
+    // Stock validation and deduction: inventory products only (skip custom / manual lines).
+    const items = filterInventoryStockLineItems(order.items)
     const terminalStatuses = new Set(['cancelled', 'voided', 'deleted'])
     const shouldDeductOnCreate = !terminalStatuses.has(order.status) && items.length > 0
     const deducted: Array<{ productId: string; quantity: number; name?: string }> = []
@@ -260,9 +261,9 @@ export async function POST(request: Request) {
     
     return noStoreJson(savedOrder, { status: 201 })
   } catch (error: any) {
-    console.error('Error creating order:', error)
+    console.error('[Orders API] POST exception:', error?.message, error?.stack)
     return NextResponse.json(
-      { error: 'Failed to create order', message: error.message },
+      { error: 'Failed to create order', message: error?.message || 'Unknown error' },
       { status: 500 }
     )
   }
@@ -346,8 +347,8 @@ export async function PUT(request: Request) {
     const oldStatus = existingOrder.status
     const newStatus = updateData.status ?? oldStatus
     const userId = updateData.cashier || existingOrder.cashier || 'System'
-    const previousItems = (existingOrder.items || []).filter((i: any) => i.productId && Number(i.quantity) > 0)
-    const nextItems = (updateData.items ?? existingOrder.items ?? []).filter((i: any) => i.productId && Number(i.quantity) > 0)
+    const previousItems = filterInventoryStockLineItems(existingOrder.items)
+    const nextItems = filterInventoryStockLineItems(updateData.items ?? existingOrder.items ?? [])
     // Backward compatibility: legacy completed orders had stock deducted but no stockDeducted flag.
     const wasStockDeducted = existingOrder.stockDeducted === true || existingOrder.status === 'completed'
     const terminalStatuses = new Set(['cancelled', 'voided', 'deleted'])
@@ -511,8 +512,7 @@ export async function DELETE(request: Request) {
     const wasStockDeducted = order.stockDeducted === true || order.status === 'completed'
     if (wasStockDeducted && order.items && order.items.length > 0) {
       const userId = order.cashier || 'System'
-      for (const item of order.items) {
-        if (!item.productId || !item.quantity) continue
+      for (const item of filterInventoryStockLineItems(order.items)) {
         const qty = Number(item.quantity)
         await restoreStockAtomic(db, item.productId, qty, id, userId, item.name || 'Unknown', 'order_deleted')
       }

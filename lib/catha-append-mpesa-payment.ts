@@ -85,7 +85,7 @@ export async function appendMpesaPaymentToOrder(
   if (otherOrder) {
     return {
       ok: false,
-      error: `Transaction is already linked to order ${otherOrder.id}.`,
+      error: `This M-Pesa payment is already linked to order ${otherOrder.id}. Each payment can only be attached to one order.`,
       status: 409,
     }
   }
@@ -95,7 +95,7 @@ export async function appendMpesaPaymentToOrder(
   if (glo && String(glo) !== orderId) {
     return {
       ok: false,
-      error: `Transaction is already linked to order ${glo}.`,
+      error: `This M-Pesa payment is already linked to order ${String(glo)}. Each payment can only be attached to one order.`,
       status: 409,
     }
   }

@@ -210,6 +210,7 @@ export default function OrdersPage() {
   const [mpesaError, setMpesaError] = useState<{ message: string; status: string } | null>(null)
   const [mpesaCheckoutRequestId, setMpesaCheckoutRequestId] = useState<string | null>(null)
   const mpesaPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const mpesaCandidatesLoadModeRef = useRef<"recent" | "exact">("recent")
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [changeNotesDraft, setChangeNotesDraft] = useState("")
   const [markingChangeGiven, setMarkingChangeGiven] = useState(false)
@@ -720,7 +721,8 @@ export default function OrdersPage() {
       if (!processingPayment) return
       try {
         setLoadingMpesaCandidates(true)
-        let url = "/api/mpesa/transactions?"
+        mpesaCandidatesLoadModeRef.current = mode
+        let url = "/api/mpesa/transactions?linkableOnly=1&"
         if (mode === "recent") {
           url += "recentLimit=80"
         } else if (amount != null && !Number.isNaN(amount)) {
@@ -3033,7 +3035,7 @@ export default function OrdersPage() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold text-slate-700">Completed M-Pesa transactions</p>
+                        <p className="text-xs font-semibold text-slate-700">Available to link (unlinked only)</p>
                         <Button
                           type="button"
                           size="sm"
@@ -3068,23 +3070,22 @@ export default function OrdersPage() {
                       </div>
                       <div className="max-h-52 overflow-y-auto space-y-2">
                         {!loadingMpesaCandidates && mpesaLinkCandidates.length === 0 && (
-                          <p className="text-xs text-slate-500">No transactions in this list. Tap Refresh or search by amount.</p>
+                          <p className="text-xs text-slate-600">
+                            {mpesaCandidatesLoadModeRef.current === "exact"
+                              ? `No available M-Pesa transactions found for this amount (KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)}). Matching payments may already be linked to other orders, or none exist yet.`
+                              : "No available M-Pesa transactions right now. Tap Refresh or search by exact amount."}
+                          </p>
                         )}
-                        {mpesaLinkCandidates.map((tx) => {
-                          const linkedElsewhere = Boolean(tx.linked && tx.linkedOrderId && tx.linkedOrderId !== processingPayment.id)
-                          const linkedHere = Boolean(tx.linked && tx.linkedOrderId === processingPayment.id)
-                          const disabledPick = linkedElsewhere || linkedHere
-                          return (
+                        {mpesaLinkCandidates.map((tx) => (
                             <label
                               key={tx.id}
-                              className={`block rounded-md border p-2 text-xs ${disabledPick ? "bg-slate-100 border-slate-300 opacity-80" : "bg-white border-slate-200 cursor-pointer"}`}
+                              className="block rounded-md border p-2 text-xs bg-white border-slate-200 cursor-pointer hover:border-green-300"
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <input
                                   type="radio"
                                   name="selected-mpesa-transaction"
                                   className="mt-1"
-                                  disabled={disabledPick}
                                   checked={selectedMpesaTransactionId === tx.id}
                                   onChange={() => setSelectedMpesaTransactionId(tx.id)}
                                 />
@@ -3095,26 +3096,10 @@ export default function OrdersPage() {
                                   <p>Phone: {tx.phoneNumber || "—"}</p>
                                   <p>Date/Time: {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "—"}</p>
                                   <p>Type: {tx.transactionType || "—"}</p>
-                                  <p
-                                    className={
-                                      linkedElsewhere
-                                        ? "text-amber-800 font-semibold"
-                                        : linkedHere
-                                          ? "text-slate-600 font-semibold"
-                                          : "text-emerald-700 font-semibold"
-                                    }
-                                  >
-                                    {linkedElsewhere
-                                      ? `Already linked to order ${tx.linkedOrderId}`
-                                      : linkedHere
-                                        ? "Already linked to this order"
-                                        : "Available to link"}
-                                  </p>
                                 </div>
                               </div>
                             </label>
-                          )
-                        })}
+                          ))}
                       </div>
                     </div>
                     )
