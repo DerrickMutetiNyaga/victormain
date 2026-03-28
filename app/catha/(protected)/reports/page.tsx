@@ -1,165 +1,122 @@
+ "use client"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { DollarSign, TrendingUp, ShoppingBag, Percent, Download, Calendar } from "lucide-react"
-import { getDatabase } from "@/lib/mongodb"
+import { toast } from "sonner"
 
-type ReportsSummary = {
-  todayRevenue: number
-  monthRevenue: number
-  todayOrders: number
-  monthOrders: number
-}
-
-async function getReportsSummary(): Promise<ReportsSummary> {
-  const db = await getDatabase("infusion_jaba")
-  const now = new Date()
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-
-  const [todayAgg] = await db
-    .collection("orders")
-    .aggregate<{ total: number; count: number }>([
-      { $match: { status: "completed", timestamp: { $gte: startToday, $lte: now } } },
-      { $group: { _id: null, total: { $sum: "$total" }, count: { $sum: 1 } } },
-    ])
-    .toArray()
-
-  const [monthAgg] = await db
-    .collection("orders")
-    .aggregate<{ total: number; count: number }>([
-      { $match: { status: "completed", timestamp: { $gte: startMonth, $lte: now } } },
-      { $group: { _id: null, total: { $sum: "$total" }, count: { $sum: 1 } } },
-    ])
-    .toArray()
-
-  const todayRevenue = todayAgg?.total ?? 0
-  const todayOrders = todayAgg?.count ?? 0
-  const monthRevenue = monthAgg?.total ?? 0
-  const monthOrders = monthAgg?.count ?? 0
-
-  return { todayRevenue, monthRevenue, todayOrders, monthOrders }
-}
-
-type PaymentBreakdownRow = {
-  method: string
-  total: number
-  count: number
-}
-
-type TopProductRow = {
-  productId: string
-  name: string
-  revenue: number
-  quantity: number
-}
-
-async function getPaymentBreakdown(): Promise<PaymentBreakdownRow[]> {
-  const db = await getDatabase("infusion_jaba")
-  const rows = await db
-    .collection("orders")
-    .aggregate<PaymentBreakdownRow>([
-      { $match: { status: "completed" } },
-      {
-        $group: {
-          _id: { $ifNull: ["$paymentMethod", "unknown"] },
-          total: { $sum: "$total" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { total: -1 } },
-    ])
-    .toArray()
-
-  return rows.map((r) => ({
-    method: r.method ?? r["_id"],
-    total: r.total,
-    count: r.count,
-  }))
-}
-
-async function getTopProducts(limit = 5): Promise<TopProductRow[]> {
-  const db = await getDatabase("infusion_jaba")
-  const rows = await db
-    .collection("orders")
-    .aggregate<TopProductRow>([
-      { $match: { status: "completed" } },
-      { $unwind: "$items" },
-      {
-        $group: {
-          _id: "$items.productId",
-          name: { $first: "$items.name" },
-          revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
-          quantity: { $sum: "$items.quantity" },
-        },
-      },
-      { $sort: { revenue: -1 } },
-      { $limit: limit },
-    ])
-    .toArray()
-
-  return rows.map((r) => ({
-    productId: r.productId ?? r["_id"],
-    name: r.name,
-    revenue: r.revenue,
-    quantity: r.quantity,
-  }))
+type ReportData = {
+  summary: {
+    revenue: number
+    orders: number
+    avgOrderValue: number
+  }
+  paymentBreakdown: Array<{ method: string; total: number; count: number }>
+  topProducts: Array<{ productId: string; name: string; revenue: number; quantity: number }>
 }
 
 function formatKsh(amount: number): string {
   return `Ksh ${amount.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`
 }
 
-export default async function ReportsPage() {
-  const [summary, paymentBreakdown, topProducts] = await Promise.all([
-    getReportsSummary(),
-    getPaymentBreakdown(),
-    getTopProducts(),
-  ])
-  const avgToday = summary.todayOrders > 0 ? summary.todayRevenue / summary.todayOrders : 0
-  const avgMonth = summary.monthOrders > 0 ? summary.monthRevenue / summary.monthOrders : 0
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10)
+}
 
-  const stats = [
+export default function ReportsPage() {
+  const now = new Date()
+  const [startDate, setStartDate] = useState<string>(isoDate(new Date(now.getFullYear(), now.getMonth(), 1)))
+  const [endDate, setEndDate] = useState<string>(isoDate(now))
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<ReportData>({
+    summary: { revenue: 0, orders: 0, avgOrderValue: 0 },
+    paymentBreakdown: [],
+    topProducts: [],
+  })
+
+  const loadReports = useCallback(async () => {
+    if (!startDate || !endDate) {
+      toast.error("Please select both start and end dates.")
+      return
+    }
+    if (startDate > endDate) {
+      toast.error("Start date cannot be after end date.")
+      return
+    }
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ startDate, endDate })
+      const response = await fetch(`/api/catha/reports?${params.toString()}`, { cache: "no-store" })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result?.error || "Failed to load reports")
+      setData({
+        summary: result.summary || { revenue: 0, orders: 0, avgOrderValue: 0 },
+        paymentBreakdown: result.paymentBreakdown || [],
+        topProducts: result.topProducts || [],
+      })
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to load reports")
+    } finally {
+      setLoading(false)
+    }
+  }, [startDate, endDate])
+
+  useEffect(() => {
+    loadReports()
+  }, [loadReports])
+
+  const handleExportReport = () => {
+    if (!startDate || !endDate) {
+      toast.error("Please select date range first.")
+      return
+    }
+    if (startDate > endDate) {
+      toast.error("Start date cannot be after end date.")
+      return
+    }
+    const params = new URLSearchParams({ startDate, endDate, format: "csv" })
+    window.open(`/api/catha/reports?${params.toString()}`, "_blank")
+  }
+
+  const stats = useMemo(() => [
     {
-      title: "Today Revenue",
-      value: formatKsh(summary.todayRevenue),
-      note: `${summary.todayOrders} completed orders`,
+      title: "Revenue",
+      value: formatKsh(data.summary.revenue),
+      note: `${data.summary.orders} completed orders`,
       icon: DollarSign,
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
     {
-      title: "Month Revenue",
-      value: formatKsh(summary.monthRevenue),
-      note: `${summary.monthOrders} completed orders`,
+      title: "Orders",
+      value: `${data.summary.orders}`,
+      note: "Completed orders in range",
       icon: TrendingUp,
       color: "text-chart-2",
       bgColor: "bg-chart-2/10",
     },
     {
-      title: "Avg Order (Today)",
-      value: summary.todayOrders > 0 ? formatKsh(Math.round(avgToday)) : "—",
-      note: summary.todayOrders > 0 ? "Average ticket value" : "No completed orders yet",
+      title: "Avg Order Value",
+      value: data.summary.orders > 0 ? formatKsh(Math.round(data.summary.avgOrderValue)) : "—",
+      note: data.summary.orders > 0 ? "Average ticket value" : "No completed orders yet",
       icon: ShoppingBag,
       color: "text-chart-3",
       bgColor: "bg-chart-3/10",
     },
     {
-      title: "Avg Order (Month)",
-      value: summary.monthOrders > 0 ? formatKsh(Math.round(avgMonth)) : "—",
-      note: summary.monthOrders > 0 ? "Month-to-date average ticket" : "No completed orders yet",
+      title: "Date Range",
+      value: `${startDate} → ${endDate}`,
+      note: "Active report period",
       icon: Percent,
       color: "text-chart-4",
       bgColor: "bg-chart-4/10",
     },
-  ] as const
+  ], [data.summary, startDate, endDate])
 
-  const now = new Date()
-  const monthLabel = now.toLocaleDateString("en-KE", {
-    month: "long",
-    year: "numeric",
-  })
+  const rangeLabel = `${startDate} to ${endDate}`
 
   return (
     <>
@@ -168,20 +125,35 @@ export default async function ReportsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Performance Overview</h2>
-            <p className="text-sm text-muted-foreground">{monthLabel}</p>
+            <p className="text-sm text-muted-foreground">{rangeLabel}</p>
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" className="gap-2 bg-transparent">
+          <div className="flex gap-3 items-center">
+            <div className="flex items-center gap-2 rounded-md border px-2 py-1.5">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-8 w-[145px] border-0 p-0 shadow-none focus-visible:ring-0"
+              />
+              <span className="text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-8 w-[145px] border-0 p-0 shadow-none focus-visible:ring-0"
+              />
+            </div>
+            <Button variant="outline" className="gap-2 bg-transparent" onClick={loadReports} disabled={loading}>
               <Calendar className="h-4 w-4" />
               Date Range
             </Button>
-            <Button variant="outline" className="gap-2 bg-transparent">
+            <Button variant="outline" className="gap-2 bg-transparent" onClick={handleExportReport}>
               <Download className="h-4 w-4" />
               Export Report
             </Button>
           </div>
         </div>
-
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => (
@@ -206,7 +178,7 @@ export default async function ReportsPage() {
         <Card className="border-border bg-card">
           <CardContent className="p-5 space-y-3">
             <h3 className="text-sm font-semibold text-foreground">Revenue by payment method</h3>
-            {paymentBreakdown.length === 0 ? (
+            {data.paymentBreakdown.length === 0 ? (
               <p className="text-sm text-muted-foreground">No completed orders yet.</p>
             ) : (
               <Table>
@@ -218,7 +190,7 @@ export default async function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paymentBreakdown.map((row) => (
+                  {data.paymentBreakdown.map((row) => (
                     <TableRow key={row.method}>
                       <TableCell className="capitalize">
                         {row.method || "Unknown"}
@@ -239,7 +211,7 @@ export default async function ReportsPage() {
         <Card className="border-border bg-card">
           <CardContent className="p-5 space-y-3">
             <h3 className="text-sm font-semibold text-foreground">Top products by revenue</h3>
-            {topProducts.length === 0 ? (
+            {data.topProducts.length === 0 ? (
               <p className="text-sm text-muted-foreground">No completed orders yet.</p>
             ) : (
               <Table>
@@ -252,7 +224,7 @@ export default async function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {topProducts.map((row, index) => (
+                  {data.topProducts.map((row, index) => (
                     <TableRow key={row.productId || index}>
                       <TableCell className="text-xs text-muted-foreground">#{index + 1}</TableCell>
                       <TableCell>{row.name || row.productId}</TableCell>

@@ -176,7 +176,14 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">{batch.batchNumber}</h1>
-              <p className="text-sm text-muted-foreground font-medium">{batch.flavor} • {batch.productCategory}</p>
+              <p className="text-sm text-muted-foreground font-medium">
+                {batch.displayFlavorLabel || batch.flavor} • {batch.productCategory}
+                {batch.batchType === "flavoured" && (
+                  <span className="ml-2 text-xs rounded-md border border-violet-300 px-1.5 py-0.5 text-violet-800 dark:text-violet-200">
+                    Flavoured output
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </div>
@@ -186,6 +193,105 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
       </header>
 
       <div className="p-6 bg-gradient-to-br from-slate-50 via-background to-slate-50 dark:from-slate-950 dark:via-background dark:to-slate-950 min-h-screen">
+        {(batch.flavourOutputs?.length > 0 ||
+          batch.parentBatch ||
+          batch.batchType === "neutral" ||
+          batch.legacyFlavourFirstBatch) && (
+          <Card className="mb-6 border-violet-200/80 dark:border-violet-900/40 bg-white/90 dark:bg-slate-900/80 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                <FlaskConical className="h-5 w-5 text-violet-600" />
+                Infusion & traceability
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {batch.parentBatch && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40 p-4">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Neutral parent batch</p>
+                  <Link
+                    href={`/jaba/batches/${batch.parentBatch.id}`}
+                    className="text-base font-semibold text-violet-700 dark:text-violet-300 hover:underline"
+                  >
+                    {batch.parentBatch.batchNumber}
+                  </Link>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {batch.parentBatch.flavor} · Produced {batch.parentBatch.totalLitres}L · Remaining neutral{" "}
+                    {(batch.parentBatch.neutralRemainingLitres ?? batch.parentBatch.outputSummary?.remainingLitres ?? 0).toFixed(2)}L
+                  </p>
+                </div>
+              )}
+              {!batch.parentBatch && batch.batchType === "neutral" && (
+                <div className="grid gap-3 sm:grid-cols-3 text-sm">
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Neutral produced</p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{batch.totalLitres}L</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Allocated to flavours</p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                      {(batch.infusedAllocatedLitres ?? 0).toFixed(2)}L
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                    <p className="text-xs text-muted-foreground mb-0.5">Remaining neutral</p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                      {(batch.neutralRemainingLitres ?? batch.outputSummary?.remainingLitres ?? 0).toFixed(2)}L
+                    </p>
+                  </div>
+                </div>
+              )}
+              {batch.legacyFlavourFirstBatch && (
+                <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-md px-3 py-2">
+                  Legacy batch: flavour was assigned at creation. New production should use neutral base batches, then Infuse on the batch list.
+                </p>
+              )}
+              {batch.flavourOutputs?.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Flavoured outputs</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Output</TableHead>
+                          <TableHead className="text-xs">Flavour</TableHead>
+                          <TableHead className="text-xs">Volume</TableHead>
+                          <TableHead className="text-xs">Infusion date</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {batch.flavourOutputs.map((row: any) => (
+                          <TableRow key={row._id || row.id}>
+                            <TableCell className="font-mono text-sm">
+                              <Link href={`/jaba/batches/${row._id || row.id}`} className="text-violet-700 dark:text-violet-300 hover:underline">
+                                {row.batchNumber}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-sm">{row.flavor}</TableCell>
+                            <TableCell className="text-sm">
+                              {(row.infusedQuantityLitres ?? row.totalLitres).toFixed(2)}L
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.infusionDate
+                                ? parseDate(row.infusionDate).toLocaleDateString()
+                                : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {row.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
           <Card className="border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-900/20 shadow-lg hover:shadow-xl transition-shadow">

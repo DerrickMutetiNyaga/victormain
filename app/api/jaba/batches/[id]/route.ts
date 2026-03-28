@@ -1,8 +1,38 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
+import {
+  NEUTRAL_BATCH_DISPLAY_FLAVOR,
+  normalizeBatchType,
+  isLegacyFlavourFirstBatch,
+  getInfusedAllocated,
+  getNeutralRemainingLitres,
+} from '@/lib/jaba-batch-utils'
 
 export const runtime = 'nodejs'
+
+function serializeBatchDoc(batch: any) {
+  return {
+    ...batch,
+    _id: batch._id.toString(),
+    id: batch._id.toString(),
+    date: batch.date instanceof Date ? batch.date.toISOString() : batch.date,
+    infusionDate:
+      batch.infusionDate instanceof Date ? batch.infusionDate.toISOString() : batch.infusionDate,
+    productionStartTime:
+      batch.productionStartTime instanceof Date
+        ? batch.productionStartTime.toISOString()
+        : batch.productionStartTime,
+    productionEndTime:
+      batch.productionEndTime instanceof Date
+        ? batch.productionEndTime.toISOString()
+        : batch.productionEndTime,
+    packagingTime:
+      batch.packagingTime instanceof Date ? batch.packagingTime.toISOString() : batch.packagingTime,
+    createdAt: batch.createdAt instanceof Date ? batch.createdAt.toISOString() : batch.createdAt,
+    updatedAt: batch.updatedAt instanceof Date ? batch.updatedAt.toISOString() : batch.updatedAt,
+  }
+}
 
 // PUT update batch by ID (supports QC updates)
 export async function PUT(
@@ -118,22 +148,28 @@ export async function PUT(
     }
     if (totalLitres !== undefined) {
       const newTotalLitres = Number(totalLitres)
-      
-      // Preserve expectedLitres - if it doesn't exist and batch is being marked as processed,
-      // use the current totalLitres as expected before updating
-      // This handles cases where batches were created before expectedLitres field was added
+      const infused = Number((existing as any).infusedAllocatedLitres) || 0
+      if (!existing.parentBatchId && newTotalLitres + 1e-6 < infused) {
+        return NextResponse.json(
+          {
+            error: `Produced volume (${newTotalLitres}L) cannot be less than already allocated to flavours (${infused.toFixed(2)}L).`,
+          },
+          { status: 400 }
+        )
+      }
+
       if (!existing.expectedLitres && !updateData.expectedLitres) {
-        // If batch is being marked as processed, preserve the original totalLitres as expected
         if (status === 'Processed' || existing.status === 'Processing') {
           updateData.expectedLitres = existing.totalLitres || newTotalLitres
         }
       }
-      // Don't overwrite expectedLitres if it already exists or was explicitly set
-      
+
       updateData.totalLitres = newTotalLitres
-      // When totalLitres is updated (e.g., when marking as processed with actual produced volume),
-      // also update remainingLitres to match the produced volume
-      updateData['outputSummary.remainingLitres'] = newTotalLitres
+      if (!existing.parentBatchId) {
+        updateData['outputSummary.remainingLitres'] = Math.max(0, newTotalLitres - infused)
+      } else {
+        updateData['outputSummary.remainingLitres'] = newTotalLitres
+      }
     }
     // Handle production variance reason
     if (body.productionVarianceReason !== undefined) {
@@ -368,13 +404,47 @@ export async function GET(
       )
     }
 
+    const sid = batch._id.toString()
+    let flavourOutputs: any[] = []
+    let parentBatchSummary: any = null
+
+    if (!batch.parentBatchId) {
+      const kids = await db
+        .collection('jaba_batches')
+        .find({ parentBatchId: sid })
+        .sort({ infusionDate: -1, createdAt: -1 })
+        .toArray()
+      flavourOutputs = kids.map(serializeBatchDoc)
+    } else {
+      const parent = await db.collection('jaba_batches').findOne({
+        _id: new ObjectId(String(batch.parentBatchId)),
+      })
+      if (parent) {
+        const ps = serializeBatchDoc(parent)
+        parentBatchSummary = {
+          ...ps,
+          batchType: normalizeBatchType(parent),
+          infusedAllocatedLitres: getInfusedAllocated(parent),
+          neutralRemainingLitres: getNeutralRemainingLitres(parent),
+          legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(parent),
+        }
+      }
+    }
+
+    const bt = normalizeBatchType(batch)
+    const serialized = serializeBatchDoc(batch)
+
     return NextResponse.json({
       batch: {
-        ...batch,
-        _id: batch._id.toString(),
-        id: batch._id.toString(),
-        date: batch.date instanceof Date ? batch.date.toISOString() : batch.date,
-      }
+        ...serialized,
+        batchType: bt,
+        legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(batch),
+        infusedAllocatedLitres: !batch.parentBatchId ? getInfusedAllocated(batch) : undefined,
+        neutralRemainingLitres: !batch.parentBatchId ? getNeutralRemainingLitres(batch) : undefined,
+        flavourOutputs,
+        parentBatch: parentBatchSummary,
+        displayFlavorLabel: batch.flavor || NEUTRAL_BATCH_DISPLAY_FLAVOR,
+      },
     })
   } catch (error: any) {
     console.error('[Batches API] ❌ Error fetching batch:', error)

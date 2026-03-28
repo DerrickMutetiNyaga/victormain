@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
+import {
+  NEUTRAL_BATCH_DISPLAY_FLAVOR,
+  normalizeBatchType,
+  isLegacyFlavourFirstBatch,
+  getNeutralRemainingLitres,
+  getInfusedAllocated,
+} from '@/lib/jaba-batch-utils'
 
 export const runtime = 'nodejs'
 
@@ -77,42 +84,97 @@ export async function GET(request: Request) {
     const db = client.db('infusion_jaba')
     console.log('Using database: infusion_jaba')
     
-    // Build query
-    const query: any = {}
-    
-    if (flavor && flavor !== 'all') {
-      query.flavor = flavor
+    const rootQuery: any = {
+      $or: [{ parentBatchId: null }, { parentBatchId: { $exists: false } }],
     }
-    
+
     if (status && status !== 'all') {
-      query.status = status
-    }
-    
-    if (search) {
-      query.$or = [
-        { batchNumber: { $regex: search, $options: 'i' } },
-        { flavor: { $regex: search, $options: 'i' } }
-      ]
+      rootQuery.status = status
     }
 
-    console.log('Querying jaba_batches collection with query:', JSON.stringify(query))
-    const batches = await db.collection('jaba_batches')
-      .find(query)
-      .sort({ date: -1 })
-      .toArray()
+    console.log('Querying jaba_batches (roots):', JSON.stringify(rootQuery))
+    let roots = await db.collection('jaba_batches').find(rootQuery).sort({ date: -1 }).toArray()
 
-    console.log(`Found ${batches.length} batches`)
+    const rootIds = roots.map((r) => r._id.toString())
+    const allChildren =
+      rootIds.length > 0
+        ? await db
+            .collection('jaba_batches')
+            .find({ parentBatchId: { $in: rootIds } })
+            .sort({ infusionDate: -1, createdAt: -1 })
+            .toArray()
+        : []
 
-    // Convert MongoDB dates to ISO strings for JSON serialization
-    const formattedBatches = batches.map(batch => ({
+    const childrenByParent = new Map<string, any[]>()
+    for (const c of allChildren) {
+      const pid = String(c.parentBatchId)
+      if (!childrenByParent.has(pid)) childrenByParent.set(pid, [])
+      childrenByParent.get(pid)!.push(c)
+    }
+
+    const serializeDates = (batch: any) => ({
       ...batch,
-      id: batch._id.toString(), // Keep id for compatibility
+      id: batch._id.toString(),
       _id: batch._id.toString(),
       date: batch.date instanceof Date ? batch.date.toISOString() : batch.date,
-      productionStartTime: batch.productionStartTime instanceof Date ? batch.productionStartTime.toISOString() : batch.productionStartTime,
-      productionEndTime: batch.productionEndTime instanceof Date ? batch.productionEndTime.toISOString() : batch.productionEndTime,
-      packagingTime: batch.packagingTime instanceof Date ? batch.packagingTime.toISOString() : batch.packagingTime,
-    }))
+      infusionDate:
+        batch.infusionDate instanceof Date ? batch.infusionDate.toISOString() : batch.infusionDate,
+      productionStartTime:
+        batch.productionStartTime instanceof Date
+          ? batch.productionStartTime.toISOString()
+          : batch.productionStartTime,
+      productionEndTime:
+        batch.productionEndTime instanceof Date
+          ? batch.productionEndTime.toISOString()
+          : batch.productionEndTime,
+      packagingTime:
+        batch.packagingTime instanceof Date ? batch.packagingTime.toISOString() : batch.packagingTime,
+    })
+
+    if (flavor && flavor !== 'all') {
+      roots = roots.filter((r) => {
+        const id = r._id.toString()
+        const kids = childrenByParent.get(id) || []
+        if (r.flavor === flavor) return true
+        return kids.some((k) => k.flavor === flavor)
+      })
+    }
+
+    if (search) {
+      const q = search.toLowerCase()
+      roots = roots.filter((r) => {
+        const id = r._id.toString()
+        const kids = childrenByParent.get(id) || []
+        if ((r.batchNumber || '').toLowerCase().includes(q)) return true
+        if ((r.flavor || '').toLowerCase().includes(q)) return true
+        return kids.some(
+          (k) =>
+            (k.batchNumber || '').toLowerCase().includes(q) || (k.flavor || '').toLowerCase().includes(q)
+        )
+      })
+    }
+
+    const formattedBatches = roots.map((batch) => {
+      const id = batch._id.toString()
+      const bt = normalizeBatchType(batch)
+      const legacy = isLegacyFlavourFirstBatch(batch)
+      const kids = (childrenByParent.get(id) || []).map(serializeDates)
+      const infused = getInfusedAllocated(batch)
+      const neutralRemainingLitres =
+        bt === 'neutral' && !batch.parentBatchId ? getNeutralRemainingLitres(batch) : 0
+
+      return {
+        ...serializeDates(batch),
+        batchType: bt,
+        legacyFlavourFirstBatch: legacy,
+        infusedAllocatedLitres: infused,
+        neutralRemainingLitres,
+        flavourOutputCount: kids.length,
+        flavourOutputs: kids,
+      }
+    })
+
+    console.log(`Found ${formattedBatches.length} root batches`)
 
     return NextResponse.json({ batches: formattedBatches })
   } catch (error: any) {
@@ -137,22 +199,24 @@ export async function POST(request: Request) {
     const {
       batchNumber,
       date,
-      flavor,
       totalLitres,
       supervisor,
       shift,
       tankNumber,
       status,
       ingredients,
+      notes,
     } = body
 
-    // Validate required fields
-    if (!batchNumber || !date || !flavor || !totalLitres || !supervisor || !shift || !tankNumber) {
+    // Validate required fields (neutral/base batch — no flavour at creation)
+    if (!batchNumber || !date || !totalLitres || !supervisor || !shift || !tankNumber) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       )
     }
+
+    const flavor = NEUTRAL_BATCH_DISPLAY_FLAVOR
 
     console.log('[Batches API] Creating new batch:', batchNumber)
 
@@ -274,13 +338,19 @@ export async function POST(request: Request) {
     }
 
     // Prepare batch document
+    const vol = Number(totalLitres)
     const batchData = {
       batchNumber,
       date: new Date(date),
       flavor,
-      productCategory: "Infusion Jaba", // Fixed product name
-      expectedLitres: Number(totalLitres), // Store expected volume separately
-      totalLitres: Number(totalLitres), // Initially same as expected, will be updated when processed
+      batchType: 'neutral' as const,
+      parentBatchId: null as null,
+      infusedAllocatedLitres: 0,
+      infusionAllocationStatus: 'none' as const,
+      notes: typeof notes === 'string' ? notes.trim() || null : null,
+      productCategory: 'Infusion Jaba',
+      expectedLitres: vol,
+      totalLitres: vol,
       bottles500ml: 0,
       bottles1L: 0,
       bottles2L: 0,
@@ -290,10 +360,10 @@ export async function POST(request: Request) {
       shift,
       tankNumber: tankNumber.trim(),
       ingredients: ingredients || [],
-      locked: false, // Batch is locked when status becomes "Processed"
+      locked: false,
       outputSummary: {
         totalBottles: 0,
-        remainingLitres: Number(totalLitres),
+        remainingLitres: vol,
         breakdown: [],
       },
       createdAt: new Date(),
@@ -364,7 +434,7 @@ export async function PUT(request: Request) {
     }
 
     // Validate required fields
-    if (!batchNumber || !date || !flavor || !totalLitres || !supervisor || !shift) {
+    if (!batchNumber || !date || !totalLitres || !supervisor || !shift) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -386,18 +456,30 @@ export async function PUT(request: Request) {
       )
     }
 
+    const resolvedFlavor =
+      flavor !== undefined && String(flavor).trim()
+        ? String(flavor).trim()
+        : (existing.flavor as string) || NEUTRAL_BATCH_DISPLAY_FLAVOR
+
+    const newTotal = Number(totalLitres)
+    const infused = Number((existing as any).infusedAllocatedLitres) || 0
+
     // Prepare update data
     const updateData: any = {
       batchNumber,
       date: new Date(date),
-      flavor,
-      productCategory: "Infusion Jaba",
-      totalLitres: Number(totalLitres),
+      flavor: resolvedFlavor,
+      productCategory: 'Infusion Jaba',
+      totalLitres: newTotal,
       supervisor,
       shift,
       status: status || existing.status,
       ingredients: ingredients || existing.ingredients,
       updatedAt: new Date(),
+    }
+
+    if (!(existing as any).parentBatchId) {
+      updateData['outputSummary.remainingLitres'] = Math.max(0, newTotal - infused)
     }
     
     // Handle expectedLitres - preserve if exists, or set if provided

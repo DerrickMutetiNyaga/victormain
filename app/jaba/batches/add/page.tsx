@@ -14,6 +14,8 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { useEffect } from "react"
 import { cn } from "@/lib/utils"
+import { NEUTRAL_BATCH_DISPLAY_FLAVOR } from "@/lib/jaba-batch-utils"
+import { Textarea } from "@/components/ui/textarea"
 
 interface RawMaterial {
   _id: string
@@ -64,21 +66,16 @@ export default function AddBatchPage() {
     fetchNextBatchNumber()
   }, [])
   const [date, setDate] = useState(new Date().toISOString().split("T")[0])
-  const [flavor, setFlavor] = useState("")
   const [supervisor, setSupervisor] = useState("")
   const [shift, setShift] = useState("Morning")
   const [expectedLitres, setExpectedLitres] = useState("")
   const [tankNumber, setTankNumber] = useState("")
-  const [status, setStatus] = useState("Processing")
+  const [status, setStatus] = useState("Created")
+  const [notes, setNotes] = useState("")
   const [selectedMaterials, setSelectedMaterials] = useState<{ material: string; quantity: string; unit: string; materialId?: string }[]>([])
   const [materialSelections, setMaterialSelections] = useState<{ [key: string]: string }>({}) // materialId -> quantity
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [flavors, setFlavors] = useState<{ _id: string; name: string }[]>([])
-  const [loadingFlavors, setLoadingFlavors] = useState(true)
-  const [newFlavor, setNewFlavor] = useState("")
-  const [showAddFlavor, setShowAddFlavor] = useState(false)
-  const [isAddingFlavor, setIsAddingFlavor] = useState(false)
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
   const [loadingMaterials, setLoadingMaterials] = useState(true)
 
@@ -284,99 +281,6 @@ export default function AddBatchPage() {
     fetchRawMaterials()
   }, [])
 
-  // Fetch flavors from database
-  useEffect(() => {
-    const fetchFlavors = async () => {
-      try {
-        setLoadingFlavors(true)
-        const response = await fetch('/api/jaba/flavors')
-        
-        // Clone response to read it multiple times if needed
-        const responseClone = response.clone()
-        
-        // Check if response is JSON
-        const contentType = response.headers.get('content-type')
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await responseClone.text()
-          console.error('Non-JSON response from flavors API:', text.substring(0, 200))
-          throw new Error('Server returned non-JSON response')
-        }
-        
-        let data
-        try {
-          data = await response.json()
-        } catch (parseError) {
-          const text = await responseClone.text()
-          console.error('Failed to parse JSON response:', text.substring(0, 200))
-          throw new Error('Invalid JSON response from server')
-        }
-        
-        if (response.ok) {
-          setFlavors(data.flavors || [])
-        } else {
-          console.error('Failed to fetch flavors:', data.error)
-        }
-      } catch (error) {
-        console.error('Error fetching flavors:', error)
-      } finally {
-        setLoadingFlavors(false)
-      }
-    }
-    fetchFlavors()
-  }, [])
-
-  const handleAddFlavor = async () => {
-    if (!newFlavor.trim()) {
-      toast.error("Please enter a flavor name")
-      return
-    }
-
-    setIsAddingFlavor(true)
-    try {
-      const response = await fetch('/api/jaba/flavors', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: newFlavor.trim() }),
-      })
-
-      // Clone response to read it multiple times if needed
-      const responseClone = response.clone()
-      
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type')
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await responseClone.text()
-        console.error('Non-JSON response from flavors API:', text.substring(0, 200))
-        throw new Error('Server returned non-JSON response')
-      }
-
-      let data
-      try {
-        data = await response.json()
-      } catch (parseError) {
-        const text = await responseClone.text()
-        console.error('Failed to parse JSON response:', text.substring(0, 200))
-        throw new Error('Invalid JSON response from server')
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add flavor')
-      }
-
-      toast.success(`Flavor "${newFlavor}" added successfully!`)
-      setFlavors([...flavors, data.flavor])
-      setNewFlavor("")
-      setShowAddFlavor(false)
-      setFlavor(data.flavor.name)
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to add flavor')
-    } finally {
-      setIsAddingFlavor(false)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -385,10 +289,6 @@ export default function AddBatchPage() {
     
     if (!date || date.trim() === "") {
       missingFields.push("Production Date")
-    }
-    
-    if (!flavor || flavor.trim() === "") {
-      missingFields.push("Flavor")
     }
     
     if (!supervisor || supervisor.trim() === "") {
@@ -470,12 +370,13 @@ export default function AddBatchPage() {
         body: JSON.stringify({
           batchNumber,
           date,
-          flavor,
+          flavor: NEUTRAL_BATCH_DISPLAY_FLAVOR,
           totalLitres: Number(expectedLitres),
           supervisor,
           shift,
           tankNumber: tankNumber.trim(),
           status,
+          notes: notes.trim() || undefined,
           ingredients,
         }),
       })
@@ -520,7 +421,7 @@ export default function AddBatchPage() {
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Create Production Batch</h1>
-          <p className="text-sm text-muted-foreground">Plan and create a new manufacturing batch</p>
+          <p className="text-sm text-muted-foreground">Create a neutral base batch — add flavours later after processing</p>
         </div>
         <Link href="/jaba/batches">
           <Button variant="outline">Cancel</Button>
@@ -569,93 +470,37 @@ export default function AddBatchPage() {
               </div>
             </div>
 
-            {/* Product & Flavor Section */}
+            {/* Neutral base batch */}
             <div className="space-y-4 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/30 shadow-md">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-1">
                 <div className="p-2 rounded-lg bg-blue-600 dark:bg-blue-700 shadow-sm">
                   <Package className="h-4 w-4 text-white" />
                 </div>
-                <Label className="text-base font-bold text-blue-900 dark:text-blue-100">Product Information</Label>
+                <Label className="text-base font-bold text-blue-900 dark:text-blue-100">Neutral base batch</Label>
               </div>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label htmlFor="flavor" className="font-semibold text-foreground">
-                      Flavor <span className="text-red-600 dark:text-red-400 font-bold">*</span>
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowAddFlavor(!showAddFlavor)}
-                      className="border-2 font-medium"
-                    >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Add New
-                    </Button>
-                  </div>
-                  {showAddFlavor && (
-                    <div className="mb-3 p-3 border-2 border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-slate-900 shadow-md">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Enter flavor name (e.g., dawa, pineapple)"
-                          value={newFlavor}
-                          onChange={(e) => setNewFlavor(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddFlavor()}
-                          className="flex-1 border-2"
-                        />
-                        <Button
-                          type="button"
-                          onClick={handleAddFlavor}
-                          disabled={isAddingFlavor || !newFlavor.trim()}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {isAddingFlavor ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setShowAddFlavor(false)
-                            setNewFlavor("")
-                          }}
-                          className="border-2"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  <Select value={flavor} onValueChange={setFlavor} disabled={loadingFlavors}>
-                    <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500">
-                      <SelectValue placeholder={loadingFlavors ? "Loading flavors..." : "Select flavor"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {flavors.map((f) => (
-                        <SelectItem key={f._id} value={f.name}>{f.name}</SelectItem>
-                      ))}
-                      {flavors.length === 0 && !loadingFlavors && (
-                        <SelectItem value="none" disabled>No flavors available</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+              <p className="text-sm text-blue-900/90 dark:text-blue-100/90 leading-relaxed">
+                This batch is created as <span className="font-semibold">{NEUTRAL_BATCH_DISPLAY_FLAVOR}</span> (no flavour yet).
+                After production and processing, use <span className="font-semibold">Infuse / Create flavoured outputs</span> on
+                the batches list to split volume into flavours — all linked to this same batch for traceability.
+              </p>
+              <div className="flex flex-wrap items-center gap-4 p-3 rounded-md bg-white/70 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Product:</span>
+                  <span className="font-bold text-blue-700 dark:text-blue-300">Infusion Jaba</span>
                 </div>
-                <div className="flex items-center gap-4 p-3 rounded-md bg-white/70 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-muted-foreground">Product:</span>
-                    <span className="font-bold text-blue-700 dark:text-blue-300">Infusion Jaba</span>
-                  </div>
-                  {flavor && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-muted-foreground">Flavor:</span>
-                      <span className="font-bold text-blue-700 dark:text-blue-300">{flavor}</span>
-                    </div>
-                  )}
-                </div>
+                <Badge variant="outline" className="border-blue-400 text-blue-800 dark:text-blue-200 bg-white/80">
+                  Batch type: neutral
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="batchNotes" className="font-semibold text-foreground">Notes (optional)</Label>
+                <Textarea
+                  id="batchNotes"
+                  placeholder="Processing notes, raw material comments, or other batch notes…"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="min-h-[88px] border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                />
               </div>
             </div>
 
@@ -730,7 +575,9 @@ export default function AddBatchPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="Created">Created</SelectItem>
                     <SelectItem value="Processing">Processing</SelectItem>
+                    <SelectItem value="Ready for Infusion">Ready for Infusion</SelectItem>
                     <SelectItem value="QC Pending">QC Pending</SelectItem>
                     <SelectItem value="Completed">Completed</SelectItem>
                   </SelectContent>

@@ -19,6 +19,9 @@ export async function GET(request: Request) {
 
     console.log(`[Batch Reports API] Found ${batches.length} batches`)
 
+    const rootBatches = batches.filter((b: any) => !b.parentBatchId)
+    const flavouredChildren = batches.filter((b: any) => !!b.parentBatchId)
+
     // Calculate statistics
     const totalBatches = batches.length
     const completedBatches = batches.filter((b: any) => 
@@ -34,9 +37,11 @@ export async function GET(request: Request) {
       b.status === 'Ready for Distribution'
     ).length
 
-    // Total production volume
-    const totalLitres = batches.reduce((sum: number, b: any) => 
-      sum + (parseFloat(b.totalLitres) || 0), 0
+    // Total neutral production (parent rows only — avoids double-counting infused children)
+    const totalLitres = rootBatches.reduce((sum: number, b: any) => sum + (parseFloat(b.totalLitres) || 0), 0)
+    const infusedFlavourLitres = flavouredChildren.reduce(
+      (sum: number, b: any) => sum + (parseFloat(b.infusedQuantityLitres ?? b.totalLitres) || 0),
+      0
     )
 
     // Total bottles produced
@@ -73,7 +78,7 @@ export async function GET(request: Request) {
       let monthLitres = 0
       let monthBottles = 0
       
-      batches.forEach((batch: any) => {
+      rootBatches.forEach((batch: any) => {
         const batchDate = batch.date instanceof Date ? batch.date : new Date(batch.date)
         if (
           batchDate.getMonth() === monthDate.getMonth() &&
@@ -97,7 +102,7 @@ export async function GET(request: Request) {
 
     // Weekly production (last 4 weeks)
     // First, find the date range of all batches to determine which weeks to show
-    const batchDates = batches
+    const batchDates = rootBatches
       .map((batch: any) => {
         if (batch.date instanceof Date) {
           return new Date(batch.date)
@@ -148,7 +153,7 @@ export async function GET(request: Request) {
       
       const weekLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       
-      const weekBatches = batches.filter((batch: any) => {
+      const weekBatches = rootBatches.filter((batch: any) => {
         let batchDate: Date
         if (batch.date instanceof Date) {
           batchDate = new Date(batch.date)
@@ -217,8 +222,8 @@ export async function GET(request: Request) {
       }))
       .sort((a, b) => b.batches - a.batches)
 
-    // Top batches by volume
-    const topBatches = batches
+    // Top batches by volume (parent / neutral rows)
+    const topBatches = rootBatches
       .map((batch: any) => ({
         id: batch._id.toString(),
         batchNumber: batch.batchNumber || 'N/A',
@@ -231,11 +236,12 @@ export async function GET(request: Request) {
         status: batch.status || 'Processing',
         qcStatus: batch.qcStatus || 'Pending',
         supervisor: batch.supervisor || 'N/A',
+        parentBatchId: batch.parentBatchId ? String(batch.parentBatchId) : null,
       }))
       .sort((a, b) => b.totalLitres - a.totalLitres)
       .slice(0, 10)
 
-    // Recent batches
+    // Recent batches (all rows; flag flavoured children for traceability)
     const recentBatches = batches.slice(0, 20).map((batch: any) => ({
       id: batch._id.toString(),
       batchNumber: batch.batchNumber || 'N/A',
@@ -249,6 +255,11 @@ export async function GET(request: Request) {
       qcStatus: batch.qcStatus || 'Pending',
       supervisor: batch.supervisor || 'N/A',
       shift: batch.shift || 'N/A',
+      parentBatchId: batch.parentBatchId ? String(batch.parentBatchId) : null,
+      isFlavouredOutput: !!batch.parentBatchId,
+      infusedQuantityLitres: batch.parentBatchId
+        ? parseFloat(batch.infusedQuantityLitres ?? batch.totalLitres) || 0
+        : undefined,
     }))
 
     // Production efficiency (average loss)
@@ -270,13 +281,40 @@ export async function GET(request: Request) {
 
     console.log(`[Batch Reports API] ✅ Returning batch reports data`)
 
+    const traceabilityRows = rootBatches.map((p: any) => {
+      const pid = p._id.toString()
+      const children = flavouredChildren.filter((c: any) => String(c.parentBatchId) === pid)
+      const allocated = children.reduce(
+        (s: number, c: any) => s + (parseFloat(c.infusedQuantityLitres ?? c.totalLitres) || 0),
+        0
+      )
+      const produced = parseFloat(p.totalLitres) || 0
+      return {
+        parentBatchId: pid,
+        batchNumber: p.batchNumber,
+        neutralProducedLitres: produced,
+        allocatedLitres: allocated,
+        remainingNeutralLitres: Math.max(0, produced - allocated),
+        flavourOutputs: children.map((c: any) => ({
+          id: c._id.toString(),
+          batchNumber: c.batchNumber,
+          flavor: c.flavor,
+          litres: parseFloat(c.infusedQuantityLitres ?? c.totalLitres) || 0,
+          status: c.status,
+        })),
+      }
+    })
+
     return NextResponse.json({
       totalBatches,
+      neutralParentBatchCount: rootBatches.length,
+      flavouredOutputCount: flavouredChildren.length,
       completedBatches,
       processingBatches,
       qcPendingBatches,
       readyForDistributionBatches,
       totalLitres,
+      infusedFlavourLitres,
       totalBottles,
       qcPassed,
       qcFailed,
@@ -290,6 +328,7 @@ export async function GET(request: Request) {
       recentBatches,
       avgLoss,
       shiftDistribution,
+      traceabilityByParent: traceabilityRows,
     })
   } catch (error: any) {
     console.error('[Batch Reports API] ❌ Error fetching batch reports:', error)

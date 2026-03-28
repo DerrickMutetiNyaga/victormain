@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,13 +8,26 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Calendar, Hash, Tag, LayoutGrid, List, Droplet, Loader2, X, Save, ClipboardCheck, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX } from "lucide-react"
+import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Hash, Tag, LayoutGrid, List, Loader2, X, Save, ClipboardCheck, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX, FlaskConical, GitBranch } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useJabaPermissions } from "@/hooks/use-jaba-permissions"
+
+interface FlavourOutputRow {
+  _id: string
+  id: string
+  batchNumber: string
+  flavor: string
+  totalLitres: number
+  infusedQuantityLitres?: number
+  status: string
+  infusionDate?: string
+  parentBatchId?: string
+  notes?: string | null
+}
 
 interface Batch {
   _id: string
@@ -24,10 +37,30 @@ interface Batch {
   flavor: string
   productCategory: string
   totalLitres: number
+  expectedLitres?: number
+  batchType?: "neutral" | "flavoured"
+  legacyFlavourFirstBatch?: boolean
+  parentBatchId?: string | null
+  infusedAllocatedLitres?: number
+  neutralRemainingLitres?: number
+  flavourOutputCount?: number
+  flavourOutputs?: FlavourOutputRow[]
   bottles500ml: number
   bottles1L: number
   bottles2L: number
-  status: "Processing" | "Processed" | "QC Pending" | "Completed" | "Ready for Distribution" | "QC Passed - Ready for Packaging" | "QC Failed" | "Partially Packaged"
+  status:
+    | "Created"
+    | "Processing"
+    | "Processed"
+    | "Ready for Infusion"
+    | "Partially Infused"
+    | "Fully Infused"
+    | "QC Pending"
+    | "Completed"
+    | "Ready for Distribution"
+    | "QC Passed - Ready for Packaging"
+    | "QC Failed"
+    | "Partially Packaged"
   qcStage?: "initial" | "final"
   qcStatus: "Pending" | "Pass" | "Fail" | "In Progress"
   supervisor: string
@@ -88,6 +121,102 @@ export default function BatchesPage() {
     supervisor: "",
     varianceReason: "",
   })
+
+  const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(new Set())
+  const [infuseOpen, setInfuseOpen] = useState(false)
+  const [infuseParentId, setInfuseParentId] = useState<string | null>(null)
+  const [infusionDate, setInfusionDate] = useState(() => new Date().toISOString().split("T")[0])
+  const [infuseRows, setInfuseRows] = useState<
+    { flavorId: string; flavorName: string; quantity: string; notes: string }[]
+  >([{ flavorId: "", flavorName: "", quantity: "", notes: "" }])
+  const [infuseSaving, setInfuseSaving] = useState(false)
+
+  const toggleBatchExpand = (bid: string) => {
+    setExpandedBatchIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(bid)) next.delete(bid)
+      else next.add(bid)
+      return next
+    })
+  }
+
+  const openInfuse = (batch: Batch) => {
+    setInfuseParentId(batch._id || batch.id)
+    setInfusionDate(new Date().toISOString().split("T")[0])
+    setInfuseRows([{ flavorId: "", flavorName: "", quantity: "", notes: "" }])
+    setInfuseOpen(true)
+  }
+
+  const canInfuseBatch = (b: Batch) => {
+    if (b.legacyFlavourFirstBatch) return false
+    if (b.batchType === "flavoured" || b.parentBatchId) return false
+    const remaining =
+      b.neutralRemainingLitres ??
+      b.outputSummary?.remainingLitres ??
+      Math.max(0, (b.totalLitres || 0) - (b.infusedAllocatedLitres || 0))
+    if (remaining <= 0) return false
+    const allowed = new Set([
+      "Processed",
+      "QC Pending",
+      "QC Passed - Ready for Packaging",
+      "Partially Packaged",
+      "Ready for Distribution",
+      "Completed",
+      "Ready for Infusion",
+    ])
+    return allowed.has(b.status as string)
+  }
+
+  const submitInfuse = async () => {
+    if (!infuseParentId) return
+    const outputs = infuseRows
+      .map((r) => ({
+        flavorId: r.flavorId || undefined,
+        flavorName: r.flavorName.trim(),
+        quantityLitres: Number(r.quantity),
+        notes: r.notes.trim() || undefined,
+      }))
+      .filter((o) => o.flavorName && !Number.isNaN(o.quantityLitres) && o.quantityLitres > 0)
+
+    if (outputs.length === 0) {
+      toast.error("Add at least one flavour with a name and quantity (litres).")
+      return
+    }
+
+    setInfuseSaving(true)
+    try {
+      const res = await fetch(`/api/jaba/batches/${infuseParentId}/infuse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outputs, infusionDate: `${infusionDate}T12:00:00` }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Infusion failed")
+      }
+      toast.success(`Created ${outputs.length} flavoured line(s).`)
+      setInfuseOpen(false)
+      setInfuseParentId(null)
+      await fetchBatches()
+    } catch (e: any) {
+      toast.error(e.message || "Infusion failed")
+    } finally {
+      setInfuseSaving(false)
+    }
+  }
+
+  const deleteFlavourOutput = async (childId: string, parentLabel: string) => {
+    if (!confirm(`Remove this flavoured output from ${parentLabel}? Volume returns to the neutral batch.`)) return
+    try {
+      const res = await fetch(`/api/jaba/batches/flavour-output/${childId}`, { method: "DELETE" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Delete failed")
+      toast.success("Flavoured output removed.")
+      await fetchBatches()
+    } catch (e: any) {
+      toast.error(e.message || "Delete failed")
+    }
+  }
 
   useEffect(() => {
     fetchBatches()
@@ -393,10 +522,22 @@ export default function BatchesPage() {
   }
 
   const filteredBatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
     return batches.filter((batch) => {
-      const matchesSearch = batch.batchNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        batch.flavor.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesFlavor = flavorFilter === "all" || batch.flavor === flavorFilter
+      const kids = batch.flavourOutputs || []
+      const matchesSearch =
+        !q ||
+        batch.batchNumber.toLowerCase().includes(q) ||
+        (batch.flavor || "").toLowerCase().includes(q) ||
+        kids.some(
+          (k) =>
+            (k.batchNumber || "").toLowerCase().includes(q) ||
+            (k.flavor || "").toLowerCase().includes(q)
+        )
+      const matchesFlavor =
+        flavorFilter === "all" ||
+        batch.flavor === flavorFilter ||
+        kids.some((k) => k.flavor === flavorFilter)
       const matchesStatus = statusFilter === "all" || batch.status === statusFilter
       return matchesSearch && matchesFlavor && matchesStatus
     })
@@ -415,6 +556,14 @@ export default function BatchesPage() {
         return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
       case "Processed":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+      case "Ready for Infusion":
+        return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
+      case "Partially Infused":
+        return "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400"
+      case "Fully Infused":
+        return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+      case "Created":
+        return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
       case "QC Passed - Ready for Packaging":
         return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
       case "Partially Packaged":
@@ -599,7 +748,7 @@ export default function BatchesPage() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
-                    placeholder="Search by batch number or flavor..."
+                    placeholder="Search batch, flavour output, or code…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9 h-10 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:border-emerald-500 dark:focus:border-emerald-500"
@@ -623,8 +772,12 @@ export default function BatchesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="Created">Created</SelectItem>
                     <SelectItem value="Processing">Processing</SelectItem>
+                    <SelectItem value="Ready for Infusion">Ready for Infusion</SelectItem>
                     <SelectItem value="Processed">Processed</SelectItem>
+                    <SelectItem value="Partially Infused">Partially Infused</SelectItem>
+                    <SelectItem value="Fully Infused">Fully Infused</SelectItem>
                     <SelectItem value="QC Pending">QC Pending</SelectItem>
                     <SelectItem value="QC Passed - Ready for Packaging">QC Passed - Ready for Packaging</SelectItem>
                     <SelectItem value="Partially Packaged">Partially Packaged</SelectItem>
@@ -786,6 +939,7 @@ export default function BatchesPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+                    <TableHead className="w-10 px-2 py-3" />
                     <TableHead className="font-semibold text-xs text-slate-700 dark:text-slate-300 uppercase tracking-wider px-6 py-3">
                       Batch Number
                     </TableHead>
@@ -803,7 +957,7 @@ export default function BatchesPage() {
                 <TableBody>
                   {filteredBatches.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-12 px-6">
+                      <TableCell colSpan={7} className="text-center py-12 px-6">
                         <div className="flex flex-col items-center gap-3">
                           <Factory className="h-12 w-12 text-slate-300 dark:text-slate-700" />
                           <p className="text-sm font-medium text-slate-600 dark:text-slate-400">No batches found</p>
@@ -812,26 +966,71 @@ export default function BatchesPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredBatches.map((batch, idx) => (
+                    filteredBatches.map((batch, idx) => {
+                      const bid = batch._id || batch.id
+                      const kids = batch.flavourOutputs || []
+                      const expanded = expandedBatchIds.has(bid)
+                      const allocated = batch.infusedAllocatedLitres ?? 0
+                      const remainingNeutral =
+                        batch.neutralRemainingLitres ?? batch.outputSummary?.remainingLitres ?? 0
+                      const isNeutralRoot = batch.batchType !== "flavoured" && !batch.parentBatchId
+                      return (
+                      <Fragment key={batch.id}>
                       <TableRow 
-                        key={batch.id} 
                         className={cn(
                           "hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-b border-slate-100 dark:border-slate-800",
                           idx % 2 === 0 ? "bg-white dark:bg-slate-900" : "bg-slate-50/30 dark:bg-slate-800/20"
                         )}
                       >
+                        <TableCell className="px-1 py-4 w-10 align-middle">
+                          {kids.length > 0 ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => toggleBatchExpand(bid)}
+                              aria-expanded={expanded}
+                            >
+                              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </Button>
+                          ) : (
+                            <span className="inline-block w-8" />
+                          )}
+                        </TableCell>
                         {/* Batch Number */}
                         <TableCell className="px-6 py-4">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-tight">{batch.batchNumber}</span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">Infusion Jaba</span>
+                            <div className="flex flex-wrap gap-1">
+                              <span className="text-xs text-slate-500 dark:text-slate-400">Infusion Jaba</span>
+                              {isNeutralRoot && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 border-emerald-300 text-emerald-800 dark:text-emerald-200">
+                                  Base
+                                </Badge>
+                              )}
+                              {batch.legacyFlavourFirstBatch && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 border-amber-400 text-amber-900">
+                                  Legacy
+                                </Badge>
+                              )}
+                            </div>
+                            {isNeutralRoot && (
+                              <div className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug mt-1 space-y-0.5">
+                                <div>Produced <span className="font-semibold text-slate-800 dark:text-slate-200">{batch.totalLitres}L</span></div>
+                                <div>Allocated <span className="font-semibold">{allocated.toFixed(2)}L</span> · Remaining <span className="font-semibold">{remainingNeutral.toFixed(2)}L</span></div>
+                                <div>{kids.length} flavour output{kids.length !== 1 ? "s" : ""}</div>
+                              </div>
+                            )}
                           </div>
                         </TableCell>
 
                         {/* Product */}
                         <TableCell className="px-6 py-4">
                           <div className="flex flex-col gap-2">
-                            <span className="text-sm font-medium text-slate-900 dark:text-slate-100 leading-tight">{batch.flavor}</span>
+                            <span className="text-sm font-medium text-slate-900 dark:text-slate-100 leading-tight">
+                              {batch.flavor}
+                            </span>
                             <Badge className={`${getShiftColors(batch.shift)} border text-xs font-medium w-fit`}>
                               {batch.shift}
                             </Badge>
@@ -844,7 +1043,7 @@ export default function BatchesPage() {
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{batch.totalLitres}L</span>
                               <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {batch.status === "Processing" ? "(Expected)" : "(Produced)"}
+                                {batch.status === "Processing" || batch.status === "Created" ? "(Expected)" : "(Produced)"}
                               </span>
                             </div>
                             {(() => {
@@ -907,7 +1106,7 @@ export default function BatchesPage() {
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             {/* Workflow Actions */}
-                            {batch.status === "Processing" && (
+                            {(batch.status === "Processing" || batch.status === "Created") && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -916,6 +1115,17 @@ export default function BatchesPage() {
                                 title="Mark as Processed"
                               >
                                 <CheckSquare className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canEdit && canInfuseBatch(batch) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openInfuse(batch)}
+                                className="h-8 w-8 p-0 border-violet-300 text-violet-700 bg-violet-50 dark:bg-violet-950/30 dark:text-violet-300 rounded-lg"
+                                title="Infuse — create flavoured outputs"
+                              >
+                                <FlaskConical className="h-4 w-4" />
                               </Button>
                             )}
                             {(batch.status === "Processed" || batch.status === "QC Pending") && (
@@ -973,7 +1183,7 @@ export default function BatchesPage() {
                               const availableStock = getAvailableStock(batch)
                               const isSoldOut = remainingLitres === 0 && availableStock === 0
                               const isLocked = batch.status === "Processed" || batch.locked || isSoldOut
-                              
+
                               if (isLocked) {
                                 return (
                                   <Button
@@ -987,8 +1197,8 @@ export default function BatchesPage() {
                                   </Button>
                                 )
                               }
-                              
-                              return canEdit ? (
+
+                            return canEdit ? (
                                 <Link href={`/jaba/batches/edit/${batch._id || batch.id}`}>
                                   <Button
                                     variant="outline"
@@ -1004,7 +1214,71 @@ export default function BatchesPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
+                      {expanded && kids.length > 0 && (
+                        <TableRow className="bg-slate-50/90 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+                          <TableCell colSpan={7} className="px-6 py-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <GitBranch className="h-4 w-4 text-emerald-600 shrink-0" />
+                              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                Flavoured outputs from {batch.batchNumber}
+                              </span>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto bg-white dark:bg-slate-900">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="hover:bg-transparent">
+                                    <TableHead className="text-xs font-semibold">Output #</TableHead>
+                                    <TableHead className="text-xs font-semibold">Flavour</TableHead>
+                                    <TableHead className="text-xs font-semibold">Volume</TableHead>
+                                    <TableHead className="text-xs font-semibold">Infusion date</TableHead>
+                                    <TableHead className="text-xs font-semibold">Status</TableHead>
+                                    <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {kids.map((k) => (
+                                    <TableRow key={k._id || k.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                                      <TableCell className="text-sm font-mono">{k.batchNumber}</TableCell>
+                                      <TableCell className="text-sm font-medium">{k.flavor}</TableCell>
+                                      <TableCell className="text-sm">
+                                        {(k.infusedQuantityLitres ?? k.totalLitres).toFixed(2)}L
+                                      </TableCell>
+                                      <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                                        {k.infusionDate ? getDate(k.infusionDate).toLocaleDateString() : "—"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge className={cn("text-xs", getStatusColor(k.status))}>{k.status}</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="flex justify-end gap-1 flex-wrap">
+                                          <Link href={`/jaba/batches/${k._id || k.id}`}>
+                                            <Button variant="outline" size="sm" className="h-8 text-xs">
+                                              View
+                                            </Button>
+                                          </Link>
+                                          {canEdit && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 text-xs text-red-600 hover:text-red-700"
+                                              onClick={() => deleteFlavourOutput(String(k._id || k.id), batch.batchNumber)}
+                                            >
+                                              Remove
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      </Fragment>
+                      )
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -1031,7 +1305,14 @@ export default function BatchesPage() {
                 const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
                 const availableStock = getAvailableStock(batch)
                 const isSoldOut = remainingLitres === 0 && availableStock === 0
-                
+                const bid = batch._id || batch.id
+                const kids = batch.flavourOutputs || []
+                const expanded = expandedBatchIds.has(bid)
+                const allocated = batch.infusedAllocatedLitres ?? 0
+                const remainingNeutral =
+                  batch.neutralRemainingLitres ?? batch.outputSummary?.remainingLitres ?? 0
+                const isNeutralRoot = batch.batchType !== "flavoured" && !batch.parentBatchId
+
                 return (
                 <Card
                   key={batch.id}
@@ -1054,7 +1335,19 @@ export default function BatchesPage() {
                         <CardTitle className="text-base font-semibold text-slate-900 dark:text-slate-100 leading-tight">
                           {batch.batchNumber}
                         </CardTitle>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">Infusion Jaba</span>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-xs text-slate-500 dark:text-slate-400">Infusion Jaba</span>
+                          {isNeutralRoot && (
+                            <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-800 h-5">
+                              Base
+                            </Badge>
+                          )}
+                          {batch.legacyFlavourFirstBatch && (
+                            <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-900 h-5">
+                              Legacy
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <Badge className={cn(
                         "text-xs font-medium shrink-0",
@@ -1085,9 +1378,17 @@ export default function BatchesPage() {
                     {/* Volume Info */}
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                        {batch.status === "Processing" ? "Expected Volume" : "Produced Volume"}
+                        {batch.status === "Processing" || batch.status === "Created"
+                          ? "Expected Volume"
+                          : "Produced Volume"}
                       </p>
                       <p className="text-xl font-semibold text-slate-900 dark:text-slate-100 leading-tight">{batch.totalLitres}L</p>
+                      {isNeutralRoot && (
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          Allocated {allocated.toFixed(2)}L · Neutral left {remainingNeutral.toFixed(2)}L · {kids.length}{" "}
+                          output{kids.length !== 1 ? "s" : ""}
+                        </p>
+                      )}
                       {(() => {
                         const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
                         const availableStock = getAvailableStock(batch)
@@ -1144,7 +1445,7 @@ export default function BatchesPage() {
                     {/* Actions */}
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* Workflow Actions */}
-                      {batch.status === "Processing" && (
+                      {(batch.status === "Processing" || batch.status === "Created") && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1154,6 +1455,17 @@ export default function BatchesPage() {
                         >
                           <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
                           Processed
+                        </Button>
+                      )}
+                      {canEdit && canInfuseBatch(batch) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openInfuse(batch)}
+                          className="flex-1 h-9 border-violet-300 text-violet-800 bg-violet-50 dark:bg-violet-950/30 text-xs font-medium"
+                        >
+                          <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+                          Infuse
                         </Button>
                       )}
                       {(batch.status === "Processed" || batch.status === "QC Pending") && (
@@ -1248,6 +1560,59 @@ export default function BatchesPage() {
                         ) : null
                       })()}
                     </div>
+
+                    {kids.length > 0 && (
+                      <div className="border-t border-slate-200 dark:border-slate-800 pt-3 space-y-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-between text-xs"
+                          onClick={() => toggleBatchExpand(bid)}
+                        >
+                          <span className="flex items-center gap-2">
+                            <GitBranch className="h-3.5 w-3.5 text-emerald-600" />
+                            Flavoured outputs ({kids.length})
+                          </span>
+                          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                        {expanded && (
+                          <ul className="space-y-2 text-xs border rounded-lg border-slate-200 dark:border-slate-700 p-2 bg-slate-50/80 dark:bg-slate-900/50">
+                            {kids.map((k) => (
+                              <li
+                                key={k._id || k.id}
+                                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2 border-b border-slate-200 dark:border-slate-800 last:border-0"
+                              >
+                                <div>
+                                  <span className="font-mono font-medium">{k.batchNumber}</span>
+                                  <span className="text-slate-600 dark:text-slate-400 ml-2">{k.flavor}</span>
+                                  <span className="block text-slate-500">
+                                    {(k.infusedQuantityLitres ?? k.totalLitres).toFixed(2)}L
+                                  </span>
+                                </div>
+                                <div className="flex gap-1 shrink-0">
+                                  <Link href={`/jaba/batches/${k._id || k.id}`}>
+                                    <Button variant="secondary" size="sm" className="h-7 text-xs">
+                                      View
+                                    </Button>
+                                  </Link>
+                                  {canEdit && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs text-red-600"
+                                      onClick={() => deleteFlavourOutput(String(k._id || k.id), batch.batchNumber)}
+                                    >
+                                      Remove
+                                    </Button>
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
                 )
@@ -1256,6 +1621,127 @@ export default function BatchesPage() {
           </div>
         )}
       </div>
+
+      {/* Infuse — flavoured outputs */}
+      <Dialog open={infuseOpen} onOpenChange={setInfuseOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <FlaskConical className="h-5 w-5 text-violet-600" />
+              Create flavoured outputs
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Split neutral volume into one or more flavour lines. Total litres cannot exceed the remaining neutral volume on the parent batch.
+          </p>
+          <div className="space-y-2">
+            <Label>Infusion date</Label>
+            <Input
+              type="date"
+              value={infusionDate}
+              onChange={(e) => setInfusionDate(e.target.value)}
+              className="h-10"
+            />
+          </div>
+          <div className="space-y-4 pt-2">
+            {infuseRows.map((row, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line {i + 1}</Label>
+                  {infuseRows.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-red-600"
+                      onClick={() => setInfuseRows(infuseRows.filter((_, j) => j !== i))}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Flavour</Label>
+                  <Select
+                    value={row.flavorName || undefined}
+                    onValueChange={(name) => {
+                      const f = flavors.find((x) => x.name === name)
+                      const next = [...infuseRows]
+                      next[i] = { ...next[i], flavorName: name, flavorId: f?._id || "" }
+                      setInfuseRows(next)
+                    }}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select flavour" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {flavors.map((f) => (
+                        <SelectItem key={f._id} value={f.name}>
+                          {f.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Litres</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="h-10"
+                      value={row.quantity}
+                      onChange={(e) => {
+                        const next = [...infuseRows]
+                        next[i] = { ...next[i], quantity: e.target.value }
+                        setInfuseRows(next)
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Notes (optional)</Label>
+                    <Input
+                      className="h-10"
+                      value={row.notes}
+                      onChange={(e) => {
+                        const next = [...infuseRows]
+                        next[i] = { ...next[i], notes: e.target.value }
+                        setInfuseRows(next)
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() =>
+                setInfuseRows([...infuseRows, { flavorId: "", flavorName: "", quantity: "", notes: "" }])
+              }
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add another flavour line
+            </Button>
+          </div>
+          <div className="flex gap-2 pt-4">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setInfuseOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 bg-violet-600 hover:bg-violet-700 text-white"
+              disabled={infuseSaving}
+              onClick={() => submitInfuse()}
+            >
+              {infuseSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create outputs"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Mark as Processed Dialog */}
       <Dialog open={showProcessedDialog} onOpenChange={setShowProcessedDialog}>

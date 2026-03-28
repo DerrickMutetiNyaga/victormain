@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { NEUTRAL_BATCH_DISPLAY_FLAVOR } from "@/lib/jaba-batch-utils"
 
 interface RawMaterial {
   _id: string
@@ -61,6 +62,9 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
   const [isAddingFlavor, setIsAddingFlavor] = useState(false)
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
   const [loadingMaterials, setLoadingMaterials] = useState(true)
+  const [isFlavouredOutput, setIsFlavouredOutput] = useState(false)
+  const [parentBatchIdForChild, setParentBatchIdForChild] = useState<string | null>(null)
+  const [legacyFlavourFirst, setLegacyFlavourFirst] = useState(false)
 
   // Load batch data
   useEffect(() => {
@@ -80,6 +84,15 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
           router.push('/jaba/batches')
           return
         }
+
+        if (batch.parentBatchId) {
+          setIsFlavouredOutput(true)
+          setParentBatchIdForChild(String(batch.parentBatchId))
+          setLoading(false)
+          return
+        }
+
+        setLegacyFlavourFirst(!!batch.legacyFlavourFirstBatch)
 
         // Populate form fields
         setBatchNumber(batch.batchNumber)
@@ -339,10 +352,10 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
       missingFields.push("Production Date")
     }
     
-    if (!flavor || flavor.trim() === "") {
+    if (legacyFlavourFirst && (!flavor || flavor.trim() === "")) {
       missingFields.push("Flavor")
     }
-    
+
     if (!supervisor || supervisor.trim() === "") {
       missingFields.push("Supervisor Name")
     }
@@ -420,7 +433,7 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
         body: JSON.stringify({
           batchNumber,
           date,
-          flavor,
+          flavor: legacyFlavourFirst ? flavor : NEUTRAL_BATCH_DISPLAY_FLAVOR,
           totalLitres: Number(expectedLitres),
           expectedLitres: Number(expectedLitres),
           supervisor,
@@ -458,6 +471,40 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
+    )
+  }
+
+  if (isFlavouredOutput && parentBatchIdForChild) {
+    return (
+      <>
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Flavoured output</h1>
+            <p className="text-sm text-muted-foreground">Edit parent neutrals here; adjust this line via batch details</p>
+          </div>
+          <Link href="/jaba/batches">
+            <Button variant="outline">Back</Button>
+          </Link>
+        </header>
+        <div className="p-6 max-w-lg mx-auto">
+          <Card className="border-2 border-amber-200 dark:border-amber-900/50">
+            <CardContent className="p-6 space-y-4">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This record is a <span className="font-semibold text-foreground">flavoured output</span> from a neutral batch.
+                Open the parent batch to see all outputs, or view this line for packaging and QC.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Link href={`/jaba/batches/${parentBatchIdForChild}`} className="flex-1">
+                  <Button className="w-full">Parent neutral batch</Button>
+                </Link>
+                <Link href={`/jaba/batches/${id}`} className="flex-1">
+                  <Button variant="secondary" className="w-full">This output (details)</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </>
     )
   }
 
@@ -512,7 +559,7 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
               </div>
             </div>
 
-            {/* Product & Flavor Section */}
+            {/* Product: neutral (new model) or legacy flavour-at-creation */}
             <div className="space-y-4 p-5 rounded-lg border-2 border-blue-300 dark:border-blue-700 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/30 shadow-md">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-2 rounded-lg bg-blue-600 dark:bg-blue-700 shadow-sm">
@@ -520,86 +567,107 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
                 </div>
                 <Label className="text-base font-bold text-blue-900 dark:text-blue-100">Product Information</Label>
               </div>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label htmlFor="flavor" className="font-semibold text-foreground">
-                      Flavor <span className="text-red-600 dark:text-red-400 font-bold">*</span>
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowAddFlavor(!showAddFlavor)}
-                      className="border-2 font-medium"
-                    >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Add New
-                    </Button>
-                  </div>
-                  {showAddFlavor && (
-                    <div className="mb-3 p-3 border-2 border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-slate-900 shadow-md">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Enter flavor name (e.g., dawa, pineapple)"
-                          value={newFlavor}
-                          onChange={(e) => setNewFlavor(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddFlavor()}
-                          className="flex-1 border-2"
-                        />
-                        <Button
-                          type="button"
-                          onClick={handleAddFlavor}
-                          disabled={isAddingFlavor || !newFlavor.trim()}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {isAddingFlavor ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setShowAddFlavor(false)
-                            setNewFlavor("")
-                          }}
-                          className="border-2"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+              {legacyFlavourFirst ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                    Legacy batch: flavour was set at creation. New work should use neutral base batches, then Infuse.
+                  </p>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label htmlFor="flavor" className="font-semibold text-foreground">
+                        Flavor <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddFlavor(!showAddFlavor)}
+                        className="border-2 font-medium"
+                      >
+                        <Plus className="mr-1 h-3 w-3" />
+                        Add New
+                      </Button>
+                    </div>
+                    {showAddFlavor && (
+                      <div className="mb-3 p-3 border-2 border-blue-300 dark:border-blue-700 rounded-lg bg-white dark:bg-slate-900 shadow-md">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Enter flavor name (e.g., dawa, pineapple)"
+                            value={newFlavor}
+                            onChange={(e) => setNewFlavor(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddFlavor()}
+                            className="flex-1 border-2"
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddFlavor}
+                            disabled={isAddingFlavor || !newFlavor.trim()}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            {isAddingFlavor ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowAddFlavor(false)
+                              setNewFlavor("")
+                            }}
+                            className="border-2"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  <Select value={flavor} onValueChange={setFlavor} disabled={loadingFlavors}>
-                    <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500">
-                      <SelectValue placeholder={loadingFlavors ? "Loading flavors..." : "Select flavor"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {flavors.map((f) => (
-                        <SelectItem key={f._id} value={f.name}>{f.name}</SelectItem>
-                      ))}
-                      {flavors.length === 0 && !loadingFlavors && (
-                        <SelectItem value="none" disabled>No flavors available</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-4 p-3 rounded-md bg-white/70 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-muted-foreground">Product:</span>
-                    <span className="font-bold text-blue-700 dark:text-blue-300">Infusion Jaba</span>
+                    )}
+                    <Select value={flavor} onValueChange={setFlavor} disabled={loadingFlavors}>
+                      <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500">
+                        <SelectValue placeholder={loadingFlavors ? "Loading flavors..." : "Select flavor"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {flavors.map((f) => (
+                          <SelectItem key={f._id} value={f.name}>{f.name}</SelectItem>
+                        ))}
+                        {flavors.length === 0 && !loadingFlavors && (
+                          <SelectItem value="none" disabled>No flavors available</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {flavor && (
+                  <div className="flex items-center gap-4 p-3 rounded-md bg-white/70 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-800">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-muted-foreground">Flavor:</span>
-                      <span className="font-bold text-blue-700 dark:text-blue-300">{flavor}</span>
+                      <span className="text-sm font-medium text-muted-foreground">Product:</span>
+                      <span className="font-bold text-blue-700 dark:text-blue-300">Infusion Jaba</span>
                     </div>
-                  )}
+                    {flavor && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-muted-foreground">Flavor:</span>
+                        <span className="font-bold text-blue-700 dark:text-blue-300">{flavor}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-blue-900/90 dark:text-blue-100/90 leading-relaxed">
+                    Neutral base batch — flavour is not edited here. After processing, create flavoured outputs from the batches list.
+                  </p>
+                  <div className="flex items-center gap-4 p-3 rounded-md bg-white/70 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-muted-foreground">Product:</span>
+                      <span className="font-bold text-blue-700 dark:text-blue-300">Infusion Jaba</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-muted-foreground">Display:</span>
+                      <span className="font-bold text-blue-700 dark:text-blue-300">{NEUTRAL_BATCH_DISPLAY_FLAVOR}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Production Details Row */}
