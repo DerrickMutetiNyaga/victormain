@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { appendMpesaPaymentToOrder } from '@/lib/catha-append-mpesa-payment'
 
 export async function POST() {
   try {
@@ -19,7 +20,6 @@ export async function POST() {
 
     const db = await getDatabase('infusion_jaba')
 
-    // Find all completed M-Pesa transactions
     const completedTx = await db
       .collection('mpesa_transactions')
       .find({ status: 'COMPLETED', account_reference: { $exists: true, $ne: null } })
@@ -31,6 +31,7 @@ export async function POST() {
         reconciled: 0,
         alreadyPaid: 0,
         notFound: 0,
+        skipped: 0,
         message: 'No completed M-Pesa transactions found to reconcile.',
       })
     }
@@ -38,9 +39,11 @@ export async function POST() {
     let reconciled = 0
     let alreadyPaid = 0
     let notFound = 0
+    let skipped = 0
+    const linkedBy = (session.user as any).name || session.user.email || 'Reconcile'
 
     for (const tx of completedTx) {
-      const orderId = tx.account_reference
+      const orderId = typeof tx.account_reference === 'string' ? tx.account_reference.trim() : ''
       if (!orderId) continue
 
       const order = await db.collection('orders').findOne({ id: orderId })
@@ -54,26 +57,18 @@ export async function POST() {
         continue
       }
 
-      const mpesaReceiptNumber =
-        order.mpesaReceiptNumber ||
-        tx.mpesa_receipt_number ||
-        tx.transaction_id ||
-        null
+      const transactionId = tx._id?.toString()
+      if (!transactionId) {
+        skipped++
+        continue
+      }
 
-      await db.collection('orders').updateOne(
-        { id: orderId },
-        {
-          $set: {
-            paymentStatus: 'PAID',
-            paymentMethod: 'mpesa',
-            mpesaReceiptNumber,
-            status: 'completed',
-            updatedAt: new Date(),
-          },
-        }
-      )
-
-      reconciled++
+      const result = await appendMpesaPaymentToOrder(db, { orderId, transactionId, linkedBy })
+      if (result.ok) {
+        reconciled++
+      } else {
+        skipped++
+      }
     }
 
     return NextResponse.json({
@@ -81,6 +76,7 @@ export async function POST() {
       reconciled,
       alreadyPaid,
       notFound,
+      skipped,
     })
   } catch (error: any) {
     console.error('[Reconcile M-Pesa] Error:', error)
@@ -90,4 +86,3 @@ export async function POST() {
     )
   }
 }
-

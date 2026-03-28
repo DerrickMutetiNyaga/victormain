@@ -38,6 +38,8 @@ interface Order {
   customerPhone?: string | null
   paymentMethod?: string | null
   orderSource?: "menu" | "pos" | "online" | null
+  balanceDue?: number | null
+  amountReceived?: number | null
 }
 
 interface OrderCardMobileProps<T = any> {
@@ -139,10 +141,22 @@ export function OrderCardMobile<T = any>({
         </div>
         {/* Row 4: Total + payment chip */}
         <div className="flex items-center justify-between gap-2 px-4 pb-3">
-          <span className="text-base font-bold text-[#0f172a] tabular-nums">
-            {formatMoneyKsh(order.total)}
-          </span>
-          <PaymentChip method={order.paymentMethod} />
+          <div className="min-w-0">
+            <span className="text-base font-bold text-[#0f172a] tabular-nums block">
+              {formatMoneyKsh(order.total)}
+            </span>
+            {status === "PARTIALLY_PAID" && (
+              <p className="text-[10px] text-amber-700 font-medium mt-0.5">
+                Paid {formatMoneyKsh(order.amountReceived ?? 0)} · Balance{" "}
+                {formatMoneyKsh(
+                  order.balanceDue != null && Number.isFinite(Number(order.balanceDue))
+                    ? Number(order.balanceDue)
+                    : Math.max(0, (order.total ?? 0) - (order.amountReceived ?? 0))
+                )}
+              </p>
+            )}
+          </div>
+          <PaymentChip method={order.paymentMethod ?? null} />
         </div>
 
         <div className="h-px bg-[#e5e7eb]" />

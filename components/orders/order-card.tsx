@@ -49,6 +49,8 @@ interface Order {
   customerPhone?: string | null
   paymentMethod?: string | null
   amountReceived?: number | null
+  /** From API: remaining balance for M-Pesa partial pay */
+  balanceDue?: number | null
   receiptCode?: string | null
   server?: OrderServer | null
   waiter?: string
@@ -172,9 +174,14 @@ export function OrderCard<T = any>({
           </div>
           {(status === "NOT_PAID" || status === "PARTIALLY_PAID") && order.total && (
             <div className="mt-1 sm:mt-1.5 text-[10px] sm:text-xs text-[#64748b]">
-              Due: {formatMoneyKsh(status === "PARTIALLY_PAID" && order.amountReceived != null
-                ? Math.max(0, (order.total ?? 0) - (order.amountReceived ?? 0))
-                : order.total)}
+              Due:{" "}
+              {formatMoneyKsh(
+                order.balanceDue != null && Number.isFinite(Number(order.balanceDue))
+                  ? Number(order.balanceDue)
+                  : status === "PARTIALLY_PAID" && order.amountReceived != null
+                    ? Math.max(0, (order.total ?? 0) - (order.amountReceived ?? 0))
+                    : order.total
+              )}
             </div>
           )}
         </div>

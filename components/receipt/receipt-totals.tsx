@@ -10,6 +10,11 @@ interface ReceiptTotalsProps {
   amountReceived?: number | null
   change?: number | null
   isPaid?: boolean
+  totalLinkedPayments?: number | null
+  balanceDue?: number | null
+  overpaymentAmount?: number | null
+  changeGiven?: boolean | null
+  paymentStatusLabel?: string | null
   className?: string
 }
 
@@ -20,6 +25,11 @@ export function ReceiptTotals({
   amountReceived,
   change,
   isPaid = true,
+  totalLinkedPayments,
+  balanceDue,
+  overpaymentAmount,
+  changeGiven,
+  paymentStatusLabel,
   className,
 }: ReceiptTotalsProps) {
   return (
@@ -46,6 +56,40 @@ export function ReceiptTotals({
             {formatKsh(total)}
           </span>
         </div>
+
+        {totalLinkedPayments != null && totalLinkedPayments > 0 && (
+          <>
+            <div className="w-48 border-t border-dashed border-[#e5e7eb] my-2" />
+            <div className="flex items-center justify-between w-48 text-sm">
+              <span className="text-[#64748b]">Paid (linked)</span>
+              <span className="font-medium text-[#0f172a] tabular-nums">{formatKsh(totalLinkedPayments)}</span>
+            </div>
+            {balanceDue != null && balanceDue > 0 && (
+              <div className="flex items-center justify-between w-48 text-sm">
+                <span className="text-[#b45309] font-medium">Balance due</span>
+                <span className="font-semibold text-[#b45309] tabular-nums">{formatKsh(balanceDue)}</span>
+              </div>
+            )}
+            {overpaymentAmount != null && overpaymentAmount > 0 && (
+              <>
+                <div className="flex items-center justify-between w-48 text-sm">
+                  <span className="text-[#64748b]">Excess / change</span>
+                  <span className="font-semibold text-[#5b21b6] tabular-nums">{formatKsh(overpaymentAmount)}</span>
+                </div>
+                <div className="flex items-center justify-between w-48 text-xs text-[#64748b]">
+                  <span>Change given</span>
+                  <span className="font-medium text-[#0f172a]">{changeGiven ? "Yes" : "No"}</span>
+                </div>
+              </>
+            )}
+            {paymentStatusLabel && (
+              <div className="flex items-center justify-between w-48 text-xs mt-1">
+                <span className="text-[#64748b]">Pay status</span>
+                <span className="font-semibold text-[#0f172a]">{paymentStatusLabel}</span>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Amount Received (if paid with cash and applicable) */}
         {isPaid && amountReceived != null && amountReceived > 0 && (

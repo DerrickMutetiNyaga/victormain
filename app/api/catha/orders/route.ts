@@ -16,7 +16,41 @@ import {
   restoreStockAtomic,
   diffOrderItems,
 } from '@/lib/inventory-ops'
-import { requireCathaPermission } from '@/lib/auth-catha'
+import { formatCathaOrderForApi } from '@/lib/catha-order-payments'
+import { baseLinkedListFromOrder } from '@/lib/catha-append-mpesa-payment'
+
+function orderDocumentToJson(order: any) {
+  const pay = formatCathaOrderForApi(order)
+  return {
+    id: order.id || order._id?.toString(),
+    table: order.table,
+    orderType: order.orderType || 'INHOUSE',
+    orderSource: order.orderSource || null,
+    items: order.items || [],
+    subtotal: order.subtotal,
+    vat: order.vat,
+    total: order.total,
+    paymentMethod: order.paymentMethod,
+    ...pay,
+    mpesaTransactionId: order.mpesaTransactionId || null,
+    mpesaReceiptNumber: order.mpesaReceiptNumber || null,
+    linkedAt: order.linkedAt || null,
+    linkedBy: order.linkedBy || null,
+    glovoOrderNumber: order.glovoOrderNumber || null,
+    cashAmount: order.cashAmount || null,
+    cashBalance: order.cashBalance || null,
+    changeGiven: order.changeGiven === true,
+    changeGivenAt: order.changeGivenAt || null,
+    changeGivenBy: order.changeGivenBy || null,
+    changeNotes: order.changeNotes || null,
+    cashier: order.cashier,
+    waiter: order.waiter,
+    customerName: order.customerName || null,
+    customerPhone: order.customerPhone || null,
+    timestamp: order.timestamp instanceof Date ? order.timestamp : new Date(order.timestamp),
+    status: order.status,
+  }
+}
 
 export async function GET(request: Request) {
   const session = await auth()
@@ -45,33 +79,7 @@ export async function GET(request: Request) {
         )
       }
       
-      const formattedOrder = {
-        id: order.id || order._id?.toString(),
-        table: order.table,
-        orderType: order.orderType || 'INHOUSE',
-        orderSource: order.orderSource || null,
-        items: order.items || [],
-        subtotal: order.subtotal,
-        vat: order.vat,
-        total: order.total,
-        paymentMethod: order.paymentMethod,
-        paymentStatus: order.paymentStatus || (order.status === 'completed' ? 'PAID' : 'PENDING'),
-        mpesaTransactionId: order.mpesaTransactionId || null,
-        mpesaReceiptNumber: order.mpesaReceiptNumber || null,
-        linkedAt: order.linkedAt || null,
-        linkedBy: order.linkedBy || null,
-        glovoOrderNumber: order.glovoOrderNumber || null,
-        cashAmount: order.cashAmount || null,
-        cashBalance: order.cashBalance || null,
-        cashier: order.cashier,
-        waiter: order.waiter,
-        customerName: order.customerName || null,
-        customerPhone: order.customerPhone || null,
-        timestamp: order.timestamp instanceof Date ? order.timestamp : new Date(order.timestamp),
-        status: order.status,
-      }
-      
-      return NextResponse.json(formattedOrder)
+      return NextResponse.json(orderDocumentToJson(order))
     }
     
     // Fetch orders: ?limit=200&skip=0 (default 200 newest, supports pagination)
@@ -85,31 +93,7 @@ export async function GET(request: Request) {
       .toArray()
     
     // Convert MongoDB _id and date strings to proper format
-    const formattedOrders = orders.map((order: any) => ({
-      id: order.id || order._id?.toString(),
-      table: order.table,
-      orderType: order.orderType || 'INHOUSE',
-      orderSource: order.orderSource || null,
-      items: order.items || [],
-      subtotal: order.subtotal,
-      vat: order.vat,
-      total: order.total,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus || (order.status === 'completed' ? 'PAID' : 'PENDING'),
-      mpesaTransactionId: order.mpesaTransactionId || null,
-      mpesaReceiptNumber: order.mpesaReceiptNumber || null,
-      linkedAt: order.linkedAt || null,
-      linkedBy: order.linkedBy || null,
-      glovoOrderNumber: order.glovoOrderNumber || null,
-      cashAmount: order.cashAmount || null,
-      cashBalance: order.cashBalance || null,
-      cashier: order.cashier,
-      waiter: order.waiter,
-      customerName: order.customerName || null,
-      customerPhone: order.customerPhone || null,
-      timestamp: order.timestamp instanceof Date ? order.timestamp : new Date(order.timestamp),
-      status: order.status,
-    }))
+    const formattedOrders = orders.map((order: any) => orderDocumentToJson(order))
     
     const res = NextResponse.json(formattedOrders)
     // Orders state: short TTL - 3s cache, 5s SWR (near real-time for POS)
@@ -314,12 +298,6 @@ export async function PUT(request: Request) {
     if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'glovo' && !Object.prototype.hasOwnProperty.call(updateData, 'glovoOrderNumber')) {
       updateData.glovoOrderNumber = null
     }
-    if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'mpesa') {
-      updateData.mpesaTransactionId = null
-      updateData.mpesaReceiptNumber = null
-      updateData.linkedAt = null
-      updateData.linkedBy = null
-    }
     
     console.log('[Orders API] Updating order:', {
       id,
@@ -337,6 +315,32 @@ export async function PUT(request: Request) {
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'mpesa') {
+      const wasMpesa = String(existingOrder.paymentMethod || '').toLowerCase() === 'mpesa'
+      if (wasMpesa) {
+        for (const p of baseLinkedListFromOrder(existingOrder)) {
+          if (ObjectId.isValid(p.transactionId)) {
+            await db.collection('mpesa_transactions').updateOne(
+              { _id: new ObjectId(p.transactionId) },
+              { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
+            )
+          }
+        }
+      }
+      updateData.mpesaTransactionId = null
+      updateData.mpesaReceiptNumber = null
+      updateData.linkedAt = null
+      updateData.linkedBy = null
+      updateData.linkedPayments = []
+      updateData.totalLinkedPayments = 0
+      updateData.balanceDue = null
+      updateData.overpaymentAmount = 0
+      updateData.changeGiven = false
+      updateData.changeGivenAt = null
+      updateData.changeGivenBy = null
+      updateData.changeNotes = null
     }
     
     const oldStatus = existingOrder.status
@@ -356,15 +360,19 @@ export async function PUT(request: Request) {
       }
       updateData.stockDeducted = false
       updateData.stockReleasedAt = new Date()
-      if (existingOrder.mpesaTransactionId) {
-        const txId = String(existingOrder.mpesaTransactionId)
-        if (ObjectId.isValid(txId)) {
+      for (const p of baseLinkedListFromOrder(existingOrder)) {
+        if (ObjectId.isValid(p.transactionId)) {
           await db.collection('mpesa_transactions').updateOne(
-            { _id: new ObjectId(txId) },
+            { _id: new ObjectId(p.transactionId) },
             { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
           )
         }
       }
+      updateData.linkedPayments = []
+      updateData.mpesaTransactionId = null
+      updateData.mpesaReceiptNumber = null
+      updateData.linkedAt = null
+      updateData.linkedBy = null
     } else if (!wasStockDeducted && !isTerminalStatus && nextItems.length > 0) {
       const validation = await validateStockForItems(db, nextItems)
       if (!validation.ok) {
@@ -507,6 +515,15 @@ export async function DELETE(request: Request) {
         if (!item.productId || !item.quantity) continue
         const qty = Number(item.quantity)
         await restoreStockAtomic(db, item.productId, qty, id, userId, item.name || 'Unknown', 'order_deleted')
+      }
+    }
+
+    for (const p of baseLinkedListFromOrder(order)) {
+      if (ObjectId.isValid(p.transactionId)) {
+        await db.collection('mpesa_transactions').updateOne(
+          { _id: new ObjectId(p.transactionId) },
+          { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
+        )
       }
     }
 

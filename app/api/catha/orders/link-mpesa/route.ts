@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
-import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
-import { normalizeMpesaStatus } from '@/lib/mpesa-status'
+import { appendMpesaPaymentToOrder } from '@/lib/catha-append-mpesa-payment'
 
 export async function POST(request: Request) {
   try {
@@ -24,90 +23,27 @@ export async function POST(request: Request) {
     if (!orderId || !transactionId) {
       return NextResponse.json({ error: 'orderId and transactionId are required' }, { status: 400 })
     }
-    if (!ObjectId.isValid(transactionId)) {
-      return NextResponse.json({ error: 'Invalid transactionId' }, { status: 400 })
-    }
 
     const db = await getDatabase('infusion_jaba')
-    const order = await db.collection('orders').findOne({ id: orderId })
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-    }
-
-    const tx = await db.collection('mpesa_transactions').findOne({ _id: new ObjectId(transactionId) })
-    if (!tx) {
-      return NextResponse.json({ error: 'M-Pesa transaction not found' }, { status: 404 })
-    }
-
-    const txStatus = normalizeMpesaStatus(tx.status)
-    if (txStatus !== 'COMPLETED') {
-      return NextResponse.json({ error: 'Only completed M-Pesa transactions can be linked' }, { status: 400 })
-    }
-
-    const total = Number(order.total || 0)
-    const received = Number(order.cashAmount || 0)
-    const dueAmount = Math.max(0, total - received)
-    const txAmount = Number(tx.amount || 0)
-    if (txAmount !== dueAmount) {
-      return NextResponse.json(
-        { error: `Amount mismatch. Order due is ${dueAmount}, transaction is ${txAmount}.` },
-        { status: 400 }
-      )
-    }
-
-    const existingLink = await db.collection('orders').findOne({
-      id: { $ne: orderId },
-      mpesaTransactionId: transactionId,
-      paymentMethod: 'mpesa',
-      paymentStatus: 'PAID',
-    })
-    if (existingLink) {
-      return NextResponse.json(
-        { error: `Transaction is already linked to order ${existingLink.id}.` },
-        { status: 409 }
-      )
-    }
-
-    const mpesaReceiptNumber = tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null
-    const linkedAt = new Date()
     const linkedBy = (session.user as any).name || session.user.email || 'System'
 
-    await db.collection('orders').updateOne(
-      { id: orderId },
-      {
-        $set: {
-          paymentMethod: 'mpesa',
-          paymentStatus: 'PAID',
-          status: 'completed',
-          mpesaTransactionId: transactionId,
-          mpesaReceiptNumber,
-          linkedAt,
-          linkedBy,
-          updatedAt: linkedAt,
-        },
-      }
-    )
+    const result = await appendMpesaPaymentToOrder(db, { orderId, transactionId, linkedBy })
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
 
-    await db.collection('mpesa_transactions').updateOne(
-      { _id: new ObjectId(transactionId) },
-      {
-        $set: {
-          linked_order_id: orderId,
-          linked_at: linkedAt,
-          linked_by: linkedBy,
-          updatedAt: linkedAt,
-        },
-      }
-    )
-
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
-      orderId,
-      transactionId,
-      mpesaReceiptNumber,
-      linkedAt: linkedAt.toISOString(),
+      orderId: result.orderId,
+      transactionId: result.transactionId,
+      mpesaReceiptNumber: result.mpesaReceiptNumber,
+      linkedAt: result.linkedAt.toISOString(),
       linkedBy,
+      summary: result.summary,
+      linkedPayments: result.linkedPayments,
     })
+    res.headers.set('Cache-Control', 'no-store')
+    return res
   } catch (error: any) {
     console.error('[Orders Link M-Pesa] Error:', error)
     return NextResponse.json(

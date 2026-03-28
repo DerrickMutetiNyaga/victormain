@@ -55,12 +55,20 @@ export async function GET(request: Request) {
       }
     }
 
+    const recentLimitRaw = searchParams.get('recentLimit')
+    const recentLimit = recentLimitRaw != null && recentLimitRaw !== '' ? Math.min(parseInt(recentLimitRaw, 10) || 0, 200) : 0
+    if (recentLimit > 0 && !searchParams.get('exactAmount')) {
+      query.status = 'COMPLETED'
+    }
+
+    const findLimit = recentLimit > 0 ? recentLimit : 1000
+
     // Get transactions
     const transactions = await db
       .collection('mpesa_transactions')
       .find(query)
       .sort({ createdAt: -1 })
-      .limit(1000)
+      .limit(findLimit)
       .toArray()
 
     // Resolve linked order status for each transaction (used by lightweight link flow in Orders)
@@ -78,15 +86,20 @@ export async function GET(request: Request) {
         $or: [
           { id: { $in: accountRefs } },
           { mpesaTransactionId: { $in: transactionIds } },
+          { 'linkedPayments.transactionId': { $in: transactionIds } },
         ],
       })
-      .project({ id: 1, mpesaTransactionId: 1, paymentMethod: 1, paymentStatus: 1 })
+      .project({ id: 1, mpesaTransactionId: 1, linkedPayments: 1, paymentMethod: 1, paymentStatus: 1 })
       .toArray()
     const orderByMpesaTxId = new Map<string, any>()
     const orderById = new Map<string, any>()
     for (const o of linkedOrders) {
-      if (o?.mpesaTransactionId) orderByMpesaTxId.set(String(o.mpesaTransactionId), o)
       if (o?.id) orderById.set(String(o.id), o)
+      if (o?.mpesaTransactionId) orderByMpesaTxId.set(String(o.mpesaTransactionId), o)
+      for (const p of o.linkedPayments || []) {
+        const tid = p?.transactionId != null ? String(p.transactionId) : ''
+        if (tid) orderByMpesaTxId.set(tid, o)
+      }
     }
 
     // Format transactions

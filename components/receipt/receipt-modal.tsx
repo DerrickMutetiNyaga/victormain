@@ -36,6 +36,12 @@ export interface ReceiptOrder {
   total?: number | null
   cashAmount?: number | null
   cashBalance?: number | null
+  /** M-Pesa / split payment summary */
+  totalLinkedPayments?: number | null
+  balanceDue?: number | null
+  overpaymentAmount?: number | null
+  changeGiven?: boolean | null
+  paymentStatusLabel?: string | null
 }
 
 interface ReceiptModalProps {
@@ -493,6 +499,33 @@ export function ReceiptModal({
                   <span class="total-final-value">${formatKsh(order.total)}</span>
                 </div>
                 ${
+                  order.totalLinkedPayments != null && order.totalLinkedPayments > 0
+                    ? `
+                <div class="received-divider"></div>
+                <div class="total-row">
+                  <span class="total-label">Paid (linked)</span>
+                  <span class="total-value">${formatKsh(order.totalLinkedPayments)}</span>
+                </div>
+                ${
+                  order.balanceDue != null && order.balanceDue > 0
+                    ? `<div class="total-row"><span class="due-label">Balance due</span><span class="due-value">${formatKsh(order.balanceDue)}</span></div>`
+                    : ""
+                }
+                ${
+                  order.overpaymentAmount != null && order.overpaymentAmount > 0
+                    ? `<div class="total-row"><span class="total-label">Excess / change</span><span class="change-value">${formatKsh(order.overpaymentAmount)}</span></div>
+                       <div class="total-row"><span class="total-label">Change given</span><span class="total-value">${order.changeGiven ? "Yes" : "No"}</span></div>`
+                    : ""
+                }
+                ${
+                  order.paymentStatusLabel
+                    ? `<div class="total-row"><span class="total-label">Pay status</span><span class="total-value">${order.paymentStatusLabel}</span></div>`
+                    : ""
+                }
+                `
+                    : ""
+                }
+                ${
                   isPaid && order.cashAmount != null && order.cashAmount > 0
                     ? `
                   <div class="received-divider"></div>
@@ -623,6 +656,11 @@ export function ReceiptModal({
               amountReceived={order.cashAmount}
               change={order.cashBalance}
               isPaid={isPaid}
+              totalLinkedPayments={order.totalLinkedPayments}
+              balanceDue={order.balanceDue}
+              overpaymentAmount={order.overpaymentAmount}
+              changeGiven={order.changeGiven}
+              paymentStatusLabel={order.paymentStatusLabel}
             />
 
             <ReceiptFooter orderId={order.id} showQRCode={showQRCode} />
