@@ -23,6 +23,8 @@ interface SelectedItem {
   size: "500ml" | "1L" | "2L"
   batchNumber: string
   packageNumber: string // PKG-00001
+  /** When set, stock is tracked per flavour line under the same parent batch */
+  flavourLineId?: string
   availableQuantity: number
   quantity: number
   pricePerUnit: number
@@ -47,6 +49,7 @@ interface BatchGroup {
     finishedGood: Product
     packageNumber: string
     availableQuantity: number
+    flavourLineId?: string
   }>
 }
 
@@ -126,7 +129,8 @@ function CreateDeliveryNotePageContent() {
                 size: item.size,
                 batchNumber: item.batchNumber || '',
                 packageNumber: item.packageNumber || '',
-                availableQuantity: item.quantity, // Use current quantity as available
+                flavourLineId: item.flavourLineId,
+                availableQuantity: item.quantity,
                 quantity: item.quantity,
                 pricePerUnit: item.pricePerUnit || 0,
               }
@@ -230,59 +234,61 @@ function CreateDeliveryNotePageContent() {
     return `PKG-${currentYear}-${randomNum}`
   }
 
+  const segmentForPackaging = (po: any, batchFlavor: string) => {
+    if (po.flavourLineId) return `fid:${String(po.flavourLineId)}`
+    const n = (po.flavourName || batchFlavor || "Unknown").trim()
+    return `fl:${n}`
+  }
+
+  const segmentForDeliveryItem = (item: any) => {
+    if (item.flavourLineId) return `fid:${String(item.flavourLineId)}`
+    return `fl:${(item.flavor || "").trim()}`
+  }
+
   // Group products by batch from packaging outputs and calculate available quantities
   const groupByBatch = (): Map<string, BatchGroup> => {
     const batchMap = new Map<string, BatchGroup>()
-
-    // Get packaging outputs for the selected batch if in single-batch mode
     const relevantPackagingOutputs = isSingleBatchMode && selectedBatchData
       ? packagingOutputs.filter((po) => po.batchId === selectedBatchId)
       : packagingOutputs
 
-    // First pass: Calculate total packaged quantities by batch and size
-    const packagedByBatchAndSize = new Map<string, number>() // key: "batchNumber-size", value: total packaged
-    
+    const packagedByKey = new Map<string, number>()
     relevantPackagingOutputs.forEach((packagingOutput) => {
       const batch = batches.find((b) => (b._id || b.id) === packagingOutput.batchId)
       if (!batch) return
-
       const batchNumber = batch.batchNumber
-      
-      if (packagingOutput.containers && Array.isArray(packagingOutput.containers)) {
-        packagingOutput.containers.forEach((container: any) => {
-          const size = container.size || "500ml"
-          const quantity = parseFloat(container.quantity) || 0
-          const key = `${batchNumber}-${size}`
-          packagedByBatchAndSize.set(key, (packagedByBatchAndSize.get(key) || 0) + quantity)
-        })
-      }
+      const seg = segmentForPackaging(packagingOutput, batch.flavor || "")
+      if (!packagingOutput.containers || !Array.isArray(packagingOutput.containers)) return
+      packagingOutput.containers.forEach((container: any) => {
+        const size = container.size || "500ml"
+        const quantity = parseFloat(container.quantity) || 0
+        const key = `${batchNumber}|${seg}|${size}`
+        packagedByKey.set(key, (packagedByKey.get(key) || 0) + quantity)
+      })
     })
 
-    // Second pass: Calculate already distributed quantities by batch and size
-    const distributedByBatchAndSize = new Map<string, number>() // key: "batchNumber-size", value: total distributed
-    
+    const distributedByKey = new Map<string, number>()
     deliveryNotes.forEach((note: any) => {
-      if (note.items && Array.isArray(note.items)) {
-        note.items.forEach((item: any) => {
-          if (item.batchNumber && item.size) {
-            const key = `${item.batchNumber}-${item.size}`
-            const qty = parseFloat(item.quantity) || 0
-            distributedByBatchAndSize.set(key, (distributedByBatchAndSize.get(key) || 0) + qty)
-          }
-        })
-      }
+      if (!note.items || !Array.isArray(note.items)) return
+      note.items.forEach((item: any) => {
+        if (!item.batchNumber || !item.size) return
+        const seg = segmentForDeliveryItem(item)
+        const key = `${item.batchNumber}|${seg}|${item.size}`
+        const qty = parseFloat(item.quantity) || 0
+        distributedByKey.set(key, (distributedByKey.get(key) || 0) + qty)
+      })
     })
 
-    // Third pass: Build batch groups with available quantities (packaged - distributed)
     relevantPackagingOutputs.forEach((packagingOutput) => {
       const batch = batches.find((b) => (b._id || b.id) === packagingOutput.batchId)
       if (!batch) return
-
       const batchNumber = batch.batchNumber
-      
+      const seg = segmentForPackaging(packagingOutput, batch.flavor || "")
+      const displayFlavor = (packagingOutput.flavourName || batch.flavor || "Unknown").trim()
+
       if (!batchMap.has(batchNumber)) {
         batchMap.set(batchNumber, {
-          batchNumber: batchNumber,
+          batchNumber,
           flavor: batch.flavor || "Unknown",
           productType: batch.productCategory || "Juice",
           date: batch.date ? new Date(batch.date) : new Date(),
@@ -291,67 +297,56 @@ function CreateDeliveryNotePageContent() {
       }
 
       const group = batchMap.get(batchNumber)!
-      
-      // Process containers from packaging output
-      if (packagingOutput.containers && Array.isArray(packagingOutput.containers)) {
-        // Get package number from packaging output - this is the key field
-        let pkgNumber = packagingOutput.packageNumber
-        
-        // Validate package number - must start with PKG- and not be the batch number
-        if (!pkgNumber || 
-            pkgNumber === packagingOutput.batchNumber || 
-            pkgNumber === batchNumber ||
-            !pkgNumber.startsWith('PKG-')) {
-          // Generate a proper package number if missing or invalid
-          const currentYear = new Date().getFullYear()
-          const randomNum = String(Math.floor(Math.random() * 99999)).padStart(5, "0")
-          pkgNumber = `PKG-${currentYear}-${randomNum}`
-          console.log(`[Distribution] Generated package number for batch ${batchNumber}: ${pkgNumber}`)
-        } else {
-          console.log(`[Distribution] Using package number from packaging output: ${pkgNumber} for batch ${batchNumber}`)
-        }
-        
-        packagingOutput.containers.forEach((container: any) => {
-          const size = container.size || "500ml"
-          const packagedQty = parseFloat(container.quantity) || 0
-          
-          if (packagedQty > 0) {
-            // Calculate available quantity: packaged - already distributed
-            const key = `${batchNumber}-${size}`
-            const totalPackaged = packagedByBatchAndSize.get(key) || 0
-            const totalDistributed = distributedByBatchAndSize.get(key) || 0
-            const availableQty = Math.max(0, totalPackaged - totalDistributed)
-            
-            // Only add product if there's available quantity
-            if (availableQty > 0) {
-              // Check if this size already exists for this batch
-              const existingProduct = group.products.find(
-                (p) => p.finishedGood.size === size && p.finishedGood.flavor === batch.flavor
-              )
 
-              if (existingProduct) {
-                // Update available quantity (use the calculated total, not add)
-                existingProduct.availableQuantity = availableQty
-              } else {
-                // Create new product entry with the validated package number
-                group.products.push({
-                  finishedGood: {
-                    id: `${batchNumber}-${size}`,
-                    flavor: batch.flavor || "Unknown",
-                    productType: batch.productCategory || "Juice",
-                    size: size as "500ml" | "1L" | "2L",
-                    quantity: packagedQty,
-                    batches: [batchNumber],
-                    lastUpdated: new Date(),
-                  },
-                  packageNumber: pkgNumber, // Use the validated/generated package number
-                  availableQuantity: availableQty, // CRITICAL: Use calculated available, not packaged
-                })
-              }
-            }
-          }
-        })
+      if (!packagingOutput.containers || !Array.isArray(packagingOutput.containers)) return
+
+      let pkgNumber = packagingOutput.packageNumber
+      if (!pkgNumber ||
+          pkgNumber === packagingOutput.batchNumber ||
+          pkgNumber === batchNumber ||
+          !pkgNumber.startsWith("PKG-")) {
+        const currentYear = new Date().getFullYear()
+        const randomNum = String(Math.floor(Math.random() * 99999)).padStart(5, "0")
+        pkgNumber = `PKG-${currentYear}-${randomNum}`
       }
+
+      packagingOutput.containers.forEach((container: any) => {
+        const size = container.size || "500ml"
+        const packagedQty = parseFloat(container.quantity) || 0
+        if (packagedQty <= 0) return
+        const key = `${batchNumber}|${seg}|${size}`
+        const totalPackaged = packagedByKey.get(key) || 0
+        const totalDistributed = distributedByKey.get(key) || 0
+        const availableQty = Math.max(0, totalPackaged - totalDistributed)
+        if (availableQty <= 0) return
+
+        const finishedGoodId = `${batchNumber}|${seg}|${size}`
+        const existingProduct = group.products.find((p) => p.finishedGood.id === finishedGoodId)
+
+        if (existingProduct) {
+          existingProduct.availableQuantity = availableQty
+          if (packagingOutput.flavourLineId) {
+            existingProduct.flavourLineId = String(packagingOutput.flavourLineId)
+          }
+        } else {
+          group.products.push({
+            finishedGood: {
+              id: finishedGoodId,
+              flavor: displayFlavor,
+              productType: batch.productCategory || "Juice",
+              size: size as "500ml" | "1L" | "2L",
+              quantity: packagedQty,
+              batches: [batchNumber],
+              lastUpdated: new Date(),
+            },
+            packageNumber: pkgNumber,
+            availableQuantity: availableQty,
+            flavourLineId: packagingOutput.flavourLineId
+              ? String(packagingOutput.flavourLineId)
+              : undefined,
+          })
+        }
+      })
     })
 
     return batchMap
@@ -376,8 +371,8 @@ function CreateDeliveryNotePageContent() {
       
       if (batchesResponse.ok && batchesData.batches) {
         // Filter batches that have packaged items ready for distribution
-        const readyBatches = batchesData.batches.filter((b: any) => 
-          (b.status === "Ready for Distribution" || b.status === "Partially Packaged") &&
+        const readyBatches = batchesData.batches.filter((b: any) =>
+          ["Ready for Distribution", "Partially Packaged", "Partially Allocated", "Fully Allocated"].includes(b.status) &&
           ((b.bottles500ml || 0) + (b.bottles1L || 0) + (b.bottles2L || 0) > 0)
         )
         setBatches(readyBatches)
@@ -462,8 +457,15 @@ function CreateDeliveryNotePageContent() {
     const product = batchGroup.products.find((p) => p.finishedGood.id === finishedGoodId)
     if (!product) return
 
-    // Check if this exact item (same finishedGoodId and batchNumber) is already selected
-    if (selectedItems.some((item) => item.finishedGoodId === finishedGoodId && item.batchNumber === batchNumber)) {
+    const lineId = product.flavourLineId || ""
+    if (
+      selectedItems.some(
+        (item) =>
+          item.finishedGoodId === finishedGoodId &&
+          item.batchNumber === batchNumber &&
+          String(item.flavourLineId || "") === String(lineId)
+      )
+    ) {
       return
     }
 
@@ -485,10 +487,11 @@ function CreateDeliveryNotePageContent() {
       productType: product.finishedGood.productType,
       size: product.finishedGood.size,
       batchNumber,
-      packageNumber, // This should now always be a valid PKG- format
+      packageNumber,
+      flavourLineId: product.flavourLineId || undefined,
       availableQuantity: product.availableQuantity,
       quantity: defaultQuantity || 0,
-      pricePerUnit: 0, // Default to 0, user will input
+      pricePerUnit: 0,
     }
     
     console.log(`[Distribution] Added item with package number: ${packageNumber} for batch: ${batchNumber}`)
@@ -524,8 +527,17 @@ function CreateDeliveryNotePageContent() {
   const totalCost = selectedItems.reduce((sum, item) => sum + (item.quantity * item.pricePerUnit), 0)
 
   // Check if a product is already selected
-  const isProductSelected = (finishedGoodId: string, batchNumber: string): boolean => {
-    return selectedItems.some((item) => item.finishedGoodId === finishedGoodId && item.batchNumber === batchNumber)
+  const isProductSelected = (
+    finishedGoodId: string,
+    batchNumber: string,
+    flavourLineId?: string
+  ): boolean => {
+    return selectedItems.some(
+      (item) =>
+        item.finishedGoodId === finishedGoodId &&
+        item.batchNumber === batchNumber &&
+        String(item.flavourLineId || "") === String(flavourLineId || "")
+    )
   }
 
   // Handle generating delivery note
@@ -581,7 +593,7 @@ function CreateDeliveryNotePageContent() {
         )
         setIsGenerating(false)
         // Refresh data to get latest available quantities
-        await fetchBatches()
+        await fetchData()
         return
       }
       
@@ -605,6 +617,7 @@ function CreateDeliveryNotePageContent() {
               size: item.size,
               batchNumber: item.batchNumber,
               packageNumber: item.packageNumber,
+              flavourLineId: item.flavourLineId,
               quantity: item.quantity,
               pricePerUnit: item.pricePerUnit,
               totalCost: item.quantity * item.pricePerUnit,
@@ -646,6 +659,7 @@ function CreateDeliveryNotePageContent() {
               size: item.size,
               batchNumber: item.batchNumber,
               packageNumber: item.packageNumber,
+              flavourLineId: item.flavourLineId,
               quantity: item.quantity,
               pricePerUnit: item.pricePerUnit,
               totalCost: item.quantity * item.pricePerUnit,
@@ -852,7 +866,11 @@ function CreateDeliveryNotePageContent() {
                           {isExpanded && (
                             <div className="border-t border-slate-200 dark:border-slate-800 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/30">
                               {batchGroup.products.map((product) => {
-                                const isSelected = isProductSelected(product.finishedGood.id, batchGroup.batchNumber)
+                                const isSelected = isProductSelected(
+                                  product.finishedGood.id,
+                                  batchGroup.batchNumber,
+                                  product.flavourLineId
+                                )
                                 const selectedItem = selectedItems.find(
                                   (item) => item.finishedGoodId === product.finishedGood.id && item.batchNumber === batchGroup.batchNumber
                                 )

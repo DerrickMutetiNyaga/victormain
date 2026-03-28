@@ -8,6 +8,10 @@ import {
   getNeutralRemainingLitres,
   getInfusedAllocated,
 } from '@/lib/jaba-batch-utils'
+import {
+  JABA_FLAVOUR_LINES_COLLECTION,
+  mergeFlavourRowsFromCaches,
+} from '@/lib/jaba-flavour-lines'
 
 export const runtime = 'nodejs'
 
@@ -112,6 +116,37 @@ export async function GET(request: Request) {
       childrenByParent.get(pid)!.push(c)
     }
 
+    const allFlavourLineDocs =
+      rootIds.length > 0
+        ? await db
+            .collection(JABA_FLAVOUR_LINES_COLLECTION)
+            .find({ parentBatchId: { $in: rootIds } })
+            .toArray()
+        : []
+    const linesByParent = new Map<string, any[]>()
+    for (const line of allFlavourLineDocs) {
+      const pid = String(line.parentBatchId)
+      if (!linesByParent.has(pid)) linesByParent.set(pid, [])
+      linesByParent.get(pid)!.push(line)
+    }
+
+    const lineMongoIds = allFlavourLineDocs.map((d) => d._id.toString())
+    const allPackBatchIds = [
+      ...new Set([
+        ...rootIds,
+        ...allChildren.map((c) => c._id.toString()),
+      ]),
+    ]
+    const packagingOr: Record<string, unknown>[] = [{ batchId: { $in: allPackBatchIds } }]
+    if (lineMongoIds.length > 0) {
+      packagingOr.push({ flavourLineId: { $in: lineMongoIds } })
+    }
+    const packagingOutputs =
+      allPackBatchIds.length > 0 || lineMongoIds.length > 0
+        ? await db.collection('jaba_packagingOutput').find({ $or: packagingOr }).toArray()
+        : []
+    const deliveryNotes = await db.collection('jaba_deliveryNotes').find({}).toArray()
+
     const serializeDates = (batch: any) => ({
       ...batch,
       id: batch._id.toString(),
@@ -135,8 +170,10 @@ export async function GET(request: Request) {
       roots = roots.filter((r) => {
         const id = r._id.toString()
         const kids = childrenByParent.get(id) || []
+        const lines = linesByParent.get(id) || []
         if (r.flavor === flavor) return true
-        return kids.some((k) => k.flavor === flavor)
+        if (kids.some((k) => k.flavor === flavor)) return true
+        return lines.some((l) => (l.flavourName || '') === flavor)
       })
     }
 
@@ -145,23 +182,43 @@ export async function GET(request: Request) {
       roots = roots.filter((r) => {
         const id = r._id.toString()
         const kids = childrenByParent.get(id) || []
+        const lines = linesByParent.get(id) || []
         if ((r.batchNumber || '').toLowerCase().includes(q)) return true
         if ((r.flavor || '').toLowerCase().includes(q)) return true
-        return kids.some(
+        if (kids.some(
           (k) =>
             (k.batchNumber || '').toLowerCase().includes(q) || (k.flavor || '').toLowerCase().includes(q)
+        )) return true
+        return lines.some(
+          (l) =>
+            String(l.lineCode || '').toLowerCase().includes(q) ||
+            String(l.flavourName || '').toLowerCase().includes(q)
         )
       })
     }
 
     const formattedBatches = roots.map((batch) => {
+      const b = batch as Record<string, any>
       const id = batch._id.toString()
-      const bt = normalizeBatchType(batch)
-      const legacy = isLegacyFlavourFirstBatch(batch)
-      const kids = (childrenByParent.get(id) || []).map(serializeDates)
-      const infused = getInfusedAllocated(batch)
+      const bt = normalizeBatchType(b)
+      const legacy = isLegacyFlavourFirstBatch(b)
+      const legacyKidsRaw = childrenByParent.get(id) || []
+      const lineDocsRaw = linesByParent.get(id) || []
+      const flavourOutputs = mergeFlavourRowsFromCaches(
+        id,
+        lineDocsRaw,
+        legacyKidsRaw,
+        packagingOutputs,
+        deliveryNotes
+      )
+      const infused = getInfusedAllocated(b)
       const neutralRemainingLitres =
-        bt === 'neutral' && !batch.parentBatchId ? getNeutralRemainingLitres(batch) : 0
+        bt === 'neutral' && !b.parentBatchId ? getNeutralRemainingLitres(b) : 0
+      const flavourSummary = {
+        lineCount: flavourOutputs.length,
+        totalPackagedLitres: flavourOutputs.reduce((s, r) => s + r.packagedLitres, 0),
+        totalDistributedLitres: flavourOutputs.reduce((s, r) => s + r.distributedLitres, 0),
+      }
 
       return {
         ...serializeDates(batch),
@@ -169,8 +226,9 @@ export async function GET(request: Request) {
         legacyFlavourFirstBatch: legacy,
         infusedAllocatedLitres: infused,
         neutralRemainingLitres,
-        flavourOutputCount: kids.length,
-        flavourOutputs: kids,
+        flavourOutputCount: flavourOutputs.length,
+        flavourOutputs,
+        flavourSummary,
       }
     })
 

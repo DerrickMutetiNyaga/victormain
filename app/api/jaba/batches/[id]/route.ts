@@ -8,6 +8,10 @@ import {
   getInfusedAllocated,
   getNeutralRemainingLitres,
 } from '@/lib/jaba-batch-utils'
+import {
+  JABA_FLAVOUR_LINES_COLLECTION,
+  loadMergedFlavourRowsForParent,
+} from '@/lib/jaba-flavour-lines'
 
 export const runtime = 'nodejs'
 
@@ -404,43 +408,54 @@ export async function GET(
       )
     }
 
+    const bdoc = batch as Record<string, any>
     const sid = batch._id.toString()
     let flavourOutputs: any[] = []
     let parentBatchSummary: any = null
 
     if (!batch.parentBatchId) {
-      const kids = await db
-        .collection('jaba_batches')
+      const lineMongoIds = await db
+        .collection(JABA_FLAVOUR_LINES_COLLECTION)
         .find({ parentBatchId: sid })
-        .sort({ infusionDate: -1, createdAt: -1 })
+        .project({ _id: 1 })
         .toArray()
-      flavourOutputs = kids.map(serializeBatchDoc)
+      const legacyKids = await db.collection('jaba_batches').find({ parentBatchId: sid }).toArray()
+      const lineIds = lineMongoIds.map((d) => d._id.toString())
+      const packOr: Record<string, unknown>[] = [{ batchId: sid }]
+      if (legacyKids.length > 0) {
+        packOr.push({ batchId: { $in: legacyKids.map((k) => k._id.toString()) } })
+      }
+      if (lineIds.length > 0) packOr.push({ flavourLineId: { $in: lineIds } })
+      const packagingOutputs = await db.collection('jaba_packagingOutput').find({ $or: packOr }).toArray()
+      const deliveryNotes = await db.collection('jaba_deliveryNotes').find({}).toArray()
+      flavourOutputs = await loadMergedFlavourRowsForParent(db, sid, packagingOutputs, deliveryNotes)
     } else {
       const parent = await db.collection('jaba_batches').findOne({
         _id: new ObjectId(String(batch.parentBatchId)),
       })
       if (parent) {
         const ps = serializeBatchDoc(parent)
+        const p = parent as Record<string, any>
         parentBatchSummary = {
           ...ps,
-          batchType: normalizeBatchType(parent),
-          infusedAllocatedLitres: getInfusedAllocated(parent),
-          neutralRemainingLitres: getNeutralRemainingLitres(parent),
-          legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(parent),
+          batchType: normalizeBatchType(p),
+          infusedAllocatedLitres: getInfusedAllocated(p),
+          neutralRemainingLitres: getNeutralRemainingLitres(p),
+          legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(p),
         }
       }
     }
 
-    const bt = normalizeBatchType(batch)
+    const bt = normalizeBatchType(bdoc)
     const serialized = serializeBatchDoc(batch)
 
     return NextResponse.json({
       batch: {
         ...serialized,
         batchType: bt,
-        legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(batch),
-        infusedAllocatedLitres: !batch.parentBatchId ? getInfusedAllocated(batch) : undefined,
-        neutralRemainingLitres: !batch.parentBatchId ? getNeutralRemainingLitres(batch) : undefined,
+        legacyFlavourFirstBatch: isLegacyFlavourFirstBatch(bdoc),
+        infusedAllocatedLitres: !batch.parentBatchId ? getInfusedAllocated(bdoc) : undefined,
+        neutralRemainingLitres: !batch.parentBatchId ? getNeutralRemainingLitres(bdoc) : undefined,
         flavourOutputs,
         parentBatch: parentBatchSummary,
         displayFlavorLabel: batch.flavor || NEUTRAL_BATCH_DISPLAY_FLAVOR,
@@ -538,6 +553,9 @@ export async function DELETE(
         }
       }
     }
+
+    // Remove flavour lines tied to this master batch (sub-rows, not separate batches)
+    await db.collection(JABA_FLAVOUR_LINES_COLLECTION).deleteMany({ parentBatchId: id })
 
     // Delete the batch
     const result = await db.collection('jaba_batches').deleteOne({ _id: new ObjectId(id) })

@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
-import { normalizeBatchType, isLegacyFlavourFirstBatch, getNeutralRemainingLitres, childBatchNumberSuffix } from '@/lib/jaba-batch-utils'
+import {
+  normalizeBatchType,
+  isLegacyFlavourFirstBatch,
+  getNeutralRemainingLitres,
+} from '@/lib/jaba-batch-utils'
+import {
+  JABA_FLAVOUR_LINES_COLLECTION,
+  nextFlavourLineCode,
+  parentStatusAfterFlavourAllocation,
+} from '@/lib/jaba-flavour-lines'
 
 export const runtime = 'nodejs'
 
@@ -43,31 +52,47 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const db = client.db('infusion_jaba')
     const { ObjectId } = await import('mongodb')
 
-    const parent = await db.collection('jaba_batches').findOne({ _id: new ObjectId(parentId) })
+    const parent = (await db.collection('jaba_batches').findOne({ _id: new ObjectId(parentId) })) as Record<
+      string,
+      any
+    > | null
     if (!parent) {
       return NextResponse.json({ error: 'Parent batch not found' }, { status: 404 })
     }
 
     if (parent.parentBatchId) {
-      return NextResponse.json({ error: 'Cannot infuse from a flavoured output batch' }, { status: 400 })
+      return NextResponse.json({ error: 'Only the master batch can have flavour lines' }, { status: 400 })
     }
 
     if (isLegacyFlavourFirstBatch(parent)) {
       return NextResponse.json(
-        { error: 'This batch was created with a flavour already assigned (legacy). Create new neutral batches for the infusion workflow.' },
+        {
+          error:
+            'This batch was created with a flavour already assigned (legacy). Create new neutral batches for the infusion workflow.',
+        },
         { status: 400 }
       )
     }
 
     if (normalizeBatchType(parent) !== 'neutral') {
-      return NextResponse.json({ error: 'Only neutral batches can be infused' }, { status: 400 })
+      return NextResponse.json({ error: 'Only neutral batches can receive flavour allocation' }, { status: 400 })
     }
 
-    // Require processed neutral stock (actual produced volume) before splitting into flavours
-    const allowedStatuses = new Set(['Processed', 'QC Pending', 'QC Passed - Ready for Packaging', 'Partially Packaged', 'Ready for Distribution', 'Completed'])
+    const allowedStatuses = new Set([
+      'Processed',
+      'QC Pending',
+      'QC Passed - Ready for Packaging',
+      'Partially Packaged',
+      'Ready for Distribution',
+      'Completed',
+      'Ready for Infusion',
+      'Ready for flavour allocation',
+      'Partially Allocated',
+      'Fully Allocated',
+    ])
     if (!allowedStatuses.has(parent.status) && parent.status !== 'Ready for Infusion') {
       return NextResponse.json(
-        { error: 'Mark the batch as processed (or advance status) before creating flavoured outputs.' },
+        { error: 'Mark the batch as processed (or advance status) before allocating flavours.' },
         { status: 400 }
       )
     }
@@ -75,60 +100,42 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const remaining = getNeutralRemainingLitres(parent)
     if (totalNew - remaining > 1e-6) {
       return NextResponse.json(
-        { error: `Total infusion (${totalNew}L) exceeds remaining neutral volume (${remaining.toFixed(2)}L).` },
+        {
+          error: `Total allocation (${totalNew}L) exceeds remaining unallocated volume (${remaining.toFixed(2)}L).`,
+        },
         { status: 400 }
       )
     }
 
-    const existingChildren = await db
-      .collection('jaba_batches')
-      .find({ parentBatchId: parentId })
-      .toArray()
-    const startIdx = existingChildren.length + 1
-
     const infusionDate = infusionDateRaw ? new Date(infusionDateRaw) : new Date()
-
+    const batchNumber = String(parent.batchNumber || '')
     const created: any[] = []
-    let idx = 0
+
     for (const o of outputs) {
       const qty = Math.max(0, Number(o.quantityLitres) || 0)
       const flavorName = o.flavorName.trim()
-      const bn = childBatchNumberSuffix(parent.batchNumber, startIdx + idx)
+      const lineCode = await nextFlavourLineCode(db, batchNumber, parentId)
 
-      const childDoc = {
-        batchNumber: bn,
-        date: infusionDate,
-        infusionDate,
-        flavor: flavorName,
-        flavorId: o.flavorId || null,
-        productCategory: parent.productCategory || 'Infusion Jaba',
-        batchType: 'flavoured',
+      const lineDoc = {
         parentBatchId: parentId,
-        infusedQuantityLitres: qty,
-        totalLitres: qty,
-        expectedLitres: qty,
-        bottles500ml: 0,
-        bottles1L: 0,
-        bottles2L: 0,
-        status: o.status && ['Created', 'Infused', 'Packaged', 'Completed'].includes(o.status) ? o.status : 'Created',
-        qcStatus: 'Pending',
-        supervisor: parent.supervisor || '',
-        shift: parent.shift || 'Morning',
-        tankNumber: parent.tankNumber || null,
-        ingredients: [],
-        locked: false,
-        outputSummary: {
-          totalBottles: 0,
-          remainingLitres: qty,
-          breakdown: [],
-        },
+        flavourName: flavorName,
+        flavourId: o.flavorId || null,
+        allocatedLitres: qty,
+        lineCode,
+        status: o.status === 'Infusing' ? 'Infusing' : 'Allocated',
+        infusionDate,
         notes: o.notes?.trim() || null,
         createdAt: new Date(),
+        updatedAt: new Date(),
       }
 
-      const ins = await db.collection('jaba_batches').insertOne(childDoc)
-      created.push({ ...childDoc, _id: ins.insertedId.toString(), id: ins.insertedId.toString() })
-      idx++
+      const ins = await db.collection(JABA_FLAVOUR_LINES_COLLECTION).insertOne(lineDoc)
+      const idStr = ins.insertedId.toString()
+      created.push({
+        ...lineDoc,
+        _id: idStr,
+        id: idStr,
+      })
     }
 
     const newAllocated = (Number(parent.infusedAllocatedLitres) || 0) + totalNew
@@ -136,12 +143,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const newRemaining = Math.max(0, produced - newAllocated)
 
     const infusionAllocationStatus = newRemaining <= 1e-6 ? 'full' : 'partial'
-    const simpleInfusionStatuses = new Set(['Processed', 'Ready for Infusion', 'Partially Infused', 'Fully Infused'])
-    const nextStatus = simpleInfusionStatuses.has(parent.status)
-      ? newRemaining <= 1e-6
-        ? 'Fully Infused'
-        : 'Partially Infused'
-      : parent.status
+    const nextStatus = parentStatusAfterFlavourAllocation(String(parent.status), newRemaining, newAllocated)
 
     await db.collection('jaba_batches').updateOne(
       { _id: new ObjectId(parentId) },
@@ -161,10 +163,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       reason: 'NEUTRAL_INFUSED',
       batchId: parentId,
       batchNumber: parent.batchNumber,
-      materialName: 'Neutral batch → flavoured outputs',
+      materialName: 'Neutral batch → flavour lines',
       quantity: totalNew,
       unit: 'L',
-      metadata: { childBatchIds: created.map((c) => c._id) },
+      metadata: { flavourLineIds: created.map((c) => c._id) },
       userId: 'system',
       timestamp: new Date(),
       createdAt: new Date(),

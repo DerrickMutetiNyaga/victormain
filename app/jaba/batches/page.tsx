@@ -15,18 +15,29 @@ import { toast } from "sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useJabaPermissions } from "@/hooks/use-jaba-permissions"
+import { countAvailableBottlesForFlavourRow } from "@/lib/jaba-flavour-lines"
 
 interface FlavourOutputRow {
   _id: string
   id: string
-  batchNumber: string
+  batchNumber?: string
+  lineCode?: string
   flavor: string
-  totalLitres: number
+  flavourName?: string
+  totalLitres?: number
   infusedQuantityLitres?: number
+  allocatedLitres?: number
+  packagedLitres?: number
+  distributedLitres?: number
+  remainingPackLitres?: number
+  remainingDistributeLitres?: number
+  workflowStatus?: string
   status: string
   infusionDate?: string
   parentBatchId?: string
   notes?: string | null
+  isLegacyChildBatch?: boolean
+  legacyChildBatchId?: string
 }
 
 interface Batch {
@@ -53,8 +64,11 @@ interface Batch {
     | "Processing"
     | "Processed"
     | "Ready for Infusion"
+    | "Ready for flavour allocation"
     | "Partially Infused"
+    | "Partially Allocated"
     | "Fully Infused"
+    | "Fully Allocated"
     | "QC Pending"
     | "Completed"
     | "Ready for Distribution"
@@ -83,6 +97,11 @@ interface Batch {
     breakdown: { size: string; quantity: number; litres: number }[]
   }
   packagedLitres?: number
+  flavourSummary?: {
+    lineCount: number
+    totalPackagedLitres: number
+    totalDistributedLitres: number
+  }
 }
 
 // Helper function to get shift badge colors
@@ -163,6 +182,9 @@ export default function BatchesPage() {
       "Ready for Distribution",
       "Completed",
       "Ready for Infusion",
+      "Ready for flavour allocation",
+      "Partially Allocated",
+      "Fully Allocated",
     ])
     return allowed.has(b.status as string)
   }
@@ -194,7 +216,7 @@ export default function BatchesPage() {
       if (!res.ok) {
         throw new Error(data.error || "Infusion failed")
       }
-      toast.success(`Created ${outputs.length} flavoured line(s).`)
+      toast.success(`Allocated ${outputs.length} flavour line(s) on the same batch.`)
       setInfuseOpen(false)
       setInfuseParentId(null)
       await fetchBatches()
@@ -466,8 +488,52 @@ export default function BatchesPage() {
     fetchStockData()
   }, [])
 
+  /** True when this batch can record packaging (bulk or per flavour line). */
+  const canPackThisBatch = (batch: Batch) => {
+    const kids = batch.flavourOutputs || []
+    if (kids.length > 0 && !batch.parentBatchId) {
+      return kids.some((k) => (Number((k as FlavourOutputRow).remainingPackLitres) || 0) > 1e-6)
+    }
+    return (
+      batch.outputSummary?.remainingLitres === undefined ||
+      batch.outputSummary.remainingLitres > 0
+    )
+  }
+
+  const isBatchSoldOut = (batch: Batch): boolean => {
+    const kids = batch.flavourOutputs || []
+    const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
+    const availableStock = getAvailableStock(batch)
+    const isFlavourParent = kids.length > 0 && !batch.parentBatchId
+
+    if (isFlavourParent) {
+      const neutralLeft = batch.neutralRemainingLitres ?? remainingLitres
+      if (neutralLeft > 1e-6) return false
+      const anyPipelineLeft = kids.some((k) => {
+        const row = k as FlavourOutputRow
+        return (
+          (Number(row.remainingPackLitres) || 0) > 1e-6 ||
+          (Number(row.remainingDistributeLitres) || 0) > 1e-6
+        )
+      })
+      if (anyPipelineLeft) return false
+      return availableStock === 0
+    }
+
+    return remainingLitres === 0 && availableStock === 0
+  }
+
   // Calculate available stock for a batch (packaged - distributed)
   const getAvailableStock = (batch: Batch): number => {
+    const kids = batch.flavourOutputs || []
+    if (kids.length > 0 && !batch.parentBatchId) {
+      return kids.reduce(
+        (sum, row) =>
+          sum + countAvailableBottlesForFlavourRow(row as any, packagingOutputs, deliveryNotes),
+        0
+      )
+    }
+
     const batchNumber = batch.batchNumber
     const batchId = batch._id?.toString() || batch.id
     
@@ -557,11 +623,26 @@ export default function BatchesPage() {
       case "Processed":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
       case "Ready for Infusion":
+      case "Ready for flavour allocation":
         return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
       case "Partially Infused":
+      case "Partially Allocated":
         return "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400"
       case "Fully Infused":
+      case "Fully Allocated":
         return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
+      case "Allocated":
+        return "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+      case "Infusing":
+        return "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
+      case "Packaged":
+        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+      case "Partially Packaged":
+        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+      case "Partially Distributed":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+      case "Fully Distributed":
+        return "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
       case "Created":
         return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300"
       case "QC Passed - Ready for Packaging":
@@ -776,8 +857,11 @@ export default function BatchesPage() {
                     <SelectItem value="Processing">Processing</SelectItem>
                     <SelectItem value="Ready for Infusion">Ready for Infusion</SelectItem>
                     <SelectItem value="Processed">Processed</SelectItem>
+                    <SelectItem value="Ready for flavour allocation">Ready for flavour allocation</SelectItem>
                     <SelectItem value="Partially Infused">Partially Infused</SelectItem>
+                    <SelectItem value="Partially Allocated">Partially Allocated</SelectItem>
                     <SelectItem value="Fully Infused">Fully Infused</SelectItem>
+                    <SelectItem value="Fully Allocated">Fully Allocated</SelectItem>
                     <SelectItem value="QC Pending">QC Pending</SelectItem>
                     <SelectItem value="QC Passed - Ready for Packaging">QC Passed - Ready for Packaging</SelectItem>
                     <SelectItem value="Partially Packaged">Partially Packaged</SelectItem>
@@ -1048,8 +1132,7 @@ export default function BatchesPage() {
                             </div>
                             {(() => {
                               const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                              const availableStock = getAvailableStock(batch)
-                              const isSoldOut = remainingLitres === 0 && availableStock === 0
+                              const isSoldOut = isBatchSoldOut(batch)
                               
                               if (isSoldOut) {
                                 return (
@@ -1087,9 +1170,7 @@ export default function BatchesPage() {
                         </TableCell>
                         <TableCell className="px-6 py-4">
                           {(() => {
-                            const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                            const availableStock = getAvailableStock(batch)
-                            const isSoldOut = remainingLitres === 0 && availableStock === 0
+                            const isSoldOut = isBatchSoldOut(batch)
                             
                             return (
                               <Badge className={cn(
@@ -1140,8 +1221,8 @@ export default function BatchesPage() {
                               </Link>
                             )}
                             {/* Show packaging button if QC passed, Processed (skip QC), or partially packaged */}
-                            {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
-                              (batch.outputSummary?.remainingLitres === undefined || batch.outputSummary.remainingLitres > 0)) && (
+                            {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || batch.status === "Partially Allocated" || batch.status === "Fully Allocated" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
+                              canPackThisBatch(batch)) && (
                               <Link href={`/jaba/packaging-output/add?batchId=${batch._id || batch.id}`}>
                                 <Button
                                   size="sm"
@@ -1179,9 +1260,7 @@ export default function BatchesPage() {
                               </Button>
                             </Link>
                             {(() => {
-                              const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                              const availableStock = getAvailableStock(batch)
-                              const isSoldOut = remainingLitres === 0 && availableStock === 0
+                              const isSoldOut = isBatchSoldOut(batch)
                               const isLocked = batch.status === "Processed" || batch.locked || isSoldOut
 
                               if (isLocked) {
@@ -1220,42 +1299,66 @@ export default function BatchesPage() {
                             <div className="flex items-center gap-2 mb-3">
                               <GitBranch className="h-4 w-4 text-emerald-600 shrink-0" />
                               <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                                Flavoured outputs from {batch.batchNumber}
+                                Flavour lines — same batch {batch.batchNumber}
                               </span>
                             </div>
                             <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto bg-white dark:bg-slate-900">
                               <Table>
                                 <TableHeader>
                                   <TableRow className="hover:bg-transparent">
-                                    <TableHead className="text-xs font-semibold">Output #</TableHead>
+                                    <TableHead className="text-xs font-semibold whitespace-nowrap">Line</TableHead>
                                     <TableHead className="text-xs font-semibold">Flavour</TableHead>
-                                    <TableHead className="text-xs font-semibold">Volume</TableHead>
-                                    <TableHead className="text-xs font-semibold">Infusion date</TableHead>
+                                    <TableHead className="text-xs font-semibold whitespace-nowrap">Alloc</TableHead>
+                                    <TableHead className="text-xs font-semibold whitespace-nowrap">Packed</TableHead>
+                                    <TableHead className="text-xs font-semibold whitespace-nowrap">Shipped</TableHead>
+                                    <TableHead className="text-xs font-semibold">Date</TableHead>
                                     <TableHead className="text-xs font-semibold">Status</TableHead>
                                     <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                  {kids.map((k) => (
+                                  {kids.map((k) => {
+                                    const fk = k as FlavourOutputRow
+                                    const rowStatus = fk.workflowStatus || fk.status
+                                    const alloc = fk.allocatedLitres ?? fk.infusedQuantityLitres ?? fk.totalLitres ?? 0
+                                    const viewHref =
+                                      fk.isLegacyChildBatch
+                                        ? `/jaba/batches/${k._id || k.id}`
+                                        : `/jaba/batches/${batch._id || batch.id}`
+                                    return (
                                     <TableRow key={k._id || k.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                                      <TableCell className="text-sm font-mono">{k.batchNumber}</TableCell>
-                                      <TableCell className="text-sm font-medium">{k.flavor}</TableCell>
-                                      <TableCell className="text-sm">
-                                        {(k.infusedQuantityLitres ?? k.totalLitres).toFixed(2)}L
-                                      </TableCell>
-                                      <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                                      <TableCell className="text-sm font-mono whitespace-nowrap">{fk.lineCode || fk.batchNumber || "—"}</TableCell>
+                                      <TableCell className="text-sm font-medium">{fk.flavourName || fk.flavor}</TableCell>
+                                      <TableCell className="text-sm whitespace-nowrap">{Number(alloc).toFixed(2)}L</TableCell>
+                                      <TableCell className="text-sm whitespace-nowrap">{Number(fk.packagedLitres ?? 0).toFixed(2)}L</TableCell>
+                                      <TableCell className="text-sm whitespace-nowrap">{Number(fk.distributedLitres ?? 0).toFixed(2)}L</TableCell>
+                                      <TableCell className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">
                                         {k.infusionDate ? getDate(k.infusionDate).toLocaleDateString() : "—"}
                                       </TableCell>
                                       <TableCell>
-                                        <Badge className={cn("text-xs", getStatusColor(k.status))}>{k.status}</Badge>
+                                        <Badge className={cn("text-xs whitespace-nowrap", getStatusColor(rowStatus))}>{rowStatus}</Badge>
                                       </TableCell>
                                       <TableCell className="text-right">
                                         <div className="flex justify-end gap-1 flex-wrap">
-                                          <Link href={`/jaba/batches/${k._id || k.id}`}>
+                                          <Link href={viewHref}>
                                             <Button variant="outline" size="sm" className="h-8 text-xs">
                                               View
                                             </Button>
                                           </Link>
+                                          {(Number(fk.remainingPackLitres) || 0) > 1e-6 && (
+                                            <Link href={`/jaba/packaging-output/add?batchId=${batch._id || batch.id}&flavourLineId=${fk._id || fk.id}`}>
+                                              <Button variant="outline" size="sm" className="h-8 text-xs border-emerald-300 text-emerald-800">
+                                                Pack
+                                              </Button>
+                                            </Link>
+                                          )}
+                                          {countAvailableBottlesForFlavourRow(fk as any, packagingOutputs, deliveryNotes) > 0 && (
+                                            <Link href={`/jaba/distribution/create?batch=${batch._id || batch.id}&flavourLineId=${fk._id || fk.id}`}>
+                                              <Button variant="outline" size="sm" className="h-8 text-xs border-violet-300 text-violet-800">
+                                                Ship
+                                              </Button>
+                                            </Link>
+                                          )}
                                           {canEdit && (
                                             <Button
                                               variant="ghost"
@@ -1269,7 +1372,8 @@ export default function BatchesPage() {
                                         </div>
                                       </TableCell>
                                     </TableRow>
-                                  ))}
+                                  )
+                                  })}
                                 </TableBody>
                               </Table>
                             </div>
@@ -1302,9 +1406,7 @@ export default function BatchesPage() {
               </Card>
             ) : (
               filteredBatches.map((batch) => {
-                const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                const availableStock = getAvailableStock(batch)
-                const isSoldOut = remainingLitres === 0 && availableStock === 0
+                const isSoldOut = isBatchSoldOut(batch)
                 const bid = batch._id || batch.id
                 const kids = batch.flavourOutputs || []
                 const expanded = expandedBatchIds.has(bid)
@@ -1391,10 +1493,9 @@ export default function BatchesPage() {
                       )}
                       {(() => {
                         const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                        const availableStock = getAvailableStock(batch)
-                        const isSoldOut = remainingLitres === 0 && availableStock === 0
+                        const isSoldOutCard = isBatchSoldOut(batch)
                         
-                        if (isSoldOut) {
+                        if (isSoldOutCard) {
                           return (
                             <div className="mt-3 inline-flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 shadow-sm">
                               <PackageX className="h-4 w-4 text-red-600 dark:text-red-400" />
@@ -1480,8 +1581,8 @@ export default function BatchesPage() {
                       </Link>
                       )}
                       {/* Show packaging button if QC passed, Processed (skip QC), or partially packaged */}
-                      {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
-                        (batch.outputSummary?.remainingLitres === undefined || batch.outputSummary.remainingLitres > 0)) && (
+                      {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || batch.status === "Partially Allocated" || batch.status === "Fully Allocated" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
+                        canPackThisBatch(batch)) && (
                         <Link href={`/jaba/packaging-output/add?batchId=${batch._id || batch.id}`} className="flex-1">
                           <Button
                             size="sm"
@@ -1494,11 +1595,7 @@ export default function BatchesPage() {
                       )}
                       {/* Show distribution button ONLY if has available stock (packaged - distributed > 0) - HIDDEN if sold out */}
                       {(() => {
-                        const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                        const availableStock = getAvailableStock(batch)
-                        const isSoldOut = remainingLitres === 0 && availableStock === 0
-                        
-                        return !isSoldOut && 
+                        return !isBatchSoldOut(batch) && 
                           ((batch.status === "Ready for Distribution" || batch.status === "Partially Packaged") && 
                           getAvailableStock(batch) > 0)
                       })() && (
@@ -1526,10 +1623,8 @@ export default function BatchesPage() {
                         </Button>
                       </Link>
                       {(() => {
-                        const remainingLitres = batch.outputSummary?.remainingLitres ?? 0
-                        const availableStock = getAvailableStock(batch)
-                        const isSoldOut = remainingLitres === 0 && availableStock === 0
-                        const isLocked = batch.status === "Processed" || batch.locked || isSoldOut
+                        const isSoldOutGrid = isBatchSoldOut(batch)
+                        const isLocked = batch.status === "Processed" || batch.locked || isSoldOutGrid
                         
                         if (isLocked) {
                           return (
@@ -1538,10 +1633,10 @@ export default function BatchesPage() {
                               size="sm"
                               disabled
                               className="flex-1 h-9 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-50 text-xs font-medium"
-                              title={isSoldOut ? "Batch sold out" : "Batch locked after processing"}
+                              title={isSoldOutGrid ? "Batch sold out" : "Batch locked after processing"}
                             >
                               <Lock className="h-3.5 w-3.5 mr-1.5" />
-                              {isSoldOut ? "Sold Out" : "Locked"}
+                              {isSoldOutGrid ? "Sold Out" : "Locked"}
                             </Button>
                           )
                         }

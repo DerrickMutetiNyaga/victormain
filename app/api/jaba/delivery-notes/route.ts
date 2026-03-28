@@ -62,22 +62,31 @@ export async function POST(request: Request) {
       for (const item of itemsWithQuantities) {
         const requestedQty = Number(item.quantity) || 0
         if (requestedQty <= 0) continue
+        const itemFlavourLineId = item.flavourLineId ? String(item.flavourLineId) : ''
         
         // Calculate total packaged for this batch + size
         let totalPackaged = 0
         packagingOutputs.forEach((output: any) => {
-          // Match by batchNumber - get batchNumber from batchId
           const outputBatchNumber = batchIdToBatchNumber.get(output.batchId?.toString() || '') || 
                                    output.batchNumber || 
                                    (output.batch && output.batch.batchNumber)
-          
-          if (outputBatchNumber === item.batchNumber && output.containers && Array.isArray(output.containers)) {
-            output.containers.forEach((container: any) => {
-              if (container.size === item.size) {
-                totalPackaged += Number(container.quantity) || 0
-              }
-            })
+          const outputFl = output.flavourLineId != null ? String(output.flavourLineId) : ''
+          const matchFlavour = itemFlavourLineId
+            ? outputFl === itemFlavourLineId
+            : !outputFl
+          if (
+            !matchFlavour ||
+            outputBatchNumber !== item.batchNumber ||
+            !output.containers ||
+            !Array.isArray(output.containers)
+          ) {
+            return
           }
+          output.containers.forEach((container: any) => {
+            if (container.size === item.size) {
+              totalPackaged += Number(container.quantity) || 0
+            }
+          })
         })
         
         // Calculate already distributed for this batch + size
@@ -85,7 +94,15 @@ export async function POST(request: Request) {
         existingDeliveryNotes.forEach((note: any) => {
           if (note.items && Array.isArray(note.items)) {
             note.items.forEach((noteItem: any) => {
-              if (noteItem.batchNumber === item.batchNumber && noteItem.size === item.size) {
+              const noteFl = noteItem.flavourLineId != null ? String(noteItem.flavourLineId) : ''
+              const matchFlavour = itemFlavourLineId
+                ? noteFl === itemFlavourLineId
+                : !noteFl
+              if (
+                noteItem.batchNumber === item.batchNumber &&
+                noteItem.size === item.size &&
+                matchFlavour
+              ) {
                 alreadyDistributed += Number(noteItem.quantity) || 0
               }
             })
@@ -146,6 +163,7 @@ export async function POST(request: Request) {
         size: item.size,
         batchNumber: item.batchNumber || '',
         packageNumber: item.packageNumber || '',
+        flavourLineId: item.flavourLineId ? String(item.flavourLineId) : undefined,
         quantity: Number(item.quantity),
         pricePerUnit: Number(item.pricePerUnit) || 0,
         totalCost: (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0),
@@ -325,11 +343,13 @@ export async function PUT(request: Request) {
       for (const item of itemsWithQuantities) {
         const requestedQty = Number(item.quantity) || 0
         if (requestedQty <= 0) continue
+        const itemFlavourLineId = item.flavourLineId ? String(item.flavourLineId) : ''
         
         // Find old quantity for this item (if it exists)
         const oldItem = oldItems.find((old: any) => 
           old.batchNumber === item.batchNumber && 
           old.size === item.size &&
+          (String(old.flavourLineId || '') === itemFlavourLineId) &&
           (old.finishedGoodId === item.finishedGoodId || old.packageNumber === item.packageNumber)
         )
         const oldQty = oldItem ? (Number(oldItem.quantity) || 0) : 0
@@ -337,18 +357,26 @@ export async function PUT(request: Request) {
         // Calculate total packaged for this batch + size
         let totalPackaged = 0
         packagingOutputs.forEach((output: any) => {
-          // Match by batchNumber - get batchNumber from batchId
           const outputBatchNumber = batchIdToBatchNumber.get(output.batchId?.toString() || '') || 
                                    output.batchNumber || 
                                    (output.batch && output.batch.batchNumber)
-          
-          if (outputBatchNumber === item.batchNumber && output.containers && Array.isArray(output.containers)) {
-            output.containers.forEach((container: any) => {
-              if (container.size === item.size) {
-                totalPackaged += Number(container.quantity) || 0
-              }
-            })
+          const outputFl = output.flavourLineId != null ? String(output.flavourLineId) : ''
+          const matchFlavour = itemFlavourLineId
+            ? outputFl === itemFlavourLineId
+            : !outputFl
+          if (
+            !matchFlavour ||
+            outputBatchNumber !== item.batchNumber ||
+            !output.containers ||
+            !Array.isArray(output.containers)
+          ) {
+            return
           }
+          output.containers.forEach((container: any) => {
+            if (container.size === item.size) {
+              totalPackaged += Number(container.quantity) || 0
+            }
+          })
         })
         
         // Calculate already distributed from OTHER delivery notes (excluding current one)
@@ -356,7 +384,15 @@ export async function PUT(request: Request) {
         otherDeliveryNotes.forEach((note: any) => {
           if (note.items && Array.isArray(note.items)) {
             note.items.forEach((noteItem: any) => {
-              if (noteItem.batchNumber === item.batchNumber && noteItem.size === item.size) {
+              const noteFl = noteItem.flavourLineId != null ? String(noteItem.flavourLineId) : ''
+              const matchFlavour = itemFlavourLineId
+                ? noteFl === itemFlavourLineId
+                : !noteFl
+              if (
+                noteItem.batchNumber === item.batchNumber &&
+                noteItem.size === item.size &&
+                matchFlavour
+              ) {
                 alreadyDistributed += Number(noteItem.quantity) || 0
               }
             })
@@ -394,6 +430,7 @@ export async function PUT(request: Request) {
         size: item.size,
         batchNumber: item.batchNumber || '',
         packageNumber: item.packageNumber || '',
+        flavourLineId: item.flavourLineId ? String(item.flavourLineId) : undefined,
         quantity: Number(item.quantity),
         pricePerUnit: Number(item.pricePerUnit) || 0,
         totalCost: (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0),

@@ -52,6 +52,7 @@ function CreatePackagingSessionPageContent() {
   const [loadingBatch, setLoadingBatch] = useState(false)
   const [batchData, setBatchData] = useState<any>(null)
   const [availableBatches, setAvailableBatches] = useState<any[]>([])
+  const [selectedFlavourLineId, setSelectedFlavourLineId] = useState("")
 
   // Fetch available batches for selection
   useEffect(() => {
@@ -67,6 +68,19 @@ function CreatePackagingSessionPageContent() {
     }
   }, [searchParams])
 
+  useEffect(() => {
+    const fid = searchParams.get("flavourLineId")
+    if (!fid || !batchData?.flavourOutputs?.length) return
+    const lines = batchData.flavourOutputs
+    if (!lines.some((l: any) => String(l._id || l.id) === fid)) return
+    setSelectedFlavourLineId(fid)
+    const line = lines.find((l: any) => String(l._id || l.id) === fid)
+    if (line) {
+      const cap = Math.max(0, Number(line.remainingPackLitres) || 0)
+      setVolumeAllocated(cap > 0 ? String(cap) : String(Number(line.allocatedLitres) || 0))
+    }
+  }, [searchParams, batchData])
+
   const fetchAvailableBatches = async () => {
     try {
       const response = await fetch('/api/jaba/batches')
@@ -77,6 +91,9 @@ function CreatePackagingSessionPageContent() {
         const readyBatches = data.batches.filter((b: any) => 
           b.status === "QC Passed - Ready for Packaging" || 
           b.status === "Processed" ||
+          b.status === "Partially Packaged" ||
+          b.status === "Partially Allocated" ||
+          b.status === "Fully Allocated" ||
           (b.qcStatus === "Pass" && b.status !== "Ready for Distribution")
         )
         setAvailableBatches(readyBatches)
@@ -98,14 +115,23 @@ function CreatePackagingSessionPageContent() {
 
       if (data.batch) {
         setBatchData(data.batch)
-        // Auto-fill form fields with batch data
         setSupervisor(data.batch.supervisor || "")
-        // Use produced volume (totalLitres) if remainingLitres is greater than totalLitres (not updated properly)
-        const availableLitres = (data.batch.outputSummary?.remainingLitres !== undefined && 
-          data.batch.outputSummary.remainingLitres <= data.batch.totalLitres)
-          ? data.batch.outputSummary.remainingLitres
-          : data.batch.totalLitres
-        setVolumeAllocated(availableLitres?.toString() || "")
+        const lines = data.batch.flavourOutputs || []
+        if (lines.length > 0) {
+          const pick =
+            lines.find((l: any) => Number(l.remainingPackLitres) > 1e-6) || lines[0]
+          setSelectedFlavourLineId(String(pick._id || pick.id || ""))
+          const cap = Math.max(0, Number(pick.remainingPackLitres) || 0)
+          setVolumeAllocated(cap > 0 ? String(cap) : String(Number(pick.allocatedLitres) || 0))
+        } else {
+          setSelectedFlavourLineId("")
+          const availableLitres =
+            data.batch.outputSummary?.remainingLitres !== undefined &&
+            data.batch.outputSummary.remainingLitres <= data.batch.totalLitres
+              ? data.batch.outputSummary.remainingLitres
+              : data.batch.totalLitres
+          setVolumeAllocated(availableLitres?.toString() || "")
+        }
         setPackagingDate(new Date().toISOString().split("T")[0])
       }
     } catch (error: any) {
@@ -173,7 +199,8 @@ function CreatePackagingSessionPageContent() {
     setIsSaving(true)
     try {
       console.log('[Packaging Form] Sending package number:', packageNumber)
-      const requestBody = {
+      const lines = batchData.flavourOutputs || []
+      const requestBody: Record<string, unknown> = {
         batchId: batchId,
         batchNumber: batchData.batchNumber,
         packageNumber: packageNumber,
@@ -188,6 +215,14 @@ function CreatePackagingSessionPageContent() {
         defectReasons: defectReasons,
         machineEfficiency: machineEfficiency,
         safetyChecks: safetyChecks,
+      }
+      if (lines.length > 0) {
+        if (!selectedFlavourLineId) {
+          toast.error("Select a flavour line for this batch")
+          setIsSaving(false)
+          return
+        }
+        requestBody.flavourLineId = selectedFlavourLineId
       }
       console.log('[Packaging Form] Request body:', JSON.stringify(requestBody, null, 2))
       
@@ -323,13 +358,18 @@ function CreatePackagingSessionPageContent() {
     return { valid: true, error: "" }
   }
 
-  // Calculate remaining litres: use produced volume (totalLitres) if remainingLitres is greater than totalLitres
-  // This handles cases where batch was marked as processed but remainingLitres wasn't updated
-  const availableVolume = batchData 
-    ? (batchData.outputSummary?.remainingLitres !== undefined && 
-       batchData.outputSummary.remainingLitres <= batchData.totalLitres)
-      ? batchData.outputSummary.remainingLitres
-      : batchData.totalLitres
+  const flavourLines = batchData?.flavourOutputs || []
+  const selectedLine = flavourLines.find(
+    (l: any) => String(l._id || l.id) === selectedFlavourLineId
+  )
+
+  const availableVolume = batchData
+    ? flavourLines.length > 0 && selectedLine
+      ? Math.max(0, Number(selectedLine.remainingPackLitres) || 0)
+      : batchData.outputSummary?.remainingLitres !== undefined &&
+          batchData.outputSummary.remainingLitres <= batchData.totalLitres
+        ? batchData.outputSummary.remainingLitres
+        : batchData.totalLitres
     : 0
   
   const remainingLitres = batchData && volumeAllocated
@@ -385,6 +425,7 @@ function CreatePackagingSessionPageContent() {
                     setBatchData(null)
                     setSupervisor("")
                     setVolumeAllocated("")
+                    setSelectedFlavourLineId("")
                   }
                 }}
                 disabled={loadingBatch}
@@ -411,23 +452,25 @@ function CreatePackagingSessionPageContent() {
                 </SelectContent>
               </Select>
               {batchData && (
-                <div className="p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/40 dark:to-emerald-950/30 border-2 border-green-200 dark:border-green-900/50 shadow-sm">
+                <div className="p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/40 dark:to-emerald-950/30 border-2 border-green-200 dark:border-green-900/50 shadow-sm space-y-3">
                   <div className="flex items-start gap-3">
                     <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-800/50">
                       <Package className="h-4 w-4 text-green-600 dark:text-green-400" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-green-900 dark:text-green-100 mb-1.5">
-                        {batchData.batchNumber} - {batchData.flavor}
+                        {batchData.batchNumber} — master batch ({batchData.flavor})
                       </p>
                       <div className="flex flex-wrap gap-3 text-xs text-green-800 dark:text-green-200">
                         <span className="flex items-center gap-1">
                           <Droplet className="h-3 w-3" />
-                          Total: {batchData.totalLitres}L
+                          Produced: {batchData.totalLitres}L
                         </span>
                         <span className="flex items-center gap-1 font-semibold text-amber-600 dark:text-amber-400">
                           <Warehouse className="h-3 w-3" />
-                          Remaining: {availableVolume.toFixed(2)}L
+                          {flavourLines.length > 0
+                            ? `Remaining on line: ${availableVolume.toFixed(2)}L`
+                            : `Remaining: ${availableVolume.toFixed(2)}L`}
                         </span>
                         {batchData.qcStatus && (
                         <Badge variant="outline" className="text-xs border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">
@@ -437,6 +480,40 @@ function CreatePackagingSessionPageContent() {
                       </div>
                     </div>
                   </div>
+                  {flavourLines.length > 0 && (
+                    <div className="space-y-2 pt-1 border-t border-green-200/70 dark:border-green-900/50">
+                      <Label className="text-xs font-semibold text-green-900 dark:text-green-100">
+                        Flavour line to package *
+                      </Label>
+                      <Select
+                        value={selectedFlavourLineId}
+                        onValueChange={(v) => {
+                          setSelectedFlavourLineId(v)
+                          const line = flavourLines.find(
+                            (l: any) => String(l._id || l.id) === v
+                          )
+                          if (line) {
+                            const cap = Math.max(0, Number(line.remainingPackLitres) || 0)
+                            setVolumeAllocated(
+                              cap > 0 ? String(cap) : String(Number(line.allocatedLitres) || 0)
+                            )
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-10 border-green-200 dark:border-green-900 bg-white/80 dark:bg-slate-900">
+                          <SelectValue placeholder="Choose flavour" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {flavourLines.map((l: any) => (
+                            <SelectItem key={l._id || l.id} value={String(l._id || l.id)}>
+                              {l.flavourName || l.flavor} — {Number(l.allocatedLitres).toFixed(1)}L alloc ·{" "}
+                              {Number(l.remainingPackLitres ?? 0).toFixed(1)}L left to pack
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

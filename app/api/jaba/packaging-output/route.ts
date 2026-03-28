@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
+import {
+  JABA_FLAVOUR_LINES_COLLECTION,
+  sumPackagedLitresForFlavourLine,
+} from '@/lib/jaba-flavour-lines'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +26,11 @@ export async function POST(request: Request) {
       defectReasons,
       machineEfficiency,
       safetyChecks,
+      flavourLineId: flavourLineIdRaw,
     } = body
+
+    const flavourLineId =
+      typeof flavourLineIdRaw === 'string' && flavourLineIdRaw.trim() ? flavourLineIdRaw.trim() : ''
 
     // Validate required fields
     if (!batchId || !batchNumber || !volumeAllocated || !packagingDate || !supervisor || !packagingLine) {
@@ -72,12 +80,49 @@ export async function POST(request: Request) {
       return sum
     }, 0)
 
-    // Calculate remaining litres
-    const currentRemaining = batch.outputSummary?.remainingLitres || batch.totalLitres
-    const newRemaining = currentRemaining - packagedLitres
+    const hasFlavourLines =
+      !batch.parentBatchId &&
+      (await db.collection(JABA_FLAVOUR_LINES_COLLECTION).countDocuments({ parentBatchId: batchId })) > 0
+
+    if (hasFlavourLines && !flavourLineId) {
+      return NextResponse.json(
+        { error: 'This batch is split into flavour lines. Select a flavour line before packaging.' },
+        { status: 400 }
+      )
+    }
+
+    let newRemaining: number | null = null
+    let lineAllocated: number | null = null
+    let flavourLineDoc: any = null
+
+    if (flavourLineId) {
+      flavourLineDoc = await db.collection(JABA_FLAVOUR_LINES_COLLECTION).findOne({ _id: new ObjectId(flavourLineId) })
+      if (!flavourLineDoc) {
+        return NextResponse.json({ error: 'Flavour line not found' }, { status: 404 })
+      }
+      if (String(flavourLineDoc.parentBatchId) !== String(batchId)) {
+        return NextResponse.json({ error: 'Flavour line does not belong to this batch' }, { status: 400 })
+      }
+      const priorOutputs = await db.collection('jaba_packagingOutput').find({ flavourLineId }).toArray()
+      const priorLitres = sumPackagedLitresForFlavourLine(priorOutputs, { flavourLineId })
+      const alloc = Number(flavourLineDoc.allocatedLitres) || 0
+      lineAllocated = alloc
+      if (priorLitres + packagedLitres > alloc + 1e-6) {
+        return NextResponse.json(
+          {
+            error: `Packaging would exceed this flavour line allocation (${alloc.toFixed(2)}L). Already packaged ${priorLitres.toFixed(2)}L, session adds ${packagedLitres.toFixed(2)}L.`,
+          },
+          { status: 400 }
+        )
+      }
+      newRemaining = Math.max(0, alloc - priorLitres - packagedLitres)
+    } else {
+      const currentRemaining = batch.outputSummary?.remainingLitres || batch.totalLitres
+      newRemaining = currentRemaining - packagedLitres
+    }
 
     // Prepare packaging output document
-    const packagingData = {
+    const packagingData: Record<string, unknown> = {
       batchId: batchId,
       batchNumber: batchNumber.trim(),
       packageNumber: finalPackageNumber.trim(),
@@ -95,19 +140,36 @@ export async function POST(request: Request) {
       createdAt: new Date(),
     }
 
+    if (flavourLineId && flavourLineDoc) {
+      packagingData.flavourLineId = flavourLineId
+      packagingData.flavourName = String(flavourLineDoc.flavourName || '')
+    }
+
     // Insert packaging output
     console.log('[Packaging Output API] Saving packaging data with packageNumber:', packagingData.packageNumber)
     const result = await db.collection('jaba_packagingOutput').insertOne(packagingData)
     console.log('[Packaging Output API] ✅ Packaging output saved to DB with ID:', result.insertedId)
 
-    // Update batch with packaged litres and remaining litres
-    const updateData: any = {
-      'outputSummary.remainingLitres': Math.max(0, newRemaining),
-      'outputSummary.totalBottles': (batch.outputSummary?.totalBottles || 0) + containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0),
+    const bottleAdds = containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0)
+
+    const updateData: Record<string, unknown> = {
+      'outputSummary.totalBottles': (batch.outputSummary?.totalBottles || 0) + bottleAdds,
       updatedAt: new Date(),
     }
 
-    // Update bottles count by size
+    if (flavourLineId) {
+      if (batch.status === 'QC Passed - Ready for Packaging' || batch.status === 'Partially Allocated' || batch.status === 'Fully Allocated') {
+        updateData.status = 'Partially Packaged'
+      }
+    } else {
+      updateData['outputSummary.remainingLitres'] = Math.max(0, newRemaining ?? 0)
+      if ((newRemaining ?? 0) <= 0) {
+        updateData.status = 'Ready for Distribution'
+      } else if (batch.status === 'QC Passed - Ready for Packaging') {
+        updateData.status = 'Partially Packaged'
+      }
+    }
+
     containers.forEach((container: any) => {
       const qty = parseFloat(container.quantity) || 0
       if (container.size === "500ml") {
@@ -118,14 +180,6 @@ export async function POST(request: Request) {
         updateData.bottles2L = (batch.bottles2L || 0) + qty
       }
     })
-
-    // Update batch status if all packaged
-    if (newRemaining <= 0) {
-      updateData.status = 'Ready for Distribution'
-    } else if (batch.status === 'QC Passed - Ready for Packaging') {
-      // Keep status as is, but mark that packaging has started
-      updateData.status = 'Partially Packaged'
-    }
 
     await db.collection('jaba_batches').updateOne(
       { _id: new ObjectId(batchId) },
@@ -141,7 +195,9 @@ export async function POST(request: Request) {
           ...packagingData,
           _id: result.insertedId.toString(),
           id: result.insertedId.toString(),
-          remainingLitres: Math.max(0, newRemaining),
+          remainingLitres: Math.max(0, newRemaining ?? 0),
+          remainingOnFlavourLineLitres: flavourLineId ? Math.max(0, newRemaining ?? 0) : undefined,
+          flavourAllocatedLitres: lineAllocated ?? undefined,
         }
       },
       { status: 201 }
