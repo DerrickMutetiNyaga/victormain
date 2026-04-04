@@ -1,0 +1,396 @@
+{
+  "generatedAt": "2026-03-30T18:10:04.225Z",
+  "mode": "APPLY",
+  "summary": {
+    "totalMovementsScanned": 189,
+    "alreadyTaggedSkipped": 0,
+    "duplicateGroupsFound": 15,
+    "productsWithStockCorrection": 9,
+    "totalExcessDeductions": 24
+  },
+  "duplicateGroups": [
+    {
+      "fingerprint": "TXN71672567:69b83445a44bc749f52a0a15:deduct:1:sale",
+      "reference": "TXN71672567",
+      "productId": "69b83445a44bc749f52a0a15",
+      "productName": "500ml Water",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69ca647870bfcf903542d2c6",
+      "dropIds": [
+        "69ca648770bfcf903542d2ca"
+      ],
+      "dates": [
+        "2026-03-30 11:54:32",
+        "2026-03-30 11:54:47"
+      ]
+    },
+    {
+      "fingerprint": "TXN41147594:69b7f8a60dcaee7edf92b60f:deduct:1:sale",
+      "reference": "TXN41147594",
+      "productId": "69b7f8a60dcaee7edf92b60f",
+      "productName": "Gilbeys",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69c6dffd5d5565828ce4c599",
+      "dropIds": [
+        "69c6e2455d5565828ce4c59c"
+      ],
+      "dates": [
+        "2026-03-27 19:52:29",
+        "2026-03-27 20:02:13"
+      ]
+    },
+    {
+      "fingerprint": "TXN85667423:69b83570320fca33ff97b074:deduct:1:sale",
+      "reference": "TXN85667423",
+      "productId": "69b83570320fca33ff97b074",
+      "productName": "Jaba Juice Berry 500ml",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69c91484f1150348fae0e487",
+      "dropIds": [
+        "69c92747d9c94529bca491f8"
+      ],
+      "dates": [
+        "2026-03-29 12:01:08",
+        "2026-03-29 13:21:11"
+      ]
+    },
+    {
+      "fingerprint": "TXN70212023:69b83570320fca33ff97b074:deduct:1:sale",
+      "reference": "TXN70212023",
+      "productId": "69b83570320fca33ff97b074",
+      "productName": "Jaba Juice Berry 500ml",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69ca5ec5c4d5ed85519598c1",
+      "dropIds": [
+        "69ca5ed7131c5d700f7d4f13"
+      ],
+      "dates": [
+        "2026-03-30 11:30:13",
+        "2026-03-30 11:30:31"
+      ]
+    },
+    {
+      "fingerprint": "TXN93108225:69b83570320fca33ff97b074:deduct:1:sale",
+      "reference": "TXN93108225",
+      "productId": "69b83570320fca33ff97b074",
+      "productName": "Jaba Juice Berry 500ml",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69cab834e46df73d66b42584",
+      "dropIds": [
+        "69cab848e46df73d66b42589"
+      ],
+      "dates": [
+        "2026-03-30 17:51:48",
+        "2026-03-30 17:52:08"
+      ]
+    },
+    {
+      "fingerprint": "TXN74012639:69b83509a44bc749f52a0a16:deduct:6:sale",
+      "reference": "TXN74012639",
+      "productId": "69b83509a44bc749f52a0a16",
+      "productName": "Jaba Juice Dawa 500ml",
+      "actionType": "deduct",
+      "quantity": 6,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 6,
+      "keepId": "69ca6d9c70bfcf903542d2cc",
+      "dropIds": [
+        "69ca6dac70bfcf903542d2d0"
+      ],
+      "dates": [
+        "2026-03-30 12:33:32",
+        "2026-03-30 12:33:48"
+      ]
+    },
+    {
+      "fingerprint": "TXN87171620:69b83509a44bc749f52a0a16:deduct:2:sale",
+      "reference": "TXN87171620",
+      "productId": "69b83509a44bc749f52a0a16",
+      "productName": "Jaba Juice Dawa 500ml",
+      "actionType": "deduct",
+      "quantity": 2,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 2,
+      "keepId": "69caa103c015480463cb5b41",
+      "dropIds": [
+        "69caa113c015480463cb5b45"
+      ],
+      "dates": [
+        "2026-03-30 16:12:51",
+        "2026-03-30 16:13:07"
+      ]
+    },
+    {
+      "fingerprint": "TXN85667423:69b835b4ba7577e2da493ebc:deduct:1:sale",
+      "reference": "TXN85667423",
+      "productId": "69b835b4ba7577e2da493ebc",
+      "productName": "Jaba Juice Hibiscus 500ml",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69c91484f1150348fae0e486",
+      "dropIds": [
+        "69c92747d9c94529bca491f7"
+      ],
+      "dates": [
+        "2026-03-29 12:01:08",
+        "2026-03-29 13:21:11"
+      ]
+    },
+    {
+      "fingerprint": "TXN93108225:69b835b4ba7577e2da493ebc:deduct:2:sale",
+      "reference": "TXN93108225",
+      "productId": "69b835b4ba7577e2da493ebc",
+      "productName": "Jaba Juice Hibiscus 500ml",
+      "actionType": "deduct",
+      "quantity": 2,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 2,
+      "keepId": "69cab834e46df73d66b42583",
+      "dropIds": [
+        "69cab848e46df73d66b42588"
+      ],
+      "dates": [
+        "2026-03-30 17:51:48",
+        "2026-03-30 17:52:08"
+      ]
+    },
+    {
+      "fingerprint": "TXN85667423:69c6b4989cbd754acfd9bc6d:deduct:1:sale",
+      "reference": "TXN85667423",
+      "productId": "69c6b4989cbd754acfd9bc6d",
+      "productName": "Jaba Pineapple 500",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69c91484f1150348fae0e488",
+      "dropIds": [
+        "69c92748d9c94529bca491f9"
+      ],
+      "dates": [
+        "2026-03-29 12:01:08",
+        "2026-03-29 13:21:12"
+      ]
+    },
+    {
+      "fingerprint": "TXN68563579:69c6b4989cbd754acfd9bc6d:deduct:1:sale",
+      "reference": "TXN68563579",
+      "productId": "69c6b4989cbd754acfd9bc6d",
+      "productName": "Jaba Pineapple 500",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69ca58540b261193ae21324b",
+      "dropIds": [
+        "69ca58670b261193ae21324e"
+      ],
+      "dates": [
+        "2026-03-30 11:02:44",
+        "2026-03-30 11:03:03"
+      ]
+    },
+    {
+      "fingerprint": "TXN83028748:69c6b4989cbd754acfd9bc6d:deduct:1:sale",
+      "reference": "TXN83028748",
+      "productId": "69c6b4989cbd754acfd9bc6d",
+      "productName": "Jaba Pineapple 500",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69ca90d54f040ec9cdca35b7",
+      "dropIds": [
+        "69ca97400d4f27ee1e8bcfa6"
+      ],
+      "dates": [
+        "2026-03-30 15:03:49",
+        "2026-03-30 15:31:12"
+      ]
+    },
+    {
+      "fingerprint": "TXN83028748:69b828e74917e29a6bdfae92:deduct:1:sale",
+      "reference": "TXN83028748",
+      "productId": "69b828e74917e29a6bdfae92",
+      "productName": "Jinro Peach",
+      "actionType": "deduct",
+      "quantity": 1,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 1,
+      "keepId": "69ca90d54f040ec9cdca35b8",
+      "dropIds": [
+        "69ca97400d4f27ee1e8bcfa7"
+      ],
+      "dates": [
+        "2026-03-30 15:03:49",
+        "2026-03-30 15:31:12"
+      ]
+    },
+    {
+      "fingerprint": "TXN42542215:69b825f8492d3398743ed3ac:deduct:2:sale",
+      "reference": "TXN42542215",
+      "productId": "69b825f8492d3398743ed3ac",
+      "productName": "Savanna Dry",
+      "actionType": "deduct",
+      "quantity": 2,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 2,
+      "keepId": "69c6e56fd117e7da0cc568a6",
+      "dropIds": [
+        "69c6e57e0798b63266be7f92"
+      ],
+      "dates": [
+        "2026-03-27 20:15:43",
+        "2026-03-27 20:15:58"
+      ]
+    },
+    {
+      "fingerprint": "TXN83028748:69c7a29213710e34e3dd2103:deduct:2:sale",
+      "reference": "TXN83028748",
+      "productId": "69c7a29213710e34e3dd2103",
+      "productName": "Tequila gold shot",
+      "actionType": "deduct",
+      "quantity": 2,
+      "reason": "sale",
+      "totalOccurrences": 2,
+      "duplicateCount": 1,
+      "excessQty": 2,
+      "keepId": "69ca90d54f040ec9cdca35b6",
+      "dropIds": [
+        "69ca973f0d4f27ee1e8bcfa5"
+      ],
+      "dates": [
+        "2026-03-30 15:03:49",
+        "2026-03-30 15:31:11"
+      ]
+    }
+  ],
+  "productCorrections": [
+    {
+      "productId": "69b7f8a60dcaee7edf92b60f",
+      "productName": "Gilbeys",
+      "currentStock": 3,
+      "excessDeducted": 1,
+      "excessRestored": 0,
+      "stockCorrection": 1,
+      "correctedStock": 4
+    },
+    {
+      "productId": "69b825f8492d3398743ed3ac",
+      "productName": "Savanna Dry",
+      "currentStock": 7,
+      "excessDeducted": 2,
+      "excessRestored": 0,
+      "stockCorrection": 2,
+      "correctedStock": 9
+    },
+    {
+      "productId": "69b835b4ba7577e2da493ebc",
+      "productName": "Jaba Juice Hibiscus 500ml",
+      "currentStock": 3,
+      "excessDeducted": 3,
+      "excessRestored": 0,
+      "stockCorrection": 3,
+      "correctedStock": 6
+    },
+    {
+      "productId": "69b83570320fca33ff97b074",
+      "productName": "Jaba Juice Berry 500ml",
+      "currentStock": 6,
+      "excessDeducted": 3,
+      "excessRestored": 0,
+      "stockCorrection": 3,
+      "correctedStock": 9
+    },
+    {
+      "productId": "69c6b4989cbd754acfd9bc6d",
+      "productName": "Jaba Pineapple 500",
+      "currentStock": 6,
+      "excessDeducted": 3,
+      "excessRestored": 0,
+      "stockCorrection": 3,
+      "correctedStock": 9
+    },
+    {
+      "productId": "69b83445a44bc749f52a0a15",
+      "productName": "500ml Water",
+      "currentStock": 10,
+      "excessDeducted": 1,
+      "excessRestored": 0,
+      "stockCorrection": 1,
+      "correctedStock": 11
+    },
+    {
+      "productId": "69b83509a44bc749f52a0a16",
+      "productName": "Jaba Juice Dawa 500ml",
+      "currentStock": 1,
+      "excessDeducted": 8,
+      "excessRestored": 0,
+      "stockCorrection": 8,
+      "correctedStock": 9
+    },
+    {
+      "productId": "69c7a29213710e34e3dd2103",
+      "productName": "Tequila gold shot",
+      "currentStock": 11,
+      "excessDeducted": 2,
+      "excessRestored": 0,
+      "stockCorrection": 2,
+      "correctedStock": 13
+    },
+    {
+      "productId": "69b828e74917e29a6bdfae92",
+      "productName": "Jinro Peach",
+      "currentStock": 1,
+      "excessDeducted": 1,
+      "excessRestored": 0,
+      "stockCorrection": 1,
+      "correctedStock": 2
+    }
+  ]
+}

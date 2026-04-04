@@ -1,0 +1,368 @@
+/* Scoped styles for OrderHistory - Premium luxury design */
+
+.orderHistory {
+  min-height: 100vh;
+  background: linear-gradient(to bottom, #FAFAF7, #F8F7F4);
+  padding: 1rem;
+  padding-bottom: 2rem;
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .orderHistory {
+    padding: 1.5rem;
+    max-width: 42rem;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.backButton {
+  height: 44px;
+  width: 44px;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid #E8E6E1;
+  transition: all 0.2s;
+}
+
+.backButton:hover {
+  background: #F8F7F4;
+  border-color: #D1CFC8;
+  transform: scale(1.05);
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  font-size: 0.9375rem;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.ordersList {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionTitle {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.orderCard {
+  background: white;
+  border: 1px solid #E8E6E1;
+  border-radius: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.orderCard:hover {
+  border-color: #D1CFC8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.cardHeader {
+  padding: 1rem;
+  border-bottom: 1px solid #F3F4F6;
+}
+
+@media (min-width: 640px) {
+  .cardHeader {
+    padding: 1.25rem;
+  }
+}
+
+.cardHeaderTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.orderNumber {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.orderDate {
+  font-size: 0.8125rem;
+  color: #6B7280;
+}
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.cardContent {
+  padding: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .cardContent {
+    padding: 1.25rem;
+  }
+}
+
+.itemsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.orderItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #F3F4F6;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.orderItem:last-child {
+  border-bottom: none;
+}
+
+.itemName {
+  font-size: 0.875rem;
+  color: #111827;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 0.5rem;
+}
+
+.itemPrice {
+  font-size: 0.875rem;
+  color: #6B7280;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.orderFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid #E8E6E1;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .orderFooter {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
+.total {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .total {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+.totalLabel {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #6B7280;
+}
+
+.totalAmount {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .totalAmount {
+    font-size: 1.375rem;
+  }
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .actions {
+    width: auto;
+    flex-wrap: nowrap;
+  }
+}
+
+.viewButton {
+  height: 44px;
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: 1px solid #E8E6E1;
+  background: white;
+  color: #111827;
+  transition: all 0.2s;
+  flex: 1;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .viewButton {
+    flex: 0 1 auto;
+    height: 36px;
+    min-height: 36px;
+  }
+}
+
+.viewButton:hover {
+  background: #F8F7F4;
+  border-color: #D1CFC8;
+}
+
+.addButton {
+  height: 44px;
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+  color: white;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+  transition: all 0.2s;
+  flex: 1;
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .addButton {
+    flex: 0 1 auto;
+    height: 36px;
+    min-height: 36px;
+  }
+}
+
+.addButton:hover {
+  background: linear-gradient(135deg, #15803D, #16A34A);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+}
+
+.payButton {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+  color: white;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+  transition: all 0.2s;
+  flex: 1;
+  white-space: nowrap;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  touch-action: manipulation;
+}
+
+@media (min-width: 640px) {
+  .payButton {
+    flex: 0 1 auto;
+    height: 44px;
+    min-height: 44px;
+    font-size: 0.9375rem;
+  }
+}
+
+.payButton:hover {
+  background: linear-gradient(135deg, #15803D, #16A34A);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+}
+
+.emptyState {
+  padding: 4rem 1rem;
+  text-align: center;
+}
+
+.emptyText {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.emptySubtext {
+  font-size: 0.875rem;
+  color: #6B7280;
+}
+
