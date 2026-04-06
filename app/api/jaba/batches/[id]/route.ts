@@ -17,6 +17,18 @@ import {
 
 export const runtime = 'nodejs'
 
+const BOTTLE_NAME_REGEX = /\bbott?l?e?s?\b/i
+const STICKER_NAME_REGEX = /\b(stickers?|labels?)\b/i
+
+function normalizeQty(value: unknown): number {
+  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
+  return Number.isFinite(n) ? n : 0
+}
+
+function getTotalContainerUnits(containers: Array<{ quantity?: string | number }>): number {
+  return containers.reduce((sum, c) => sum + normalizeQty(c.quantity), 0)
+}
+
 function serializeBatchDoc(batch: any) {
   return {
     ...batch,
@@ -266,17 +278,20 @@ export async function PUT(
               { status: 400 }
             )
           }
-          
-          const afterStock = beforeStock - delta
-          await db.collection('jaba_rawMaterials').updateOne(
-            { _id: material._id },
-            { 
-              $set: { 
-                currentStock: afterStock,
-                updatedAt: new Date()
-              }
+          const deductResult = await db.collection('jaba_rawMaterials').updateOne(
+            { _id: material._id, currentStock: { $gte: delta } },
+            {
+              $inc: { currentStock: -delta },
+              $set: { updatedAt: new Date() }
             }
           )
+          if (deductResult.modifiedCount !== 1) {
+            return NextResponse.json(
+              { error: `Stock changed while editing batch for "${material.name}". Please refresh and try again.` },
+              { status: 409 }
+            )
+          }
+          const afterStock = beforeStock - delta
           
           inventoryMovements.push({
             type: 'DEDUCTION',
@@ -299,14 +314,11 @@ export async function PUT(
           // Need to refund (newQty < oldQty or material removed)
           const refundQty = Math.abs(delta)
           const afterStock = beforeStock + refundQty
-          
           await db.collection('jaba_rawMaterials').updateOne(
             { _id: material._id },
-            { 
-              $set: { 
-                currentStock: afterStock,
-                updatedAt: new Date()
-              }
+            {
+              $inc: { currentStock: refundQty },
+              $set: { updatedAt: new Date() }
             }
           )
           
@@ -578,7 +590,7 @@ export async function DELETE(
       }
     }
 
-    // Delete packaging outputs linked to this batch graph.
+    // Restore packaging materials first, then delete packaging outputs linked to this batch graph.
     const packagingOr: Record<string, unknown>[] = [
       { batchId: { $in: Array.from(batchIdsToDelete) } },
       { batchNumber: { $in: Array.from(batchNumbersToDelete).filter(Boolean) } },
@@ -586,7 +598,57 @@ export async function DELETE(
     if (flavourLineIdsToDelete.size > 0) {
       packagingOr.push({ flavourLineId: { $in: Array.from(flavourLineIdsToDelete) } })
     }
-    await db.collection('jaba_packagingOutput').deleteMany({ $or: packagingOr })
+    const packagingOutputsToDelete = await db.collection('jaba_packagingOutput').find({ $or: packagingOr }).toArray()
+    const rawMaterialsCollection = db.collection('jaba_rawMaterials')
+
+    for (const po of packagingOutputsToDelete) {
+      const materialsUsed = Array.isArray((po as any).materialsUsed) ? (po as any).materialsUsed : []
+      if (materialsUsed.length > 0) {
+        for (const materialUse of materialsUsed) {
+          const qty = normalizeQty(materialUse.quantity)
+          if (!materialUse.materialId || qty <= 0) continue
+          await rawMaterialsCollection.updateOne(
+            { _id: new ObjectId(String(materialUse.materialId)) },
+            { $inc: { currentStock: qty }, $set: { updatedAt: new Date() } }
+          )
+        }
+        continue
+      }
+
+      // Fallback for old records without materialsUsed metadata.
+      const totalUnitsPacked = getTotalContainerUnits(Array.isArray((po as any).containers) ? (po as any).containers : [])
+      if (totalUnitsPacked <= 0) continue
+
+      const [bottleMaterial, stickerMaterial] = await Promise.all([
+        rawMaterialsCollection
+          .find({ name: { $regex: BOTTLE_NAME_REGEX } })
+          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+          .limit(1)
+          .next(),
+        rawMaterialsCollection
+          .find({ name: { $regex: STICKER_NAME_REGEX } })
+          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+          .limit(1)
+          .next(),
+      ])
+
+      if (bottleMaterial) {
+        await rawMaterialsCollection.updateOne(
+          { _id: bottleMaterial._id },
+          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+        )
+      }
+      if (stickerMaterial) {
+        await rawMaterialsCollection.updateOne(
+          { _id: stickerMaterial._id },
+          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+        )
+      }
+    }
+
+    if (packagingOutputsToDelete.length > 0) {
+      await db.collection('jaba_packagingOutput').deleteMany({ _id: { $in: packagingOutputsToDelete.map((d) => d._id) } })
+    }
 
     // Remove delivery-note items linked to this batch; delete notes that become empty.
     const linkedBatchNumbers = new Set(Array.from(batchNumbersToDelete).filter(Boolean))

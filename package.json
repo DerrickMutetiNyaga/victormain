@@ -24,7 +24,8 @@
     "seed-jaba-super-admin": "tsx scripts/seed-jaba-super-admin.ts",
     "make-bar-superadmin": "tsx scripts/make-bar-user-superadmin.ts",
     "reconcile-inventory": "tsx scripts/reconcile-inventory.ts",
-    "reconcile-inventory:apply": "tsx scripts/reconcile-inventory.ts --apply"
+    "reconcile-inventory:apply": "tsx scripts/reconcile-inventory.ts --apply",
+    "test-jaba-concurrency": "tsx scripts/test-jaba-concurrency.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

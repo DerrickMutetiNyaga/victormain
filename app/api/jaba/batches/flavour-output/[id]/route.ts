@@ -31,6 +31,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const line = await db.collection(JABA_FLAVOUR_LINES_COLLECTION).findOne({ _id: new ObjectId(id) })
     if (line) {
+      const linkedPackagingCount = await db.collection('jaba_packagingOutput').countDocuments({ flavourLineId: id })
+      const linkedDeliveryCount = await db.collection('jaba_deliveryNotes').countDocuments({
+        items: { $elemMatch: { flavourLineId: id } },
+      })
+      const hasLinkedRecords = linkedPackagingCount > 0 || linkedDeliveryCount > 0
+
       const parent = await db.collection('jaba_batches').findOne({ _id: new ObjectId(String(line.parentBatchId)) })
       if (!parent) {
         return NextResponse.json({ error: 'Parent batch missing' }, { status: 400 })
@@ -38,6 +44,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       const p = parent as Record<string, any>
 
       const oldQty = Number(line.allocatedLitres) || 0
+      if (hasLinkedRecords && Math.abs(newQty - oldQty) > 1e-6) {
+        return NextResponse.json(
+          { error: 'Cannot change flavour-line quantity after packaging/distribution records exist for this line.' },
+          { status: 409 }
+        )
+      }
       const delta = newQty - oldQty
       const parentRemaining = getNeutralRemainingLitres(p)
       if (delta > parentRemaining + 1e-6) {
@@ -99,6 +111,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const par = parent as Record<string, any>
 
     const oldQty = Number(ch.infusedQuantityLitres ?? ch.totalLitres) || 0
+    const linkedPackagingCount = await db.collection('jaba_packagingOutput').countDocuments({
+      $or: [{ batchId: id }, { batchNumber: String(ch.batchNumber || '') }],
+    })
+    const linkedDeliveryCount = await db.collection('jaba_deliveryNotes').countDocuments({
+      items: { $elemMatch: { batchNumber: String(ch.batchNumber || '') } },
+    })
+    const hasLinkedRecords = linkedPackagingCount > 0 || linkedDeliveryCount > 0
+    if (hasLinkedRecords && Math.abs(newQty - oldQty) > 1e-6) {
+      return NextResponse.json(
+        { error: 'Cannot change flavoured output quantity after packaging/distribution records exist.' },
+        { status: 409 }
+      )
+    }
     const delta = newQty - oldQty
     const parentRemaining = getNeutralRemainingLitres(par)
     if (delta > parentRemaining + 1e-6) {
@@ -167,6 +192,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
     const line = await db.collection(JABA_FLAVOUR_LINES_COLLECTION).findOne({ _id: new ObjectId(id) })
     if (line) {
+      const linkedPackagingCount = await db.collection('jaba_packagingOutput').countDocuments({ flavourLineId: id })
+      const linkedDeliveryCount = await db.collection('jaba_deliveryNotes').countDocuments({
+        items: { $elemMatch: { flavourLineId: id } },
+      })
+      if (linkedPackagingCount > 0 || linkedDeliveryCount > 0) {
+        return NextResponse.json(
+          { error: 'Cannot delete flavour line after packaging/distribution records exist.' },
+          { status: 409 }
+        )
+      }
+
       const qty = Number(line.allocatedLitres) || 0
       const parentId = String(line.parentBatchId)
       await db.collection(JABA_FLAVOUR_LINES_COLLECTION).deleteOne({ _id: new ObjectId(id) })
@@ -204,6 +240,19 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     }
     if (!child.parentBatchId) {
       return NextResponse.json({ error: 'Only flavoured outputs can be deleted here' }, { status: 400 })
+    }
+    const childBatchNumber = String(child.batchNumber || '')
+    const linkedPackagingCount = await db.collection('jaba_packagingOutput').countDocuments({
+      $or: [{ batchId: id }, { batchNumber: childBatchNumber }],
+    })
+    const linkedDeliveryCount = await db.collection('jaba_deliveryNotes').countDocuments({
+      items: { $elemMatch: { batchNumber: childBatchNumber } },
+    })
+    if (linkedPackagingCount > 0 || linkedDeliveryCount > 0) {
+      return NextResponse.json(
+        { error: 'Cannot delete flavoured output after packaging/distribution records exist.' },
+        { status: 409 }
+      )
     }
 
     const qty = Number(child.infusedQuantityLitres ?? child.totalLitres) || 0

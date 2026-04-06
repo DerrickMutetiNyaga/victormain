@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
+import { requireJabaAction } from '@/lib/api-jaba-permissions'
 import {
   JABA_FLAVOUR_LINES_COLLECTION,
   sumPackagedLitresForFlavourLine,
@@ -19,8 +20,19 @@ function getTotalContainerUnits(containers: Array<{ quantity?: string | number }
   return containers.reduce((sum, c) => sum + normalizeQty(c.quantity), 0)
 }
 
+class ApiError extends Error {
+  status: number
+  constructor(message: string, status = 400) {
+    super(message)
+    this.status = status
+  }
+}
+
 // POST create packaging output
 export async function POST(request: Request) {
+  const authResult = await requireJabaAction('production.packaging', 'add')
+  if ('response' in authResult) return authResult.response
+
   try {
     const body = await request.json()
     const {
@@ -93,6 +105,21 @@ export async function POST(request: Request) {
       }
       return sum
     }, 0)
+    const allocatedVolume = Number(volumeAllocated) || 0
+    if (allocatedVolume <= 0) {
+      return NextResponse.json({ error: 'Volume allocated must be greater than 0.' }, { status: 400 })
+    }
+    if (packagedLitres <= 0) {
+      return NextResponse.json({ error: 'Packed litres must be greater than 0.' }, { status: 400 })
+    }
+    if (packagedLitres > allocatedVolume + 1e-6) {
+      return NextResponse.json(
+        {
+          error: `Packed litres (${packagedLitres.toFixed(2)}L) cannot exceed allocated volume (${allocatedVolume.toFixed(2)}L).`,
+        },
+        { status: 400 }
+      )
+    }
 
     const hasFlavourLines =
       !batch.parentBatchId &&
@@ -132,6 +159,14 @@ export async function POST(request: Request) {
       newRemaining = Math.max(0, alloc - priorLitres - packagedLitres)
     } else {
       const currentRemaining = batch.outputSummary?.remainingLitres || batch.totalLitres
+      if (packagedLitres > Number(currentRemaining) + 1e-6) {
+        return NextResponse.json(
+          {
+            error: `Packaging would exceed remaining batch volume (${Number(currentRemaining).toFixed(2)}L). Session adds ${packagedLitres.toFixed(2)}L.`,
+          },
+          { status: 400 }
+        )
+      }
       newRemaining = currentRemaining - packagedLitres
     }
 
@@ -168,156 +203,150 @@ export async function POST(request: Request) {
     }
 
     const rawMaterialsCollection = db.collection('jaba_rawMaterials')
-    const [bottleMaterial, stickerMaterial] = await Promise.all([
-      rawMaterialsCollection
-        .find({ name: { $regex: BOTTLE_NAME_REGEX } })
-        .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-        .limit(1)
-        .next(),
-      rawMaterialsCollection
-        .find({ name: { $regex: STICKER_NAME_REGEX } })
-        .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-        .limit(1)
-        .next(),
-    ])
-
-    if (!bottleMaterial) {
-      return NextResponse.json(
-        { error: 'No bottle raw material found. Add a bottle item in Raw Materials before packaging.' },
-        { status: 400 }
-      )
-    }
-    if (!stickerMaterial) {
-      return NextResponse.json(
-        { error: 'No sticker raw material found. Add a sticker item in Raw Materials before packaging.' },
-        { status: 400 }
-      )
-    }
-
-    const bottleStock = Number(bottleMaterial.currentStock) || 0
-    const stickerStock = Number(stickerMaterial.currentStock) || 0
-    if (bottleStock < totalUnitsPacked) {
-      return NextResponse.json(
-        {
-          error: `Insufficient bottle stock: need ${totalUnitsPacked.toLocaleString()}, available ${bottleStock.toLocaleString()}.`,
-        },
-        { status: 400 }
-      )
-    }
-    if (stickerStock < totalUnitsPacked) {
-      return NextResponse.json(
-        {
-          error: `Insufficient sticker stock: need ${totalUnitsPacked.toLocaleString()}, available ${stickerStock.toLocaleString()}.`,
-        },
-        { status: 400 }
-      )
-    }
-
-    ;(packagingData as any).materialsUsed = [
-      {
-        materialId: String(bottleMaterial._id),
-        name: String(bottleMaterial.name || 'Bottles'),
-        type: 'bottles',
-        quantity: totalUnitsPacked,
-      },
-      {
-        materialId: String(stickerMaterial._id),
-        name: String(stickerMaterial.name || 'Stickers'),
-        type: 'stickers',
-        quantity: totalUnitsPacked,
-      },
-    ]
-
-    // Insert packaging output
-    console.log('[Packaging Output API] Saving packaging data with packageNumber:', packagingData.packageNumber)
-    const result = await db.collection('jaba_packagingOutput').insertOne(packagingData)
-    console.log('[Packaging Output API] ✅ Packaging output saved to DB with ID:', result.insertedId)
-
-    // Deduct required packaging materials.
-    const deductedIds: string[] = []
-    const tryDeduct = async (materialId: string, qty: number) => {
-      const update = await rawMaterialsCollection.updateOne(
-        { _id: new ObjectId(materialId), currentStock: { $gte: qty } },
-        { $inc: { currentStock: -qty }, $set: { updatedAt: new Date() } }
-      )
-      if (update.modifiedCount !== 1) {
-        throw new Error('Raw material stock changed during packaging. Please refresh and try again.')
-      }
-      deductedIds.push(materialId)
-    }
+    const mongoSession = client.startSession()
+    let createdPackagingId = ''
+    let txRemainingLitres = Math.max(0, newRemaining ?? 0)
 
     try {
-      await tryDeduct(String(bottleMaterial._id), totalUnitsPacked)
-      await tryDeduct(String(stickerMaterial._id), totalUnitsPacked)
-    } catch (stockError: any) {
-      for (const deductedId of deductedIds) {
-        await rawMaterialsCollection.updateOne(
-          { _id: new ObjectId(deductedId) },
-          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+      await mongoSession.withTransaction(async () => {
+        const [bottleMaterial, stickerMaterial] = await Promise.all([
+          rawMaterialsCollection
+            .find({ name: { $regex: BOTTLE_NAME_REGEX } }, { session: mongoSession })
+            .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+            .limit(1)
+            .next(),
+          rawMaterialsCollection
+            .find({ name: { $regex: STICKER_NAME_REGEX } }, { session: mongoSession })
+            .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+            .limit(1)
+            .next(),
+        ])
+
+        if (!bottleMaterial) throw new ApiError('No bottle raw material found. Add a bottle item in Raw Materials before packaging.', 400)
+        if (!stickerMaterial) throw new ApiError('No sticker raw material found. Add a sticker item in Raw Materials before packaging.', 400)
+
+        const bottleStock = Number(bottleMaterial.currentStock) || 0
+        const stickerStock = Number(stickerMaterial.currentStock) || 0
+        if (bottleStock < totalUnitsPacked) {
+          throw new ApiError(
+            `Insufficient bottle stock: need ${totalUnitsPacked.toLocaleString()}, available ${bottleStock.toLocaleString()}.`,
+            400
+          )
+        }
+        if (stickerStock < totalUnitsPacked) {
+          throw new ApiError(
+            `Insufficient sticker stock: need ${totalUnitsPacked.toLocaleString()}, available ${stickerStock.toLocaleString()}.`,
+            400
+          )
+        }
+
+        ;(packagingData as any).materialsUsed = [
+          { materialId: String(bottleMaterial._id), name: String(bottleMaterial.name || 'Bottles'), type: 'bottles', quantity: totalUnitsPacked },
+          { materialId: String(stickerMaterial._id), name: String(stickerMaterial.name || 'Stickers'), type: 'stickers', quantity: totalUnitsPacked },
+        ]
+
+        // Re-read current batch inside transaction for concurrency-safe update.
+        const txBatch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) }, { session: mongoSession })
+        if (!txBatch) throw new ApiError('Batch not found', 404)
+
+        if (flavourLineId) {
+          const txLine = await db.collection(JABA_FLAVOUR_LINES_COLLECTION).findOne({ _id: new ObjectId(flavourLineId) }, { session: mongoSession })
+          if (!txLine) throw new ApiError('Flavour line not found', 404)
+          const txPriorOutputs = await db.collection('jaba_packagingOutput').find({ flavourLineId }, { session: mongoSession }).toArray()
+          const txPriorLitres = sumPackagedLitresForFlavourLine(txPriorOutputs, { flavourLineId })
+          const txAlloc = Number(txLine.allocatedLitres) || 0
+          if (txPriorLitres + packagedLitres > txAlloc + 1e-6) {
+            throw new ApiError(
+              `Packaging would exceed this flavour line allocation (${txAlloc.toFixed(2)}L). Already packaged ${txPriorLitres.toFixed(2)}L, session adds ${packagedLitres.toFixed(2)}L.`,
+              400
+            )
+          }
+          txRemainingLitres = Math.max(0, txAlloc - txPriorLitres - packagedLitres)
+        } else {
+          const txRemaining = Number(txBatch.outputSummary?.remainingLitres ?? txBatch.totalLitres) || 0
+          if (packagedLitres > txRemaining + 1e-6) {
+            throw new ApiError(
+              `Packaging would exceed remaining batch volume (${txRemaining.toFixed(2)}L). Session adds ${packagedLitres.toFixed(2)}L.`,
+              400
+            )
+          }
+          txRemainingLitres = Math.max(0, txRemaining - packagedLitres)
+        }
+
+        const packagingInsert = await db.collection('jaba_packagingOutput').insertOne(packagingData, { session: mongoSession })
+        createdPackagingId = packagingInsert.insertedId.toString()
+
+        const bottleDeduct = await rawMaterialsCollection.updateOne(
+          { _id: bottleMaterial._id, currentStock: { $gte: totalUnitsPacked } },
+          { $inc: { currentStock: -totalUnitsPacked }, $set: { updatedAt: new Date() } },
+          { session: mongoSession }
         )
-      }
-      await db.collection('jaba_packagingOutput').deleteOne({ _id: result.insertedId })
-      return NextResponse.json(
-        { error: stockError?.message || 'Failed to deduct packaging materials stock.' },
-        { status: 400 }
-      )
+        const stickerDeduct = await rawMaterialsCollection.updateOne(
+          { _id: stickerMaterial._id, currentStock: { $gte: totalUnitsPacked } },
+          { $inc: { currentStock: -totalUnitsPacked }, $set: { updatedAt: new Date() } },
+          { session: mongoSession }
+        )
+        if (bottleDeduct.modifiedCount !== 1 || stickerDeduct.modifiedCount !== 1) {
+          throw new ApiError('Raw material stock changed during packaging. Please refresh and try again.', 409)
+        }
+
+        const bottleAdds = containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0)
+        const updateData: Record<string, unknown> = {
+          'outputSummary.totalBottles': (txBatch.outputSummary?.totalBottles || 0) + bottleAdds,
+          updatedAt: new Date(),
+        }
+
+        if (flavourLineId) {
+          if (txBatch.status === 'QC Passed - Ready for Packaging' || txBatch.status === 'Partially Allocated' || txBatch.status === 'Fully Allocated') {
+            updateData.status = 'Partially Packaged'
+          }
+        } else {
+          updateData['outputSummary.remainingLitres'] = txRemainingLitres
+          if (txRemainingLitres <= 0) {
+            updateData.status = 'Ready for Distribution'
+          } else if (txBatch.status === 'QC Passed - Ready for Packaging') {
+            updateData.status = 'Partially Packaged'
+          }
+        }
+
+        containers.forEach((container: any) => {
+          const qty = parseFloat(container.quantity) || 0
+          if (container.size === '250ml') updateData.bottles250ml = (txBatch.bottles250ml || 0) + qty
+          else if (container.size === '500ml') updateData.bottles500ml = (txBatch.bottles500ml || 0) + qty
+          else if (container.size === '1L') updateData.bottles1L = (txBatch.bottles1L || 0) + qty
+          else if (container.size === '2L') updateData.bottles2L = (txBatch.bottles2L || 0) + qty
+        })
+
+        await db.collection('jaba_batches').updateOne(
+          { _id: new ObjectId(batchId) },
+          { $set: updateData },
+          { session: mongoSession }
+        )
+      })
+    } finally {
+      await mongoSession.endSession()
     }
 
-    const bottleAdds = containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0)
-
-    const updateData: Record<string, unknown> = {
-      'outputSummary.totalBottles': (batch.outputSummary?.totalBottles || 0) + bottleAdds,
-      updatedAt: new Date(),
-    }
-
-    if (flavourLineId) {
-      if (batch.status === 'QC Passed - Ready for Packaging' || batch.status === 'Partially Allocated' || batch.status === 'Fully Allocated') {
-        updateData.status = 'Partially Packaged'
-      }
-    } else {
-      updateData['outputSummary.remainingLitres'] = Math.max(0, newRemaining ?? 0)
-      if ((newRemaining ?? 0) <= 0) {
-        updateData.status = 'Ready for Distribution'
-      } else if (batch.status === 'QC Passed - Ready for Packaging') {
-        updateData.status = 'Partially Packaged'
-      }
-    }
-
-    containers.forEach((container: any) => {
-      const qty = parseFloat(container.quantity) || 0
-      if (container.size === "250ml") {
-        updateData.bottles250ml = (batch.bottles250ml || 0) + qty
-      } else if (container.size === "500ml") {
-        updateData.bottles500ml = (batch.bottles500ml || 0) + qty
-      } else if (container.size === "1L") {
-        updateData.bottles1L = (batch.bottles1L || 0) + qty
-      } else if (container.size === "2L") {
-        updateData.bottles2L = (batch.bottles2L || 0) + qty
-      }
-    })
-
-    await db.collection('jaba_batches').updateOne(
-      { _id: new ObjectId(batchId) },
-      { $set: updateData }
-    )
-
-    console.log(`[Packaging Output API] ✅ Packaging session created successfully (ID: ${result.insertedId}, Package Number: ${finalPackageNumber})`)
+    console.log(`[Packaging Output API] ✅ Packaging session created successfully (ID: ${createdPackagingId}, Package Number: ${finalPackageNumber})`)
 
     return NextResponse.json(
       {
         success: true,
         packaging: {
           ...packagingData,
-          _id: result.insertedId.toString(),
-          id: result.insertedId.toString(),
-          remainingLitres: Math.max(0, newRemaining ?? 0),
-          remainingOnFlavourLineLitres: flavourLineId ? Math.max(0, newRemaining ?? 0) : undefined,
+          _id: createdPackagingId,
+          id: createdPackagingId,
+          remainingLitres: txRemainingLitres,
+          remainingOnFlavourLineLitres: flavourLineId ? txRemainingLitres : undefined,
           flavourAllocatedLitres: lineAllocated ?? undefined,
         }
       },
       { status: 201 }
     )
   } catch (error: any) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Packaging Output API] ❌ Error creating packaging output:', error)
     return NextResponse.json(
       {
@@ -331,6 +360,9 @@ export async function POST(request: Request) {
 
 // GET packaging outputs
 export async function GET(request: Request) {
+  const authResult = await requireJabaAction('production.packaging', 'view')
+  if ('response' in authResult) return authResult.response
+
   try {
     console.log('[Packaging Output API] GET request received')
     const { searchParams } = new URL(request.url)
@@ -397,6 +429,9 @@ export async function GET(request: Request) {
 
 // DELETE packaging output and restore packaging materials stock
 export async function DELETE(request: Request) {
+  const authResult = await requireJabaAction('production.packaging', 'delete')
+  if ('response' in authResult) return authResult.response
+
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
