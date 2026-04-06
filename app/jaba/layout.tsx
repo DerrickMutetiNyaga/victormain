@@ -78,6 +78,7 @@ const navigationGroups = [
     icon: Users,
     items: [
       { name: "Suppliers & Distributors", href: "/jaba/suppliers", icon: Truck, pageId: "suppliers" },
+      { name: "Distributors", href: "/jaba/distributors", icon: Users, pageId: "distributors" },
     ],
   },
   {
@@ -108,6 +109,7 @@ const NAV_ITEM_PERMISSION_MAP: Record<string, string> = {
   '/jaba/storage/finished': 'storage.finished',
   '/jaba/distribution': 'distribution.main',
   '/jaba/suppliers': 'distribution.suppliers',
+  '/jaba/distributors': 'distribution.distributors',
   '/jaba/reports/batches': 'reports.batches',
   '/jaba/barcodes': 'system.dashboard',
   '/jaba/users': 'system.users',

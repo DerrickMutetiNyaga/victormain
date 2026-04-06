@@ -735,9 +735,17 @@ function CreateDeliveryNotePageContent() {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="distributor" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                    Distributor *
-                  </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="distributor" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Distributor *
+                    </Label>
+                    <Link href="/jaba/distributors/add">
+                      <Button variant="outline" size="sm" className="h-8">
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Add Distributor
+                      </Button>
+                    </Link>
+                  </div>
                   <Select value={distributorId} onValueChange={setDistributorId} disabled={loadingDistributors || loadingEditData}>
                     <SelectTrigger className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500">
                       <SelectValue placeholder={loadingDistributors ? "Loading distributors..." : "Select distributor"} />
@@ -751,8 +759,11 @@ function CreateDeliveryNotePageContent() {
                         ))
                       ) : (
                         !loadingDistributors && (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No distributors available
+                          <div className="px-2 py-2 text-sm text-muted-foreground space-y-2">
+                            <p>No distributors available.</p>
+                            <Link href="/jaba/distributors/add">
+                              <Button size="sm" variant="outline">Create distributor</Button>
+                            </Link>
                           </div>
                         )
                       )}
