@@ -77,7 +77,7 @@ const navigationGroups = [
     name: "Partners",
     icon: Users,
     items: [
-      { name: "Suppliers & Distributors", href: "/jaba/suppliers", icon: Truck, pageId: "suppliers" },
+      { name: "Suppliers", href: "/jaba/suppliers", icon: Truck, pageId: "suppliers" },
       { name: "Distributors", href: "/jaba/distributors", icon: Users, pageId: "distributors" },
     ],
   },

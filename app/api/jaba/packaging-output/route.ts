@@ -7,6 +7,18 @@ import {
 
 export const runtime = 'nodejs'
 
+const BOTTLE_NAME_REGEX = /\bbott?l?e?s?\b/i
+const STICKER_NAME_REGEX = /\b(stickers?|labels?)\b/i
+
+function normalizeQty(value: unknown): number {
+  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
+  return Number.isFinite(n) ? n : 0
+}
+
+function getTotalContainerUnits(containers: Array<{ quantity?: string | number }>): number {
+  return containers.reduce((sum, c) => sum + normalizeQty(c.quantity), 0)
+}
+
 // POST create packaging output
 export async function POST(request: Request) {
   try {
@@ -147,10 +159,109 @@ export async function POST(request: Request) {
       packagingData.flavourName = String(flavourLineDoc.flavourName || '')
     }
 
+    const totalUnitsPacked = getTotalContainerUnits(containers || [])
+    if (totalUnitsPacked <= 0) {
+      return NextResponse.json(
+        { error: 'No container quantity entered. Add at least one packaged bottle.' },
+        { status: 400 }
+      )
+    }
+
+    const rawMaterialsCollection = db.collection('jaba_rawMaterials')
+    const [bottleMaterial, stickerMaterial] = await Promise.all([
+      rawMaterialsCollection
+        .find({ name: { $regex: BOTTLE_NAME_REGEX } })
+        .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+        .limit(1)
+        .next(),
+      rawMaterialsCollection
+        .find({ name: { $regex: STICKER_NAME_REGEX } })
+        .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+        .limit(1)
+        .next(),
+    ])
+
+    if (!bottleMaterial) {
+      return NextResponse.json(
+        { error: 'No bottle raw material found. Add a bottle item in Raw Materials before packaging.' },
+        { status: 400 }
+      )
+    }
+    if (!stickerMaterial) {
+      return NextResponse.json(
+        { error: 'No sticker raw material found. Add a sticker item in Raw Materials before packaging.' },
+        { status: 400 }
+      )
+    }
+
+    const bottleStock = Number(bottleMaterial.currentStock) || 0
+    const stickerStock = Number(stickerMaterial.currentStock) || 0
+    if (bottleStock < totalUnitsPacked) {
+      return NextResponse.json(
+        {
+          error: `Insufficient bottle stock: need ${totalUnitsPacked.toLocaleString()}, available ${bottleStock.toLocaleString()}.`,
+        },
+        { status: 400 }
+      )
+    }
+    if (stickerStock < totalUnitsPacked) {
+      return NextResponse.json(
+        {
+          error: `Insufficient sticker stock: need ${totalUnitsPacked.toLocaleString()}, available ${stickerStock.toLocaleString()}.`,
+        },
+        { status: 400 }
+      )
+    }
+
+    ;(packagingData as any).materialsUsed = [
+      {
+        materialId: String(bottleMaterial._id),
+        name: String(bottleMaterial.name || 'Bottles'),
+        type: 'bottles',
+        quantity: totalUnitsPacked,
+      },
+      {
+        materialId: String(stickerMaterial._id),
+        name: String(stickerMaterial.name || 'Stickers'),
+        type: 'stickers',
+        quantity: totalUnitsPacked,
+      },
+    ]
+
     // Insert packaging output
     console.log('[Packaging Output API] Saving packaging data with packageNumber:', packagingData.packageNumber)
     const result = await db.collection('jaba_packagingOutput').insertOne(packagingData)
     console.log('[Packaging Output API] ✅ Packaging output saved to DB with ID:', result.insertedId)
+
+    // Deduct required packaging materials.
+    const deductedIds: string[] = []
+    const tryDeduct = async (materialId: string, qty: number) => {
+      const update = await rawMaterialsCollection.updateOne(
+        { _id: new ObjectId(materialId), currentStock: { $gte: qty } },
+        { $inc: { currentStock: -qty }, $set: { updatedAt: new Date() } }
+      )
+      if (update.modifiedCount !== 1) {
+        throw new Error('Raw material stock changed during packaging. Please refresh and try again.')
+      }
+      deductedIds.push(materialId)
+    }
+
+    try {
+      await tryDeduct(String(bottleMaterial._id), totalUnitsPacked)
+      await tryDeduct(String(stickerMaterial._id), totalUnitsPacked)
+    } catch (stockError: any) {
+      for (const deductedId of deductedIds) {
+        await rawMaterialsCollection.updateOne(
+          { _id: new ObjectId(deductedId) },
+          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+        )
+      }
+      await db.collection('jaba_packagingOutput').deleteOne({ _id: result.insertedId })
+      return NextResponse.json(
+        { error: stockError?.message || 'Failed to deduct packaging materials stock.' },
+        { status: 400 }
+      )
+    }
 
     const bottleAdds = containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0)
 
@@ -277,6 +388,126 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: 'Failed to fetch packaging outputs',
+        details: error.message || String(error),
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE packaging output and restore packaging materials stock
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ error: 'Packaging output id is required' }, { status: 400 })
+    }
+
+    const client = await clientPromise
+    const db = client.db('infusion_jaba')
+    const { ObjectId } = await import('mongodb')
+
+    const packagingOutput = await db.collection('jaba_packagingOutput').findOne({ _id: new ObjectId(id) })
+    if (!packagingOutput) {
+      return NextResponse.json({ error: 'Packaging output not found' }, { status: 404 })
+    }
+
+    const containers = Array.isArray(packagingOutput.containers) ? packagingOutput.containers : []
+    const totalUnitsPacked = getTotalContainerUnits(containers as any[])
+    const rawMaterialsCollection = db.collection('jaba_rawMaterials')
+
+    // Prefer exact materials used for this session; fallback by name if old records don't have metadata.
+    const materialsUsed = Array.isArray((packagingOutput as any).materialsUsed)
+      ? (packagingOutput as any).materialsUsed
+      : []
+
+    if (materialsUsed.length > 0) {
+      for (const materialUse of materialsUsed) {
+        const qty = normalizeQty(materialUse.quantity)
+        if (!materialUse.materialId || qty <= 0) continue
+        await rawMaterialsCollection.updateOne(
+          { _id: new ObjectId(String(materialUse.materialId)) },
+          { $inc: { currentStock: qty }, $set: { updatedAt: new Date() } }
+        )
+      }
+    } else if (totalUnitsPacked > 0) {
+      const [bottleMaterial, stickerMaterial] = await Promise.all([
+        rawMaterialsCollection
+          .find({ name: { $regex: BOTTLE_NAME_REGEX } })
+          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+          .limit(1)
+          .next(),
+        rawMaterialsCollection
+          .find({ name: { $regex: STICKER_NAME_REGEX } })
+          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
+          .limit(1)
+          .next(),
+      ])
+      if (bottleMaterial) {
+        await rawMaterialsCollection.updateOne(
+          { _id: bottleMaterial._id },
+          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+        )
+      }
+      if (stickerMaterial) {
+        await rawMaterialsCollection.updateOne(
+          { _id: stickerMaterial._id },
+          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
+        )
+      }
+    }
+
+    // Reverse batch packed counters and remaining litres.
+    const batchId = String(packagingOutput.batchId || '')
+    if (batchId) {
+      const batch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) })
+      if (batch) {
+        const packagedLitres = Number(packagingOutput.packagedLitres) || 0
+        const updateData: Record<string, unknown> = {
+          updatedAt: new Date(),
+          'outputSummary.totalBottles': Math.max(0, (Number(batch.outputSummary?.totalBottles) || 0) - totalUnitsPacked),
+        }
+
+        if (!(packagingOutput as any).flavourLineId) {
+          updateData['outputSummary.remainingLitres'] =
+            Math.max(0, (Number(batch.outputSummary?.remainingLitres) || 0) + packagedLitres)
+          if (batch.status === 'Ready for Distribution') {
+            updateData.status = 'Partially Packaged'
+          }
+        }
+
+        for (const container of containers as any[]) {
+          const qty = normalizeQty(container.quantity)
+          if (container.size === '250ml') {
+            updateData.bottles250ml = Math.max(0, (Number(batch.bottles250ml) || 0) - qty)
+          } else if (container.size === '500ml') {
+            updateData.bottles500ml = Math.max(0, (Number(batch.bottles500ml) || 0) - qty)
+          } else if (container.size === '1L') {
+            updateData.bottles1L = Math.max(0, (Number(batch.bottles1L) || 0) - qty)
+          } else if (container.size === '2L') {
+            updateData.bottles2L = Math.max(0, (Number(batch.bottles2L) || 0) - qty)
+          }
+        }
+
+        await db.collection('jaba_batches').updateOne(
+          { _id: new ObjectId(batchId) },
+          { $set: updateData }
+        )
+      }
+    }
+
+    await db.collection('jaba_packagingOutput').deleteOne({ _id: new ObjectId(id) })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Packaging session deleted and packaging materials stock restored.',
+    })
+  } catch (error: any) {
+    console.error('[Packaging Output API] ❌ Error deleting packaging output:', error)
+    return NextResponse.json(
+      {
+        error: 'Failed to delete packaging output',
         details: error.message || String(error),
       },
       { status: 500 }

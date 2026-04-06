@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Boxes, FileText, Users, Calendar, TrendingUp, AlertCircle, CheckCircle2, Clock, Grid3x3, Table as TableIcon, Package, Factory, Activity, Loader2 } from "lucide-react"
+import { Plus, Search, Boxes, FileText, Users, Calendar, TrendingUp, AlertCircle, CheckCircle2, Clock, Grid3x3, Table as TableIcon, Package, Factory, Activity, Loader2, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -127,6 +127,25 @@ export default function PackagingSessionsPage() {
     } finally {
       setLoading(false)
       console.log('[Packaging Output Page] Fetch completed, loading set to false')
+    }
+  }
+
+  const handleDeleteSession = async (id: string, sessionId: string) => {
+    if (!confirm(`Delete packaging session ${sessionId}?\n\nThis will restore bottle and sticker stock automatically.`)) {
+      return
+    }
+    try {
+      const response = await fetch(`/api/jaba/packaging-output?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to delete packaging session")
+      }
+      toast.success("Packaging session deleted and materials stock restored.")
+      await fetchPackagingOutputs()
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete packaging session")
     }
   }
 
@@ -621,6 +640,17 @@ export default function PackagingSessionsPage() {
                           <span className="text-muted-foreground">Supervisor:</span>
                           <span className="font-medium text-foreground truncate ml-2">{session.supervisor}</span>
                         </div>
+                        <div className="mt-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteSession(session.id, session.sessionId)}
+                            className="w-full border-red-300 text-red-600 hover:text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Session
+                          </Button>
+                        </div>
                       </div>
 
                     </CardContent>
@@ -684,6 +714,9 @@ export default function PackagingSessionsPage() {
                         </TableHead>
                         <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 px-6 py-4 text-center">
                           Status
+                        </TableHead>
+                        <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 px-6 py-4 text-center">
+                          Actions
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -796,6 +829,17 @@ export default function PackagingSessionsPage() {
                                 <StatusIcon className="h-3 w-3 mr-1 inline" />
                                 {session.status}
                               </Badge>
+                            </TableCell>
+                            <TableCell className="px-6 py-4 text-center">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteSession(session.id, session.sessionId)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
                             </TableCell>
                           </TableRow>
                         )

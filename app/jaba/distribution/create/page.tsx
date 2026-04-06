@@ -713,7 +713,7 @@ function CreateDeliveryNotePageContent() {
         </Link>
       </header>
 
-      <div className="p-6 max-w-7xl mx-auto space-y-6 bg-gradient-to-br from-slate-50 via-background to-slate-50 dark:from-slate-950 dark:via-background dark:to-slate-950 min-h-screen">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 bg-gradient-to-br from-slate-50 via-background to-slate-50 dark:from-slate-950 dark:via-background dark:to-slate-950 min-h-screen">
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Form */}
           <div className="lg:col-span-2 space-y-6">
@@ -1250,7 +1250,7 @@ function CreateDeliveryNotePageContent() {
 
           {/* Preview */}
           <div className="lg:col-span-1">
-            <Card className="border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg rounded-2xl sticky top-24 flex flex-col h-[calc(100vh-8rem)]">
+            <Card className="border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg rounded-2xl flex flex-col max-h-[75vh] lg:max-h-[calc(100vh-8rem)] lg:sticky lg:top-24">
               {/* Clean Header */}
               <CardHeader className="border-b border-slate-200 dark:border-slate-800 pb-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1276,7 +1276,7 @@ function CreateDeliveryNotePageContent() {
               </CardHeader>
 
               {/* Scrollable Content */}
-              <CardContent className="p-6 space-y-6 flex-1 overflow-y-auto">
+              <CardContent className="p-4 sm:p-6 space-y-6 flex-1 overflow-y-auto">
                 {/* Distributor Section */}
                 {selectedDistributor && (
                   <div className="space-y-1">
@@ -1406,7 +1406,7 @@ function CreateDeliveryNotePageContent() {
               </CardContent>
 
               {/* Sticky Footer */}
-              <div className="border-t border-slate-200 dark:border-slate-800 p-6 bg-white dark:bg-slate-900 sticky bottom-0 rounded-b-2xl">
+              <div className="border-t border-slate-200 dark:border-slate-800 p-4 sm:p-6 bg-white dark:bg-slate-900 rounded-b-2xl">
                 <div className="flex flex-col gap-3">
                   <Link href="/jaba/distribution" className="w-full">
                     <Button variant="ghost" className="w-full h-11 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
