@@ -47,10 +47,38 @@ export default function RawMaterialsPage() {
   const [isSavingCategory, setIsSavingCategory] = useState(false)
   const [isDeletingCategory, setIsDeletingCategory] = useState<string | null>(null)
 
+  type PackagingTemplate = "bottles" | "stickers" | "custom"
+  type PackagingSize = "250ml" | "500ml" | "1L" | "2L"
+  const [editPackagingTemplate, setEditPackagingTemplate] = useState<PackagingTemplate>("bottles")
+  const [editPackagingSize, setEditPackagingSize] = useState<PackagingSize>("500ml")
+
   useEffect(() => {
     fetchRawMaterials()
     fetchCategories()
   }, [])
+
+  // When editing a Packaging item, detect bottles/stickers + size from its name,
+  // and force the UI to use dropdowns to avoid accidental renaming.
+  useEffect(() => {
+    if (!showEditDialog || !editingMaterial) return
+    if (editingMaterial.category !== "Packaging") return
+
+    const n = String(editingMaterial.name || "").toLowerCase()
+    let tpl: PackagingTemplate = "custom"
+    if (n.includes("bottle")) tpl = "bottles"
+    else if (n.includes("sticker") || n.includes("label")) tpl = "stickers"
+
+    let sz: PackagingSize = "500ml"
+    if (n.includes("250")) sz = "250ml"
+    else if (n.includes("500")) sz = "500ml"
+    else if (n.includes("1l")) sz = "1L"
+    else if (n.includes("1 l")) sz = "1L"
+    else if (n.includes("2l")) sz = "2L"
+    else if (n.includes("2 l")) sz = "2L"
+
+    setEditPackagingTemplate(tpl)
+    setEditPackagingSize(sz)
+  }, [showEditDialog, editingMaterial])
 
   const fetchCategories = async () => {
     try {
@@ -877,10 +905,27 @@ export default function RawMaterialsPage() {
                         <label className="text-sm font-semibold text-foreground flex items-center gap-1">
                           Material Name <span className="text-red-600 dark:text-red-400 font-bold">*</span>
                         </label>
+                        {editCategory === "Packaging" && editPackagingTemplate !== "custom" && (
+                          <input
+                            type="hidden"
+                            name="name"
+                            value={`${editPackagingSize} ${editPackagingTemplate === "bottles" ? "Bottles" : "Stickers"}`}
+                          />
+                        )}
                         <Input
-                          name="name"
-                          defaultValue={editingMaterial.name}
-                          required
+                          name={editCategory === "Packaging" && editPackagingTemplate !== "custom" ? "name_display" : "name"}
+                          defaultValue={
+                            editCategory === "Packaging" && editPackagingTemplate !== "custom"
+                              ? `${editPackagingSize} ${editPackagingTemplate === "bottles" ? "Bottles" : "Stickers"}`
+                              : editingMaterial.name
+                          }
+                          required={!(editCategory === "Packaging" && editPackagingTemplate !== "custom")}
+                          disabled={editCategory === "Packaging" && editPackagingTemplate !== "custom"}
+                          key={
+                            editCategory === "Packaging" && editPackagingTemplate !== "custom"
+                              ? `${editPackagingSize}-${editPackagingTemplate}`
+                              : editingMaterial.name
+                          }
                           className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500 h-11"
                         />
                       </div>
@@ -921,6 +966,52 @@ export default function RawMaterialsPage() {
                             )}
                           </SelectContent>
                         </Select>
+
+                        {editCategory === "Packaging" && (
+                          <div className="mt-4 space-y-4">
+                            <div className="space-y-2">
+                              <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                                Packaging Type <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                              </label>
+                              <Select value={editPackagingTemplate} onValueChange={(v) => setEditPackagingTemplate(v as any)} required>
+                                <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500 h-11">
+                                  <SelectValue placeholder="Select packaging type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="bottles">Bottles</SelectItem>
+                                  <SelectItem value="stickers">Stickers</SelectItem>
+                                  <SelectItem value="custom">Custom (manual name)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {editPackagingTemplate !== "custom" && (
+                              <div className="space-y-2">
+                                <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                                  Size <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                                </label>
+                                <Select value={editPackagingSize} onValueChange={(v) => setEditPackagingSize(v as any)} required>
+                                  <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500 h-11">
+                                    <SelectValue placeholder="Select size" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="250ml">250ml</SelectItem>
+                                    <SelectItem value="500ml">500ml</SelectItem>
+                                    <SelectItem value="1L">1L</SelectItem>
+                                    <SelectItem value="2L">2L</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+
+                            {editPackagingTemplate !== "custom" && (
+                              <p className="text-xs text-muted-foreground">
+                                Auto name:{" "}
+                                <span className="font-semibold">{`${editPackagingSize} ${editPackagingTemplate === "bottles" ? "Bottles" : "Stickers"}`}</span>
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -953,10 +1044,21 @@ export default function RawMaterialsPage() {
                         <label className="text-sm font-semibold text-foreground flex items-center gap-1">
                           Unit <span className="text-red-600 dark:text-red-400 font-bold">*</span>
                         </label>
+                        {editCategory === "Packaging" && editPackagingTemplate !== "custom" && (
+                          <input type="hidden" name="unit" value="pcs" />
+                        )}
                         <Input
-                          name="unit"
-                          defaultValue={editingMaterial.unit}
-                          required
+                          name={editCategory === "Packaging" && editPackagingTemplate !== "custom" ? "unit_display" : "unit"}
+                          defaultValue={
+                            editCategory === "Packaging" && editPackagingTemplate !== "custom" ? "pcs" : editingMaterial.unit
+                          }
+                          required={!(editCategory === "Packaging" && editPackagingTemplate !== "custom")}
+                          disabled={editCategory === "Packaging" && editPackagingTemplate !== "custom"}
+                          key={
+                            editCategory === "Packaging" && editPackagingTemplate !== "custom"
+                              ? `unit-pcs-${editPackagingTemplate}-${editPackagingSize}`
+                              : editingMaterial.unit
+                          }
                           className="border-2 border-slate-300 dark:border-slate-700 focus:border-green-500 dark:focus:border-green-500 h-11"
                         />
                       </div>

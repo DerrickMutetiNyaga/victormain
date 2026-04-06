@@ -14,11 +14,9 @@ import {
   JABA_FLAVOUR_LINES_COLLECTION,
   loadMergedFlavourRowsForParent,
 } from '@/lib/jaba-flavour-lines'
+import { findPrimaryPackagingMaterials } from '@/lib/jaba-packaging-materials'
 
 export const runtime = 'nodejs'
-
-const BOTTLE_NAME_REGEX = /\bbott?l?e?s?\b/i
-const STICKER_NAME_REGEX = /\b(stickers?|labels?)\b/i
 
 function normalizeQty(value: unknown): number {
   const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
@@ -619,18 +617,7 @@ export async function DELETE(
       const totalUnitsPacked = getTotalContainerUnits(Array.isArray((po as any).containers) ? (po as any).containers : [])
       if (totalUnitsPacked <= 0) continue
 
-      const [bottleMaterial, stickerMaterial] = await Promise.all([
-        rawMaterialsCollection
-          .find({ name: { $regex: BOTTLE_NAME_REGEX } })
-          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-          .limit(1)
-          .next(),
-        rawMaterialsCollection
-          .find({ name: { $regex: STICKER_NAME_REGEX } })
-          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-          .limit(1)
-          .next(),
-      ])
+      const { bottleMaterial, stickerMaterial } = await findPrimaryPackagingMaterials(rawMaterialsCollection)
 
       if (bottleMaterial) {
         await rawMaterialsCollection.updateOne(

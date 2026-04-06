@@ -5,11 +5,13 @@ import {
   JABA_FLAVOUR_LINES_COLLECTION,
   sumPackagedLitresForFlavourLine,
 } from '@/lib/jaba-flavour-lines'
+import {
+  findPrimaryPackagingMaterials,
+  findPrimaryBottleMaterialForSize,
+  findPrimaryStickerMaterialForSize,
+} from '@/lib/jaba-packaging-materials'
 
 export const runtime = 'nodejs'
-
-const BOTTLE_NAME_REGEX = /\bbott?l?e?s?\b/i
-const STICKER_NAME_REGEX = /\b(stickers?|labels?)\b/i
 
 function normalizeQty(value: unknown): number {
   const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
@@ -86,6 +88,12 @@ export async function POST(request: Request) {
         { error: 'Batch not found' },
         { status: 404 }
       )
+    }
+
+    for (const c of containers || []) {
+      if (normalizeQty((c as any)?.quantity) < 0) {
+        return NextResponse.json({ error: 'Container quantities cannot be negative.' }, { status: 400 })
+      }
     }
 
     // Calculate packaged litres from containers
@@ -209,41 +217,119 @@ export async function POST(request: Request) {
 
     try {
       await mongoSession.withTransaction(async () => {
-        const [bottleMaterial, stickerMaterial] = await Promise.all([
-          rawMaterialsCollection
-            .find({ name: { $regex: BOTTLE_NAME_REGEX } }, { session: mongoSession })
-            .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-            .limit(1)
-            .next(),
-          rawMaterialsCollection
-            .find({ name: { $regex: STICKER_NAME_REGEX } }, { session: mongoSession })
-            .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-            .limit(1)
-            .next(),
-        ])
+        const fmtSize = (size: string, customSize?: string) => (size === 'custom' ? `${customSize ?? ''}ml` : size)
 
-        if (!bottleMaterial) throw new ApiError('No bottle raw material found. Add a bottle item in Raw Materials before packaging.', 400)
-        if (!stickerMaterial) throw new ApiError('No sticker raw material found. Add a sticker item in Raw Materials before packaging.', 400)
+        // Group quantities by container "size spec", then resolve the correct raw materials per size.
+        const sizeSpecToUnits = new Map<
+          string,
+          {
+            size: string
+            customSize?: string
+            units: number
+          }
+        >()
 
-        const bottleStock = Number(bottleMaterial.currentStock) || 0
-        const stickerStock = Number(stickerMaterial.currentStock) || 0
-        if (bottleStock < totalUnitsPacked) {
-          throw new ApiError(
-            `Insufficient bottle stock: need ${totalUnitsPacked.toLocaleString()}, available ${bottleStock.toLocaleString()}.`,
-            400
-          )
-        }
-        if (stickerStock < totalUnitsPacked) {
-          throw new ApiError(
-            `Insufficient sticker stock: need ${totalUnitsPacked.toLocaleString()}, available ${stickerStock.toLocaleString()}.`,
-            400
-          )
+        for (const c of containers || []) {
+          const units = normalizeQty((c as any).quantity)
+          if (units <= 0) continue
+
+          const size = String((c as any).size || '')
+          const customSize = (c as any).customSize ? String((c as any).customSize) : undefined
+          const specKey = size === 'custom' ? `custom:${customSize ?? ''}` : size
+
+          const existing = sizeSpecToUnits.get(specKey)
+          if (existing) {
+            existing.units += units
+          } else {
+            sizeSpecToUnits.set(specKey, { size, customSize, units })
+          }
         }
 
-        ;(packagingData as any).materialsUsed = [
-          { materialId: String(bottleMaterial._id), name: String(bottleMaterial.name || 'Bottles'), type: 'bottles', quantity: totalUnitsPacked },
-          { materialId: String(stickerMaterial._id), name: String(stickerMaterial.name || 'Stickers'), type: 'stickers', quantity: totalUnitsPacked },
-        ]
+        const bottleRequirementsById = new Map<string, { doc: any; units: number }>()
+        const stickerRequirementsById = new Map<string, { doc: any; units: number }>()
+
+        for (const spec of sizeSpecToUnits.values()) {
+          const [bottleMaterial, stickerMaterial] = await Promise.all([
+            findPrimaryBottleMaterialForSize(rawMaterialsCollection, {
+              size: spec.size,
+              customSize: spec.customSize,
+              session: mongoSession,
+            }),
+            findPrimaryStickerMaterialForSize(rawMaterialsCollection, {
+              size: spec.size,
+              customSize: spec.customSize,
+              session: mongoSession,
+            }),
+          ])
+
+          if (!bottleMaterial) {
+            throw new ApiError(
+              `No bottle raw material found for size ${fmtSize(spec.size, spec.customSize)}. Add an item like "250ml Bottles", "500ml Bottles", "1L Bottles", "2L Bottles" in Raw Materials.`,
+              400
+            )
+          }
+          if (!stickerMaterial) {
+            throw new ApiError(
+              `No sticker raw material found for size ${fmtSize(spec.size, spec.customSize)}. Add an item like "250ml Stickers" / "Labels" in Raw Materials before packaging.`,
+              400
+            )
+          }
+
+          const bottleId = String(bottleMaterial._id)
+          const stickerId = String(stickerMaterial._id)
+
+          const existingBottle = bottleRequirementsById.get(bottleId)
+          if (existingBottle) existingBottle.units += spec.units
+          else bottleRequirementsById.set(bottleId, { doc: bottleMaterial, units: spec.units })
+
+          const existingSticker = stickerRequirementsById.get(stickerId)
+          if (existingSticker) existingSticker.units += spec.units
+          else stickerRequirementsById.set(stickerId, { doc: stickerMaterial, units: spec.units })
+        }
+
+        // Validate stock before deducting (still inside the transaction).
+        for (const req of bottleRequirementsById.values()) {
+          const stock = Number(req.doc.currentStock) || 0
+          if (stock < req.units) {
+            throw new ApiError(
+              `Insufficient bottle stock: need ${req.units.toLocaleString()}, available ${stock.toLocaleString()} (${String(
+                req.doc.name || 'bottles'
+              )}).`,
+              400
+            )
+          }
+        }
+        for (const req of stickerRequirementsById.values()) {
+          const stock = Number(req.doc.currentStock) || 0
+          if (stock < req.units) {
+            throw new ApiError(
+              `Insufficient sticker stock: need ${req.units.toLocaleString()}, available ${stock.toLocaleString()} (${String(
+                req.doc.name || 'stickers'
+              )}).`,
+              400
+            )
+          }
+        }
+
+        const materialsUsed: any[] = []
+        for (const [materialId, req] of bottleRequirementsById.entries()) {
+          materialsUsed.push({
+            materialId,
+            name: String(req.doc.name || 'Bottles'),
+            type: 'bottles',
+            quantity: req.units,
+          })
+        }
+        for (const [materialId, req] of stickerRequirementsById.entries()) {
+          materialsUsed.push({
+            materialId,
+            name: String(req.doc.name || 'Stickers'),
+            type: 'stickers',
+            quantity: req.units,
+          })
+        }
+
+        ;(packagingData as any).materialsUsed = materialsUsed
 
         // Re-read current batch inside transaction for concurrency-safe update.
         const txBatch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) }, { session: mongoSession })
@@ -276,21 +362,35 @@ export async function POST(request: Request) {
         const packagingInsert = await db.collection('jaba_packagingOutput').insertOne(packagingData, { session: mongoSession })
         createdPackagingId = packagingInsert.insertedId.toString()
 
-        const bottleDeduct = await rawMaterialsCollection.updateOne(
-          { _id: bottleMaterial._id, currentStock: { $gte: totalUnitsPacked } },
-          { $inc: { currentStock: -totalUnitsPacked }, $set: { updatedAt: new Date() } },
-          { session: mongoSession }
+        const bottleAdds = containers.reduce(
+          (sum: number, c: any) => sum + Math.max(0, parseFloat(c.quantity) || 0),
+          0
         )
-        const stickerDeduct = await rawMaterialsCollection.updateOne(
-          { _id: stickerMaterial._id, currentStock: { $gte: totalUnitsPacked } },
-          { $inc: { currentStock: -totalUnitsPacked }, $set: { updatedAt: new Date() } },
-          { session: mongoSession }
-        )
-        if (bottleDeduct.modifiedCount !== 1 || stickerDeduct.modifiedCount !== 1) {
-          throw new ApiError('Raw material stock changed during packaging. Please refresh and try again.', 409)
+
+        // Deduct bottles and stickers using conditional $inc to keep it concurrency-safe.
+        for (const [_, req] of bottleRequirementsById.entries()) {
+          const qty = req.units
+          const bottleDeduct = await rawMaterialsCollection.updateOne(
+            { _id: req.doc._id, currentStock: { $gte: qty } },
+            { $inc: { currentStock: -qty }, $set: { updatedAt: new Date() } },
+            { session: mongoSession }
+          )
+          if (bottleDeduct.modifiedCount !== 1) {
+            throw new ApiError('Raw material stock changed during packaging. Please refresh and try again.', 409)
+          }
         }
 
-        const bottleAdds = containers.reduce((sum: number, c: any) => sum + (parseFloat(c.quantity) || 0), 0)
+        for (const [_, req] of stickerRequirementsById.entries()) {
+          const qty = req.units
+          const stickerDeduct = await rawMaterialsCollection.updateOne(
+            { _id: req.doc._id, currentStock: { $gte: qty } },
+            { $inc: { currentStock: -qty }, $set: { updatedAt: new Date() } },
+            { session: mongoSession }
+          )
+          if (stickerDeduct.modifiedCount !== 1) {
+            throw new ApiError('Raw material stock changed during packaging. Please refresh and try again.', 409)
+          }
+        }
         const updateData: Record<string, unknown> = {
           'outputSummary.totalBottles': (txBatch.outputSummary?.totalBottles || 0) + bottleAdds,
           updatedAt: new Date(),
@@ -310,7 +410,7 @@ export async function POST(request: Request) {
         }
 
         containers.forEach((container: any) => {
-          const qty = parseFloat(container.quantity) || 0
+          const qty = Math.max(0, parseFloat(container.quantity) || 0)
           if (container.size === '250ml') updateData.bottles250ml = (txBatch.bottles250ml || 0) + qty
           else if (container.size === '500ml') updateData.bottles500ml = (txBatch.bottles500ml || 0) + qty
           else if (container.size === '1L') updateData.bottles1L = (txBatch.bottles1L || 0) + qty
@@ -467,18 +567,7 @@ export async function DELETE(request: Request) {
         )
       }
     } else if (totalUnitsPacked > 0) {
-      const [bottleMaterial, stickerMaterial] = await Promise.all([
-        rawMaterialsCollection
-          .find({ name: { $regex: BOTTLE_NAME_REGEX } })
-          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-          .limit(1)
-          .next(),
-        rawMaterialsCollection
-          .find({ name: { $regex: STICKER_NAME_REGEX } })
-          .sort({ currentStock: -1, updatedAt: -1, createdAt: -1 })
-          .limit(1)
-          .next(),
-      ])
+      const { bottleMaterial, stickerMaterial } = await findPrimaryPackagingMaterials(rawMaterialsCollection)
       if (bottleMaterial) {
         await rawMaterialsCollection.updateOne(
           { _id: bottleMaterial._id },

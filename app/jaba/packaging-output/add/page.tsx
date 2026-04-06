@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Plus, X, Save, Printer, Warehouse, Package, Factory, Users, CheckCircle, TrendingUp, AlertCircle, Droplet, Loader2 } from "lucide-react"
+import { Plus, X, Save, Printer, Warehouse, Package, Factory, Users, CheckCircle, TrendingUp, AlertCircle, Droplet, Loader2, Layers } from "lucide-react"
 import Link from "next/link"
 import { productionOutputs } from "@/lib/jaba-data"
 import { cn } from "@/lib/utils"
@@ -19,6 +19,14 @@ interface ContainerRow {
   size: string
   quantity: string
   customSize?: string
+}
+
+type PackagingStockItem = {
+  id: string
+  name: string
+  currentStock: number
+  unit: string
+  kind: string
 }
 
 function CreatePackagingSessionPageContent() {
@@ -54,10 +62,48 @@ function CreatePackagingSessionPageContent() {
   const [batchData, setBatchData] = useState<any>(null)
   const [availableBatches, setAvailableBatches] = useState<any[]>([])
   const [selectedFlavourLineId, setSelectedFlavourLineId] = useState("")
+  const [packagingStock, setPackagingStock] = useState<{
+    bottle: PackagingStockItem | null
+    sticker: PackagingStockItem | null
+    bySize: Record<
+      '250ml' | '500ml' | '1L' | '2L',
+      { bottle: PackagingStockItem | null; sticker: PackagingStockItem | null }
+    >
+  } | null>(null)
+  const [packagingStockLoading, setPackagingStockLoading] = useState(true)
+  const [packagingStockError, setPackagingStockError] = useState<string | null>(null)
 
   // Fetch available batches for selection
   useEffect(() => {
     fetchAvailableBatches()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        setPackagingStockLoading(true)
+        const res = await fetch("/api/jaba/packaging-material-stock")
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || "Failed to load packaging material stock")
+        if (!cancelled) {
+          setPackagingStock({
+            bottle: data.bottle ?? null,
+            sticker: data.sticker ?? null,
+            bySize: data.bySize ?? { '250ml': { bottle: null, sticker: null }, '500ml': { bottle: null, sticker: null }, '1L': { bottle: null, sticker: null }, '2L': { bottle: null, sticker: null } },
+          })
+          setPackagingStockError(null)
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Failed to load stock"
+        if (!cancelled) setPackagingStockError(msg)
+      } finally {
+        if (!cancelled) setPackagingStockLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Get batchId from URL params if available and fetch batch data
@@ -198,6 +244,11 @@ function CreatePackagingSessionPageContent() {
       return
     }
 
+    if (packagingStockInsufficient) {
+      toast.error("This session needs more bottles or stickers than are available in the warehouse. Reduce quantities or restock before saving.")
+      return
+    }
+
     // Validate that total packed doesn't exceed allocated volume
     const allocated = getAllocatedVolume()
     if (totalPacked > allocated) {
@@ -283,7 +334,7 @@ function CreatePackagingSessionPageContent() {
   const calculateOutput = () => {
     let totalLitres = 0
     containers.forEach((container) => {
-      const qty = parseFloat(container.quantity) || 0
+      const qty = Math.max(0, parseFloat(container.quantity) || 0)
       if (container.size === "250ml") {
         totalLitres += qty * 0.25
       } else if (container.size === "500ml") {
@@ -330,6 +381,9 @@ function CreatePackagingSessionPageContent() {
   const isValidContainerQuantity = (index: number, quantity: string) => {
     const container = containers[index]
     const qty = parseFloat(quantity) || 0
+    if (quantity.trim() !== "" && qty < 0) {
+      return { valid: false, error: "Quantity cannot be negative" }
+    }
     if (qty <= 0) return { valid: true, error: "" } // Allow empty or zero
     
     const allocated = getAllocatedVolume()
@@ -340,7 +394,7 @@ function CreatePackagingSessionPageContent() {
     // Calculate total litres if this quantity is used
     let totalLitres = 0
     containers.forEach((c, idx) => {
-      const currentQty = idx === index ? qty : (parseFloat(c.quantity) || 0)
+      const currentQty = idx === index ? qty : Math.max(0, parseFloat(c.quantity) || 0)
       if (c.size === "250ml") {
         totalLitres += currentQty * 0.25
       } else if (c.size === "500ml") {
@@ -407,6 +461,64 @@ function CreatePackagingSessionPageContent() {
   const defectPercentage = containers.reduce((sum, c) => sum + (parseFloat(c.quantity) || 0), 0) > 0
     ? ((parseFloat(defects) / containers.reduce((sum, c) => sum + (parseFloat(c.quantity) || 0), 0)) * 100).toFixed(2)
     : "0"
+
+  const standardSizes = ['250ml', '500ml', '1L', '2L'] as const
+
+  const draftUnitsBySize = standardSizes.reduce(
+    (acc, size) => {
+      acc[size] = 0
+      return acc
+    },
+    {} as Record<(typeof standardSizes)[number], number>
+  )
+
+  for (const c of containers) {
+    const size = c.size as (typeof standardSizes)[number]
+    if (standardSizes.includes(size)) {
+      draftUnitsBySize[size] += Math.max(0, parseFloat(c.quantity) || 0)
+    }
+  }
+
+  type PreviewEntry = { stock: number; unit: string; name: string; deduct: number }
+  const bottlePreviewByDocId = new Map<string, PreviewEntry>()
+  const stickerPreviewByDocId = new Map<string, PreviewEntry>()
+
+  for (const size of standardSizes) {
+    const bottle = packagingStock?.bySize?.[size]?.bottle
+    const sticker = packagingStock?.bySize?.[size]?.sticker
+
+    const qty = draftUnitsBySize[size]
+    if (bottle && qty > 0) {
+      const existing = bottlePreviewByDocId.get(bottle.id)
+      if (existing) existing.deduct += qty
+      else bottlePreviewByDocId.set(bottle.id, { stock: bottle.currentStock, unit: bottle.unit, name: bottle.name, deduct: qty })
+    }
+
+    if (sticker && qty > 0) {
+      const existing = stickerPreviewByDocId.get(sticker.id)
+      if (existing) existing.deduct += qty
+      else stickerPreviewByDocId.set(sticker.id, { stock: sticker.currentStock, unit: sticker.unit, name: sticker.name, deduct: qty })
+    }
+  }
+
+  const packagingStockInsufficient = Array.from(bottlePreviewByDocId.values()).some((e) => e.stock - e.deduct < 0) ||
+    Array.from(stickerPreviewByDocId.values()).some((e) => e.stock - e.deduct < 0)
+
+  const previewBottleRemainingForSize = (size: (typeof standardSizes)[number]) => {
+    const bottle = packagingStock?.bySize?.[size]?.bottle
+    if (!bottle) return null
+    const entry = bottlePreviewByDocId.get(bottle.id)
+    if (!entry) return bottle.currentStock
+    return entry.stock - entry.deduct
+  }
+
+  const previewStickerRemainingForSize = (size: (typeof standardSizes)[number]) => {
+    const sticker = packagingStock?.bySize?.[size]?.sticker
+    if (!sticker) return null
+    const entry = stickerPreviewByDocId.get(sticker.id)
+    if (!entry) return sticker.currentStock
+    return entry.stock - entry.deduct
+  }
 
   return (
     <>
@@ -709,8 +821,127 @@ function CreatePackagingSessionPageContent() {
               </div>
               Container Types & Quantities
             </CardTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              Each filled unit uses one bottle and one sticker from raw materials. Numbers below update as you type; stock is only deducted when you save this session.
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4 p-6">
+          <CardContent className="space-y-4 p-4 sm:p-6">
+            <div
+              className={cn(
+                "rounded-xl border-2 p-4 space-y-3",
+                packagingStockLoading
+                  ? "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/40"
+                  : packagingStockError
+                    ? "border-amber-200 bg-amber-50/90 dark:border-amber-900/50 dark:bg-amber-950/25"
+                    : packagingStockInsufficient
+                      ? "border-red-200 bg-red-50/90 dark:border-red-900/50 dark:bg-red-950/20"
+                      : "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900/40 dark:bg-emerald-950/25"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Layers className="h-4 w-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Raw materials (warehouse)
+                </span>
+                {packagingStockLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
+                )}
+              </div>
+              {packagingStockError && (
+                <p className="text-sm text-amber-800 dark:text-amber-200">{packagingStockError}</p>
+              )}
+              {!packagingStockLoading && !packagingStockError && packagingStock?.bySize && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {standardSizes.map((size) => {
+                    const b = packagingStock.bySize?.[size]?.bottle ?? null
+                    const s = packagingStock.bySize?.[size]?.sticker ?? null
+                    const afterB = previewBottleRemainingForSize(size)
+                    const afterS = previewStickerRemainingForSize(size)
+
+                    return (
+                      <div
+                        key={size}
+                        className="rounded-lg border border-emerald-200/80 bg-white/90 dark:bg-slate-900/70 dark:border-emerald-900/50 px-3 py-2.5 space-y-2"
+                      >
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{size}</p>
+
+                        <div className="space-y-0.5">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                            Bottles
+                          </p>
+                          {b ? (
+                            <>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-50 truncate" title={b.name}>
+                                {b.name}
+                              </p>
+                              <p className="text-sm mt-0.5">
+                                <span className="text-muted-foreground">In stock:</span>{" "}
+                                <span className="font-bold tabular-nums">{b.currentStock.toLocaleString()}</span>{" "}
+                                {b.unit}
+                              </p>
+                              {afterB !== null && (
+                                <p
+                                  className={cn(
+                                    "text-sm mt-0.5",
+                                    afterB < 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-emerald-700 dark:text-emerald-300"
+                                  )}
+                                >
+                                  After this session (preview):{" "}
+                                  <span className="tabular-nums font-bold">{afterB.toLocaleString()}</span> {b.unit}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-amber-700 dark:text-amber-300">
+                              No bottle item found for this size.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                            Stickers / labels
+                          </p>
+                          {s ? (
+                            <>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-50 truncate" title={s.name}>
+                                {s.name}
+                              </p>
+                              <p className="text-sm mt-0.5">
+                                <span className="text-muted-foreground">In stock:</span>{" "}
+                                <span className="font-bold tabular-nums">{s.currentStock.toLocaleString()}</span>{" "}
+                                {s.unit}
+                              </p>
+                              {afterS !== null && (
+                                <p
+                                  className={cn(
+                                    "text-sm mt-0.5",
+                                    afterS < 0 ? "text-red-600 dark:text-red-400 font-semibold" : "text-emerald-700 dark:text-emerald-300"
+                                  )}
+                                >
+                                  After this session (preview):{" "}
+                                  <span className="tabular-nums font-bold">{afterS.toLocaleString()}</span> {s.unit}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-amber-700 dark:text-amber-300">
+                              No sticker item found for this size.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {packagingStockInsufficient && !packagingStockLoading && (
+                <p className="text-sm font-medium text-red-700 dark:text-red-300">
+                  This session needs more bottles or stickers than are in stock. Reduce quantities or restock before saving.
+                </p>
+              )}
+            </div>
+
             {containers.map((container, index) => (
               <div key={index} className="grid gap-4 md:grid-cols-4 items-end p-5 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-800/50 dark:to-slate-900/50 border-2 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
                 <div className="space-y-2">
@@ -760,9 +991,19 @@ function CreatePackagingSessionPageContent() {
                   <Input
                     type="number"
                     placeholder="0"
+                    min={0}
                     value={container.quantity}
                     onChange={(e) => {
                       const value = e.target.value
+                      if (value === "" || value === ".") {
+                        updateContainer(index, "quantity", value)
+                        return
+                      }
+                      const n = parseFloat(value)
+                      if (!Number.isNaN(n) && n < 0) {
+                        updateContainer(index, "quantity", "0")
+                        return
+                      }
                       updateContainer(index, "quantity", value)
                     }}
                     max={volumeAllocated ? getMaxQuantityForSize(container.size, container.customSize) : undefined}
@@ -778,21 +1019,29 @@ function CreatePackagingSessionPageContent() {
                       {isValidContainerQuantity(index, container.quantity).error}
                     </p>
                   )}
+                  {Math.max(0, parseFloat(container.quantity) || 0) > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Uses {Math.max(0, parseFloat(container.quantity) || 0).toLocaleString()} bottle
+                      {Math.max(0, parseFloat(container.quantity) || 0) !== 1 ? "s" : ""} +{" "}
+                      {Math.max(0, parseFloat(container.quantity) || 0).toLocaleString()} sticker
+                      {Math.max(0, parseFloat(container.quantity) || 0) !== 1 ? "s" : ""} (preview)
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Litres</Label>
                   <div className="p-3 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border-2 border-blue-200 dark:border-blue-900/50">
                     <span className="text-sm font-bold text-blue-700 dark:text-blue-300">
                       {container.size === "250ml"
-                        ? ((parseFloat(container.quantity) || 0) * 0.25).toFixed(2)
+                        ? (Math.max(0, parseFloat(container.quantity) || 0) * 0.25).toFixed(2)
                         : container.size === "500ml"
-                          ? ((parseFloat(container.quantity) || 0) * 0.5).toFixed(2)
+                          ? (Math.max(0, parseFloat(container.quantity) || 0) * 0.5).toFixed(2)
                           : container.size === "1L"
-                            ? (parseFloat(container.quantity) || 0).toFixed(2)
+                            ? Math.max(0, parseFloat(container.quantity) || 0).toFixed(2)
                             : container.size === "2L"
-                              ? ((parseFloat(container.quantity) || 0) * 2).toFixed(2)
+                              ? (Math.max(0, parseFloat(container.quantity) || 0) * 2).toFixed(2)
                               : container.customSize
-                                ? ((parseFloat(container.quantity) || 0) * (parseFloat(container.customSize) / 1000)).toFixed(2)
+                                ? (Math.max(0, parseFloat(container.quantity) || 0) * (parseFloat(container.customSize) / 1000)).toFixed(2)
                                 : "0.00"}L
                     </span>
                   </div>

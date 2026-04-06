@@ -28,6 +28,11 @@ export default function AddRawMaterialPage() {
   const [supplyActionID, setSupplyActionID] = useState<1 | 2>(1)
   const [displayCurrentStock, setDisplayCurrentStock] = useState<string>("")
   const [priceInputMode, setPriceInputMode] = useState<"perUnit" | "total">("perUnit")
+
+  type PackagingTemplate = "bottles" | "stickers" | "custom"
+  type PackagingSize = "250ml" | "500ml" | "1L" | "2L"
+  const [packagingTemplate, setPackagingTemplate] = useState<PackagingTemplate>("bottles")
+  const [packagingSize, setPackagingSize] = useState<PackagingSize>("500ml")
   const [formData, setFormData] = useState({
     name: "",
     category: "",
@@ -53,6 +58,24 @@ export default function AddRawMaterialPage() {
     fetchSuppliers()
     fetchRawMaterials()
   }, [])
+
+  // When creating Packaging raw materials, auto-generate the exact name pattern
+  // so packaging deduction can reliably find the correct bottle/sticker row.
+  useEffect(() => {
+    if (supplyType !== "new") return
+    if (formData.category !== "Packaging") return
+    if (packagingTemplate === "custom") return
+
+    const suffix = packagingTemplate === "bottles" ? "Bottles" : "Stickers"
+    const derivedName = `${packagingSize} ${suffix}`
+
+    setFormData((prev) => ({
+      ...prev,
+      name: derivedName,
+      unit: "pcs",
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.category, packagingTemplate, packagingSize, supplyType])
 
   // Debug: Log formData changes
   useEffect(() => {
@@ -546,6 +569,7 @@ export default function AddRawMaterialPage() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         placeholder="Enter new material name"
+                        disabled={formData.category === "Packaging" && packagingTemplate !== "custom"}
                       required
                       className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
                     />
@@ -611,6 +635,51 @@ export default function AddRawMaterialPage() {
                         )}
                       </SelectContent>
                     </Select>
+
+                    {formData.category === "Packaging" && (
+                      <div className="mt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                            Packaging Type <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                          </Label>
+                          <Select value={packagingTemplate} onValueChange={(v) => setPackagingTemplate(v as any)}>
+                            <SelectTrigger className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500">
+                              <SelectValue placeholder="Select packaging type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bottles">Bottles</SelectItem>
+                              <SelectItem value="stickers">Stickers</SelectItem>
+                              <SelectItem value="custom">Custom (manual name)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {packagingTemplate !== "custom" && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                              Size <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                            </Label>
+                            <Select value={packagingSize} onValueChange={(v) => setPackagingSize(v as any)}>
+                              <SelectTrigger className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500">
+                                <SelectValue placeholder="Select size" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="250ml">250ml</SelectItem>
+                                <SelectItem value="500ml">500ml</SelectItem>
+                                <SelectItem value="1L">1L</SelectItem>
+                                <SelectItem value="2L">2L</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
+                        {packagingTemplate !== "custom" && (
+                          <p className="text-xs text-muted-foreground">
+                            Auto name: <span className="font-semibold">{formData.name}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   )}
                 </div>
@@ -643,7 +712,12 @@ export default function AddRawMaterialPage() {
                     <Label htmlFor="unit" className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                       Unit <span className="text-red-600 dark:text-red-400 font-bold">*</span>
                     </Label>
-                    <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })} required>
+                    <Select
+                      value={formData.category === "Packaging" && packagingTemplate !== "custom" ? "pcs" : formData.unit}
+                      onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                      required
+                      disabled={formData.category === "Packaging" && packagingTemplate !== "custom"}
+                    >
                       <SelectTrigger id="unit" className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-green-500 dark:focus:border-green-500">
                         <SelectValue placeholder="Select unit" />
                       </SelectTrigger>
