@@ -286,17 +286,17 @@ export default function PackagingSessionsPage() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Packaging Sessions</h1>
-          <p className="text-sm text-muted-foreground">Manage packaging sessions after production</p>
+      <header className="sticky top-0 z-30 flex min-h-16 flex-col gap-3 border-b border-border bg-card/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:px-6 md:h-16 md:flex-row md:items-center md:justify-between md:py-0">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-foreground sm:text-xl">Packaging Sessions</h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">Manage packaging sessions after production</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Button 
             variant="outline" 
             onClick={fetchPackagingOutputs}
             disabled={loading}
-            className="border-slate-300 dark:border-slate-700"
+            className="w-full border-slate-300 dark:border-slate-700 sm:w-auto"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -305,8 +305,8 @@ export default function PackagingSessionsPage() {
             )}
             Refresh
           </Button>
-        <Link href="/jaba/packaging-output/add">
-          <Button className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow-lg shadow-red-500/30">
+        <Link href="/jaba/packaging-output/add" className="w-full sm:w-auto">
+          <Button className="w-full bg-gradient-to-r from-red-600 to-red-700 shadow-lg shadow-red-500/30 hover:from-red-700 hover:to-red-800 sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             Create Packaging Session
           </Button>
@@ -314,7 +314,7 @@ export default function PackagingSessionsPage() {
         </div>
       </header>
 
-      <div className="p-6 space-y-6 bg-gradient-to-br from-slate-50 via-background to-slate-50 dark:from-slate-950 dark:via-background dark:to-slate-950">
+      <div className="space-y-4 bg-gradient-to-br from-slate-50 via-background to-slate-50 p-3 dark:from-slate-950 dark:via-background dark:to-slate-950 dark:to-slate-950 sm:space-y-6 sm:p-4 md:p-6">
         {/* Debug Info - Remove after fixing */}
         {process.env.NODE_ENV === 'development' && (
           <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20">
@@ -366,13 +366,13 @@ export default function PackagingSessionsPage() {
         ) : (
           <>
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-1">Total Sessions</p>
-                  <p className="text-3xl font-bold text-red-900 dark:text-red-100 mb-2">{packagingSessions.length}</p>
+                  <p className="mb-2 text-2xl font-bold text-red-900 dark:text-red-100 sm:text-3xl">{packagingSessions.length}</p>
                   <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
                     <Boxes className="h-3 w-3" />
                     <span>Packaging records</span>
@@ -386,11 +386,11 @@ export default function PackagingSessionsPage() {
           </Card>
 
           <Card className="border-green-200 dark:border-green-900/50 bg-gradient-to-br from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Completed</p>
-                  <p className="text-3xl font-bold text-green-900 dark:text-green-100 mb-2">
+                  <p className="mb-2 text-2xl font-bold text-green-900 dark:text-green-100 sm:text-3xl">
                     {packagingSessions.filter((s) => s.status === "Completed").length}
                   </p>
                   <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
@@ -406,11 +406,11 @@ export default function PackagingSessionsPage() {
           </Card>
 
           <Card className="border-amber-200 dark:border-amber-900/50 bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/30 dark:to-amber-900/20 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-1">Total Defects</p>
-                  <p className="text-3xl font-bold text-amber-900 dark:text-amber-100 mb-2">
+                  <p className="mb-2 text-2xl font-bold text-amber-900 dark:text-amber-100 sm:text-3xl">
                     {packagingSessions.reduce((sum, s) => sum + s.defects, 0)}
                   </p>
                   <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
@@ -426,11 +426,11 @@ export default function PackagingSessionsPage() {
           </Card>
 
           <Card className="border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">Avg Efficiency</p>
-                  <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-2">
+                  <p className="mb-2 text-2xl font-bold text-blue-900 dark:text-blue-100 sm:text-3xl">
                     {packagingSessions.length > 0
                       ? Math.round((packagingSessions.reduce((sum, s) => sum + s.efficiency, 0) / packagingSessions.length) * 10) / 10
                       : 0}%
@@ -451,7 +451,7 @@ export default function PackagingSessionsPage() {
         {/* Filters */}
         <Card className="border-slate-200 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-950 shadow-md">
           <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex flex-col gap-3 sm:gap-4 md:flex-row">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -478,19 +478,19 @@ export default function PackagingSessionsPage() {
 
         {/* Packaging Sessions Grid/Table */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground sm:text-lg">
               <div className="p-2 rounded-lg bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950/20 dark:to-red-900/10 border border-red-200 dark:border-red-800/50">
                 <Boxes className="h-5 w-5 text-red-600 dark:text-red-400" />
               </div>
               Packaging Sessions ({filteredSessions.length})
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
               <Button
                 variant={viewMode === "grid" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setViewMode("grid")}
-                className="h-9"
+                className="h-9 w-full sm:w-auto"
               >
                 <Grid3x3 className="h-4 w-4 mr-2" />
                 Grid
@@ -499,7 +499,7 @@ export default function PackagingSessionsPage() {
                 variant={viewMode === "table" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setViewMode("table")}
-                className="h-9"
+                className="h-9 w-full sm:w-auto"
               >
                 <TableIcon className="h-4 w-4 mr-2" />
                 Table
@@ -520,7 +520,7 @@ export default function PackagingSessionsPage() {
               </CardContent>
             </Card>
           ) : viewMode === "grid" ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {filteredSessions.map((session) => {
                 const totalOutput = session.output250ml + session.output500ml + session.output1L + session.output2L + (session.otherSizes?.reduce((sum, s) => sum + s.quantity, 0) || 0)
                 const StatusIcon = session.status === "Completed" ? CheckCircle2 : session.status === "In Progress" ? Clock : AlertCircle
@@ -549,7 +549,7 @@ export default function PackagingSessionsPage() {
                         </Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-4 p-4 sm:p-6">
                       {/* Date */}
                       <div className="flex items-center gap-2 text-sm">
                         <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -569,28 +569,28 @@ export default function PackagingSessionsPage() {
                       {/* Output Breakdown */}
                       <div className="space-y-2">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Output</p>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
                           {session.output250ml > 0 && (
-                            <div className="p-3 rounded-lg bg-gradient-to-br from-fuchsia-100 to-fuchsia-200 dark:from-fuchsia-900/40 dark:to-fuchsia-800/30 border-2 border-fuchsia-300 dark:border-fuchsia-700 text-center shadow-sm hover:shadow-md transition-shadow">
-                              <p className="text-base font-bold text-fuchsia-900 dark:text-fuchsia-100">{session.output250ml}</p>
+                            <div className="rounded-lg border-2 border-fuchsia-300 bg-gradient-to-br from-fuchsia-100 to-fuchsia-200 p-2.5 text-center shadow-sm transition-shadow hover:shadow-md dark:border-fuchsia-700 dark:from-fuchsia-900/40 dark:to-fuchsia-800/30 sm:p-3">
+                              <p className="text-sm font-bold text-fuchsia-900 dark:text-fuchsia-100 sm:text-base">{session.output250ml}</p>
                               <p className="text-[10px] font-semibold text-fuchsia-700 dark:text-fuchsia-300 uppercase tracking-wide">250ml</p>
                             </div>
                           )}
                           {session.output500ml > 0 && (
-                            <div className="p-3 rounded-lg bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/40 dark:to-purple-800/30 border-2 border-purple-300 dark:border-purple-700 text-center shadow-sm hover:shadow-md transition-shadow">
-                              <p className="text-base font-bold text-purple-900 dark:text-purple-100">{session.output500ml}</p>
+                            <div className="rounded-lg border-2 border-purple-300 bg-gradient-to-br from-purple-100 to-purple-200 p-2.5 text-center shadow-sm transition-shadow hover:shadow-md dark:border-purple-700 dark:from-purple-900/40 dark:to-purple-800/30 sm:p-3">
+                              <p className="text-sm font-bold text-purple-900 dark:text-purple-100 sm:text-base">{session.output500ml}</p>
                               <p className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide">500ml</p>
                             </div>
                           )}
                           {session.output1L > 0 && (
-                            <div className="p-3 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/30 border-2 border-emerald-300 dark:border-emerald-700 text-center shadow-sm hover:shadow-md transition-shadow">
-                              <p className="text-base font-bold text-emerald-900 dark:text-emerald-100">{session.output1L}</p>
+                            <div className="rounded-lg border-2 border-emerald-300 bg-gradient-to-br from-emerald-100 to-emerald-200 p-2.5 text-center shadow-sm transition-shadow hover:shadow-md dark:border-emerald-700 dark:from-emerald-900/40 dark:to-emerald-800/30 sm:p-3">
+                              <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100 sm:text-base">{session.output1L}</p>
                               <p className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">1L</p>
                             </div>
                           )}
                           {session.output2L > 0 && (
-                            <div className="p-3 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/40 dark:to-amber-800/30 border-2 border-amber-300 dark:border-amber-700 text-center shadow-sm hover:shadow-md transition-shadow">
-                              <p className="text-base font-bold text-amber-900 dark:text-amber-100">{session.output2L}</p>
+                            <div className="rounded-lg border-2 border-amber-300 bg-gradient-to-br from-amber-100 to-amber-200 p-2.5 text-center shadow-sm transition-shadow hover:shadow-md dark:border-amber-700 dark:from-amber-900/40 dark:to-amber-800/30 sm:p-3">
+                              <p className="text-sm font-bold text-amber-900 dark:text-amber-100 sm:text-base">{session.output2L}</p>
                               <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide">2L</p>
                             </div>
                           )}

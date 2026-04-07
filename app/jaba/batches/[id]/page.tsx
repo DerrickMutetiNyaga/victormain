@@ -160,6 +160,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
 
   const totalMaterialCost = batch.ingredients?.reduce((sum: number, ing: any) => sum + (ing.totalCost || 0), 0) || 0
   const batchDate = parseDate(batch.date)
+  const totalBottles = Number(batch.outputSummary?.totalBottles ?? 0)
 
   return (
     <>
@@ -269,7 +270,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                             </TableCell>
                             <TableCell className="text-sm">{row.flavor}</TableCell>
                             <TableCell className="text-sm">
-                              {(row.infusedQuantityLitres ?? row.totalLitres).toFixed(2)}L
+                              {Number(row.infusedQuantityLitres ?? row.totalLitres ?? 0).toFixed(2)}L
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {row.infusionDate
@@ -299,7 +300,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">Total Bottles</p>
-                  <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">{batch.outputSummary.totalBottles.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">{totalBottles.toLocaleString()}</p>
                   <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 mt-2">
                     <Package className="h-3 w-3" />
                     <span>Produced</span>
