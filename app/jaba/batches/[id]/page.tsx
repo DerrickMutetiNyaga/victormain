@@ -164,23 +164,23 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-950 px-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div className="flex items-center gap-4">
+      <header className="sticky top-0 z-30 flex min-h-16 flex-col gap-3 border-b border-border bg-gradient-to-r from-violet-50 via-white to-fuchsia-50 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/30 sm:px-6 md:h-16 md:flex-row md:items-center md:justify-between md:py-0">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link href="/jaba/batches">
             <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
               <ArrowLeft className="h-5 w-5 text-slate-700 dark:text-slate-300" />
             </button>
           </Link>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <div className="rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-600 p-2 shadow-lg">
               <Hash className="h-5 w-5 text-white" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">{batch.batchNumber}</h1>
-              <p className="text-sm text-muted-foreground font-medium">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-foreground sm:text-xl">{batch.batchNumber}</h1>
+              <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">
                 {batch.displayFlavorLabel || batch.flavor} • {batch.productCategory}
                 {batch.batchType === "flavoured" && (
-                  <span className="ml-2 text-xs rounded-md border border-violet-300 px-1.5 py-0.5 text-violet-800 dark:text-violet-200">
+                  <span className="ml-2 rounded-md border border-violet-300 px-1.5 py-0.5 text-xs text-violet-800 dark:text-violet-200">
                     Flavoured output
                   </span>
                 )}
@@ -188,21 +188,55 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
         </div>
-        <Badge className={cn("font-semibold text-sm px-3 py-1.5 border-2", getStatusColor(batch.status))}>
+        <Badge className={cn("w-fit font-semibold text-xs border-2 px-3 py-1.5 sm:text-sm", getStatusColor(batch.status))}>
           {batch.status}
         </Badge>
       </header>
 
       <div className="p-6 bg-gradient-to-br from-slate-50 via-background to-slate-50 dark:from-slate-950 dark:via-background dark:to-slate-950 min-h-screen">
+        <Card className="mb-6 overflow-hidden border-violet-200/80 bg-gradient-to-r from-violet-50 via-fuchsia-50/60 to-indigo-50/70 shadow-md dark:border-violet-900/50 dark:from-violet-950/30 dark:via-fuchsia-950/20 dark:to-indigo-950/20">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-violet-700 dark:text-violet-300">Flavour profile</p>
+                <h2 className="mt-1 truncate text-xl font-bold text-slate-900 dark:text-slate-100">
+                  {batch.displayFlavorLabel || batch.flavor}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  Batch type: <span className="font-semibold">{batch.batchType || "standard"}</span>
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg border border-violet-200/70 bg-white/80 px-3 py-2 dark:border-violet-900/60 dark:bg-slate-900/60">
+                  <p className="text-[11px] text-muted-foreground">Produced</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{Number(batch.totalLitres || 0).toFixed(2)}L</p>
+                </div>
+                <div className="rounded-lg border border-indigo-200/70 bg-white/80 px-3 py-2 dark:border-indigo-900/60 dark:bg-slate-900/60">
+                  <p className="text-[11px] text-muted-foreground">Bottles</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{totalBottles.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border border-fuchsia-200/70 bg-white/80 px-3 py-2 dark:border-fuchsia-900/60 dark:bg-slate-900/60">
+                  <p className="text-[11px] text-muted-foreground">Supervisor</p>
+                  <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{batch.supervisor || "N/A"}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60">
+                  <p className="text-[11px] text-muted-foreground">QC</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{batch.qcStatus || "Pending"}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {(batch.flavourOutputs?.length > 0 ||
           batch.parentBatch ||
           batch.batchType === "neutral" ||
           batch.legacyFlavourFirstBatch) && (
-          <Card className="mb-6 border-violet-200/80 dark:border-violet-900/40 bg-white/90 dark:bg-slate-900/80 shadow-sm">
+          <Card className="mb-6 border-violet-200/80 bg-gradient-to-br from-white to-violet-50/50 shadow-sm dark:border-violet-900/40 dark:from-slate-900 dark:to-violet-950/20">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2 text-slate-900 dark:text-slate-100">
                 <FlaskConical className="h-5 w-5 text-violet-600" />
-                Infusion & traceability
+                Flavour traceability
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -248,44 +282,36 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
               )}
               {batch.flavourOutputs?.length > 0 && (
                 <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Flavoured outputs</p>
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Output</TableHead>
-                          <TableHead className="text-xs">Flavour</TableHead>
-                          <TableHead className="text-xs">Volume</TableHead>
-                          <TableHead className="text-xs">Infusion date</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {batch.flavourOutputs.map((row: any) => (
-                          <TableRow key={row._id || row.id}>
-                            <TableCell className="font-mono text-sm">
-                              <Link href={`/jaba/batches/${row._id || row.id}`} className="text-violet-700 dark:text-violet-300 hover:underline">
-                                {row.batchNumber}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="text-sm">{row.flavor}</TableCell>
-                            <TableCell className="text-sm">
-                              {Number(row.infusedQuantityLitres ?? row.totalLitres ?? 0).toFixed(2)}L
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {row.infusionDate
-                                ? parseDate(row.infusionDate).toLocaleDateString()
-                                : "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-xs">
-                                {row.status}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                  <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">Flavoured outputs</p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {batch.flavourOutputs.map((row: any) => (
+                      <div
+                        key={row._id || row.id}
+                        className="rounded-xl border border-violet-200/80 bg-gradient-to-br from-violet-50 to-fuchsia-50/50 p-3 shadow-sm dark:border-violet-900/40 dark:from-violet-950/30 dark:to-fuchsia-950/20"
+                      >
+                        <p className="text-[11px] uppercase tracking-wide text-violet-700 dark:text-violet-300">Flavour line</p>
+                        <Link
+                          href={`/jaba/batches/${row._id || row.id}`}
+                          className="mt-1 inline-block font-mono text-sm font-semibold text-violet-800 hover:underline dark:text-violet-200"
+                        >
+                          {row.batchNumber}
+                        </Link>
+                        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{row.flavor || "N/A"}</p>
+                        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Volume</span>
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            {Number(row.infusedQuantityLitres ?? row.totalLitres ?? 0).toFixed(2)}L
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Infused</span>
+                          <span>{row.infusionDate ? parseDate(row.infusionDate).toLocaleDateString() : "—"}</span>
+                        </div>
+                        <Badge variant="outline" className="mt-3 text-[11px]">
+                          {row.status}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -294,7 +320,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
         )}
 
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+        <div className="mb-6 grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-900/20 shadow-lg hover:shadow-xl transition-shadow">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -401,28 +427,28 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
         </div>
 
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border-2 border-slate-200 dark:border-slate-700 p-1.5 h-auto">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1.5 border-2 border-slate-200 bg-gradient-to-r from-slate-100 to-slate-50 p-1.5 dark:border-slate-700 dark:from-slate-800 dark:to-slate-900">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <BarChart3 className="h-4 w-4 mr-2" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="packaging" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+            <TabsTrigger value="packaging" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Package className="h-4 w-4 mr-2" />
               Packaging
             </TabsTrigger>
-            <TabsTrigger value="materials" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+            <TabsTrigger value="materials" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Factory className="h-4 w-4 mr-2" />
               Materials
             </TabsTrigger>
-            <TabsTrigger value="qc" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+            <TabsTrigger value="qc" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <ClipboardCheck className="h-4 w-4 mr-2" />
               QC Results
             </TabsTrigger>
-            <TabsTrigger value="distribution" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+            <TabsTrigger value="distribution" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Truck className="h-4 w-4 mr-2" />
               Distribution
             </TabsTrigger>
-            <TabsTrigger value="documents" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-4 py-2">
+            <TabsTrigger value="documents" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <FileText className="h-4 w-4 mr-2" />
               Documents
             </TabsTrigger>
