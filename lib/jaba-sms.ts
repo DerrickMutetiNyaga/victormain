@@ -143,6 +143,9 @@ export async function sendJabaSms(message: string, numbers: string[]) {
 
   const endpoint = process.env.ZETTATEL_API_URL || 'https://portal.zettatel.com/SMSApi/send'
   const payload = new URLSearchParams({
+    // Zettatel expects lowercase `userid` parameter.
+    userid: process.env.ZETTATEL_USER_ID || '',
+    // Keep camelCase variant as compatibility fallback.
     userId: process.env.ZETTATEL_USER_ID || '',
     password: process.env.ZETTATEL_PASSWORD || '',
     sendMethod: 'quick',
