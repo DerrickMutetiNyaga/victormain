@@ -18,6 +18,18 @@ interface SmsEventSettings {
   distributionDelivered: boolean
 }
 
+function normalizeKenyaNumber(value: string): string {
+  const trimmed = value.trim().replace(/\s+/g, "")
+  if (!trimmed) return ""
+  const noPlus = trimmed.startsWith("+") ? trimmed.slice(1) : trimmed
+
+  if (/^0\d{9}$/.test(noPlus)) return `+254${noPlus.slice(1)}`
+  if (/^254\d{9}$/.test(noPlus)) return `+${noPlus}`
+  if (/^\+\d{8,15}$/.test(trimmed)) return trimmed
+  if (/^\d{8,15}$/.test(noPlus)) return `+${noPlus}`
+  return ""
+}
+
 export default function SmsNotificationsPage() {
   const router = useRouter()
   const { data: session } = useSession()
@@ -92,12 +104,8 @@ export default function SmsNotificationsPage() {
   }
 
   const addNumber = () => {
-    const cleaned = newNumber.trim().replace(/\s+/g, "")
+    const cleaned = normalizeKenyaNumber(newNumber)
     if (!cleaned) return
-    if (!/^\+?\d{8,15}$/.test(cleaned)) {
-      toast.error("Enter a valid phone number with country code")
-      return
-    }
     if (numbers.includes(cleaned)) {
       toast.error("Number already added")
       return
