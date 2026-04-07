@@ -23,8 +23,10 @@ export default function SmsNotificationsPage() {
   const { data: session } = useSession()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [numbers, setNumbers] = useState("")
+  const [testMessage, setTestMessage] = useState("Jaba SMS test: Zettatel integration is working.")
   const [events, setEvents] = useState<SmsEventSettings>({
     batchCreated: true,
     packagingCreated: true,
@@ -86,6 +88,30 @@ export default function SmsNotificationsPage() {
 
   const setEvent = (key: keyof SmsEventSettings, value: boolean) => {
     setEvents((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const onTestSms = async () => {
+    setTesting(true)
+    try {
+      const res = await fetch("/api/jaba/sms-notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numbers,
+          message: testMessage,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send test SMS")
+      }
+      toast.success(`Test SMS sent to ${data.sentTo || 0} number(s)`)
+    } catch (error) {
+      console.error(error)
+      toast.error(error instanceof Error ? error.message : "Failed to send test SMS")
+    } finally {
+      setTesting(false)
+    }
   }
 
   if (loading) {
@@ -152,22 +178,26 @@ export default function SmsNotificationsPage() {
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Save SMS Settings
             </Button>
+
+            <div className="rounded-xl border p-4 space-y-3">
+              <Label>Dummy SMS test</Label>
+              <Textarea
+                value={testMessage}
+                onChange={(e) => setTestMessage(e.target.value)}
+                placeholder="Enter test SMS message"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Uses numbers entered above. If empty, saved numbers will be used.
+              </p>
+              <Button onClick={onTestSms} disabled={testing} variant="outline" className="gap-2">
+                {testing && <Loader2 className="h-4 w-4 animate-spin" />}
+                Send Test SMS
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Environment Variables (.env)</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground space-y-1">
-            <p>`ZETTATEL_API_URL` (optional, default is official API URL)</p>
-            <p>`ZETTATEL_API_KEY` (optional header auth)</p>
-            <p>`ZETTATEL_USER_ID` (required)</p>
-            <p>`ZETTATEL_PASSWORD` (required)</p>
-            <p>`ZETTATEL_SENDER_ID` (required)</p>
-            <p>`ZETTATEL_MSG_TYPE` (optional: `text` or `unicode`, default `text`)</p>
-          </CardContent>
-        </Card>
       </div>
     </>
   )
