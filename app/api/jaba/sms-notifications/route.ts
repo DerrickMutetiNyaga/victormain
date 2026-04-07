@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
     const targetNumbers = inputNumbers.length > 0 ? inputNumbers : settings.numbers
 
     if (targetNumbers.length === 0) {
+      console.error('[Jaba SMS Test] No valid numbers in request or saved settings')
       return NextResponse.json({ error: 'No valid SMS numbers found for test' }, { status: 400 })
     }
 
@@ -71,7 +72,15 @@ export async function POST(request: NextRequest) {
         ? body.message.trim()
         : `Jaba SMS test: Zettatel integration is working (${new Date().toLocaleString()}).`
 
+    console.log('[Jaba SMS Test] Sending test SMS', {
+      initiatedBy: session.user.email,
+      recipientCount: targetNumbers.length,
+      recipients: targetNumbers,
+      messageLength: message.length,
+    })
+
     await sendJabaSms(message, targetNumbers)
+    console.log('[Jaba SMS Test] Test SMS sent successfully')
     return NextResponse.json({ success: true, sentTo: targetNumbers.length })
   } catch (error) {
     console.error('[Jaba SMS Settings] POST test failed:', error)

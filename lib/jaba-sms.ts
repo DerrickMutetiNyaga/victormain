@@ -126,7 +126,20 @@ function isSmsConfigured(): boolean {
 }
 
 export async function sendJabaSms(message: string, numbers: string[]) {
-  if (!message.trim() || numbers.length === 0 || !isSmsConfigured()) return
+  if (!message.trim()) {
+    console.warn('[Jaba SMS] Skipped: empty message')
+    return
+  }
+  if (numbers.length === 0) {
+    console.warn('[Jaba SMS] Skipped: no recipient numbers')
+    return
+  }
+  if (!isSmsConfigured()) {
+    console.error(
+      '[Jaba SMS] Skipped: missing env config. Required ZETTATEL_USER_ID, ZETTATEL_PASSWORD, ZETTATEL_SENDER_ID'
+    )
+    return
+  }
 
   const endpoint = process.env.ZETTATEL_API_URL || 'https://portal.zettatel.com/SMSApi/send'
   const payload = new URLSearchParams({
@@ -148,14 +161,29 @@ export async function sendJabaSms(message: string, numbers: string[]) {
     headers.apikey = process.env.ZETTATEL_API_KEY
   }
 
+  console.log('[Jaba SMS] Sending request', {
+    endpoint,
+    recipients: numbers,
+    recipientCount: numbers.length,
+    senderId: process.env.ZETTATEL_SENDER_ID,
+    msgType: process.env.ZETTATEL_MSG_TYPE || 'text',
+    hasApiKey: Boolean(process.env.ZETTATEL_API_KEY),
+  })
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers,
     body: payload.toString(),
   })
 
+  const text = await res.text()
+  console.log('[Jaba SMS] Provider response', {
+    status: res.status,
+    ok: res.ok,
+    body: text,
+  })
+
   if (!res.ok) {
-    const text = await res.text()
     throw new Error(`Zettatel failed: ${res.status} ${text}`)
   }
 }
@@ -163,7 +191,15 @@ export async function sendJabaSms(message: string, numbers: string[]) {
 export async function sendJabaSmsForEvent(event: keyof JabaSmsEventSettings, message: string) {
   try {
     const settings = await getJabaSmsSettings()
-    if (!settings.enabled || !settings.events[event]) return
+    if (!settings.enabled) {
+      console.log(`[Jaba SMS] Event "${event}" skipped: notifications disabled`)
+      return
+    }
+    if (!settings.events[event]) {
+      console.log(`[Jaba SMS] Event "${event}" skipped: toggle disabled`)
+      return
+    }
+    console.log(`[Jaba SMS] Event "${event}" sending to ${settings.numbers.length} recipients`)
     await sendJabaSms(message, settings.numbers)
   } catch (error) {
     console.error(`[Jaba SMS] Failed to send ${event} SMS:`, error)
