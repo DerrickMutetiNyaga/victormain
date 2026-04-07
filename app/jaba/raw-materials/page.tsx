@@ -207,8 +207,19 @@ export default function RawMaterialsPage() {
 
     setIsDeleting(material._id)
     try {
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_raw_material', targetId: material._id }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      const otp = window.prompt(`Enter OTP to delete "${material.name}":`)?.trim() || ''
+      if (!otp) throw new Error('OTP is required')
+
       const response = await fetch(`/api/jaba/raw-materials?id=${material._id}`, {
         method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
       })
 
       const data = await response.json()
@@ -1304,8 +1315,19 @@ export default function RawMaterialsPage() {
                                 }
                                 setIsDeletingCategory(category._id)
                                 try {
+                                  const otpReq = await fetch('/api/jaba/delete-otp', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'delete_raw_material', targetId: category._id }),
+                                  })
+                                  const otpReqData = await otpReq.json().catch(() => ({}))
+                                  if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+                                  const otp = window.prompt(`Enter OTP to delete category "${category.name}":`)?.trim() || ''
+                                  if (!otp) throw new Error('OTP is required')
+
                                   const response = await fetch(`/api/jaba/categories?id=${category._id}`, {
                                     method: 'DELETE',
+                                    headers: { 'x-delete-otp': otp },
                                   })
                                   const data = await response.json()
                                   if (!response.ok) {

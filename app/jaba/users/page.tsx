@@ -412,7 +412,20 @@ export default function UsersPage() {
   const handleDeleteUser = async (userId: string) => {
     setUpdating(userId)
     try {
-      const response = await fetch(`/api/jaba/users/${userId}`, { method: 'DELETE' })
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_user', targetId: userId }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      const otp = window.prompt('Enter OTP to delete this user:')?.trim() || ''
+      if (!otp) throw new Error('OTP is required')
+
+      const response = await fetch(`/api/jaba/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
+      })
       if (!response.ok) {
         const err = await response.json().catch(() => ({}))
         throw new Error(err.error || 'Failed to delete user')

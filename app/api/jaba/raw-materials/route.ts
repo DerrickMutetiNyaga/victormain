@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -262,6 +263,8 @@ export async function DELETE(request: Request) {
         { status: 400 }
       )
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_raw_material', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     console.log('[Raw Materials API] Deleting raw material ID:', id)
 

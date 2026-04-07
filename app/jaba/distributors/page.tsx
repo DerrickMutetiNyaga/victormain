@@ -241,8 +241,19 @@ export default function DistributorsPage() {
     setDeleteConfirmDialog({ open: false, distributor: null })
 
     try {
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_distributor', targetId: distributor._id }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      const otp = window.prompt(`Enter OTP to delete distributor "${distributor.name}":`)?.trim() || ''
+      if (!otp) throw new Error('OTP is required')
+
       const response = await fetch(`/api/jaba/distributors?id=${distributor._id}`, {
         method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
       })
 
       const data = await response.json()

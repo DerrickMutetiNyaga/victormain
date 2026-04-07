@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -252,6 +253,8 @@ export async function DELETE(request: Request) {
         { status: 400 }
       )
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_distributor', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     console.log('[Distributors API] Deleting distributor ID:', id)
 

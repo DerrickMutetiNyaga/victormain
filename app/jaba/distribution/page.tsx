@@ -170,8 +170,20 @@ export default function DistributionPage() {
 
     try {
       setIsDeleting(true)
+      const noteId = deletingNote._id || deletingNote.id
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_delivery_note', targetId: noteId }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      const otp = window.prompt(`Enter OTP to delete delivery note ${deletingNote.noteId}:`)?.trim() || ''
+      if (!otp) throw new Error('OTP is required')
+
       const response = await fetch(`/api/jaba/delivery-notes?id=${deletingNote._id || deletingNote.id}`, {
         method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
       })
 
       const data = await response.json()

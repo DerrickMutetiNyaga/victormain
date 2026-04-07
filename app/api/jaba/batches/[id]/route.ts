@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
-import { auth } from '@/lib/auth-jaba'
-import { getUserByEmail } from '@/lib/models/user'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
 import {
   NEUTRAL_BATCH_DISPLAY_FLAVOR,
@@ -15,6 +13,7 @@ import {
   loadMergedFlavourRowsForParent,
 } from '@/lib/jaba-flavour-lines'
 import { findPrimaryPackagingMaterials } from '@/lib/jaba-packaging-materials'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -494,16 +493,6 @@ export async function DELETE(
   if ('response' in authResult) return authResult.response
 
   try {
-    const session = await auth()
-    const userEmail = session?.user?.email
-    if (!userEmail) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const user = await getUserByEmail(userEmail)
-    if (!user || user.role !== 'super_admin') {
-      return NextResponse.json({ error: 'Only super admins can delete batches' }, { status: 403 })
-    }
-
     const { id } = await params
 
     if (!id) {
@@ -512,6 +501,9 @@ export async function DELETE(
         { status: 400 }
       )
     }
+
+    const otpCheck = await requireDeleteOtp(request, 'delete_batch', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     console.log('[Batches API] Deleting batch ID:', id)
 

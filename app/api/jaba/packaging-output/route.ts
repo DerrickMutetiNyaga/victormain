@@ -11,6 +11,7 @@ import {
   findPrimaryStickerMaterialForSize,
 } from '@/lib/jaba-packaging-materials'
 import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -558,6 +559,8 @@ export async function DELETE(request: Request) {
     if (!id) {
       return NextResponse.json({ error: 'Packaging output id is required' }, { status: 400 })
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_packaging', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-jaba'
 import { deleteUser } from '@/lib/models/user'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export async function DELETE(
   request: NextRequest,
@@ -22,6 +23,8 @@ export async function DELETE(
     if (!id) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_user', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     const deleted = await deleteUser(id)
 

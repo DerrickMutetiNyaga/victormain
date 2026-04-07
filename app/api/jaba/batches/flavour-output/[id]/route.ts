@@ -6,6 +6,7 @@ import {
   JABA_FLAVOUR_LINES_COLLECTION,
   parentStatusAfterFlavourAllocation,
 } from '@/lib/jaba-flavour-lines'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -185,6 +186,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (!id) {
       return NextResponse.json({ error: 'ID required' }, { status: 400 })
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_flavour_output', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')

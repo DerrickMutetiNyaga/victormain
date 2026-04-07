@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
 import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
+import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 
 export const runtime = 'nodejs'
 
@@ -259,6 +260,8 @@ export async function PUT(request: Request) {
         { status: 400 }
       )
     }
+    const otpCheck = await requireDeleteOtp(request, 'delete_delivery_note', id)
+    if ('response' in otpCheck) return otpCheck.response
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')

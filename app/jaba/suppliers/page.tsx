@@ -300,8 +300,19 @@ export default function SuppliersPage() {
     setDeleteConfirmDialog({ open: false, supplier: null })
 
     try {
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_supplier', targetId: supplier._id }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      const otp = window.prompt(`Enter OTP to delete supplier "${supplier.name}":`)?.trim() || ''
+      if (!otp) throw new Error('OTP is required')
+
       const response = await fetch(`/api/jaba/suppliers?id=${supplier._id}`, {
         method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
       })
 
       // Clone response to read it multiple times if needed

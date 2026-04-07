@@ -234,7 +234,20 @@ export default function BatchesPage() {
   const deleteFlavourOutput = async (childId: string, parentLabel: string) => {
     if (!confirm(`Remove this flavoured output from ${parentLabel}? Volume returns to the neutral batch.`)) return
     try {
-      const res = await fetch(`/api/jaba/batches/flavour-output/${childId}`, { method: "DELETE" })
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_flavour_output', targetId: childId }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || "Failed to send delete OTP")
+      const otp = window.prompt("Enter OTP sent to OT_NUMBER:")?.trim() || ''
+      if (!otp) throw new Error("OTP is required")
+
+      const res = await fetch(`/api/jaba/batches/flavour-output/${childId}`, {
+        method: "DELETE",
+        headers: { 'x-delete-otp': otp },
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Delete failed")
       toast.success("Flavoured output removed.")
@@ -257,7 +270,32 @@ export default function BatchesPage() {
     if (!ok) return
 
     try {
-      const res = await fetch(`/api/jaba/batches/${batchId}`, { method: "DELETE" })
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_batch',
+          targetId: batchId,
+        }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) {
+        throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      }
+      toast.success("Delete OTP sent to configured number.")
+
+      const otp = window.prompt(`Enter OTP sent to OT_NUMBER to delete batch ${batch.batchNumber}:`)?.trim() || ''
+      if (!otp) {
+        toast.error("Delete cancelled: OTP is required.")
+        return
+      }
+
+      const res = await fetch(`/api/jaba/batches/${batchId}`, {
+        method: "DELETE",
+        headers: {
+          'x-delete-otp': otp,
+        },
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Failed to delete batch")
       toast.success("Batch and linked records deleted.")
@@ -358,8 +396,19 @@ export default function BatchesPage() {
     }
 
     try {
+      const otpReq = await fetch('/api/jaba/delete-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_flavor', targetId: flavorId }),
+      })
+      const otpReqData = await otpReq.json().catch(() => ({}))
+      if (!otpReq.ok) throw new Error(otpReqData.error || "Failed to send delete OTP")
+      const otp = window.prompt(`Enter OTP to delete flavor "${flavorName}":`)?.trim() || ''
+      if (!otp) throw new Error("OTP is required")
+
       const response = await fetch(`/api/jaba/flavors?id=${flavorId}`, {
         method: 'DELETE',
+        headers: { 'x-delete-otp': otp },
       })
 
       const data = await response.json()
