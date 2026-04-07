@@ -25,7 +25,8 @@ export default function SmsNotificationsPage() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [enabled, setEnabled] = useState(false)
-  const [numbers, setNumbers] = useState("")
+  const [numbers, setNumbers] = useState<string[]>([])
+  const [newNumber, setNewNumber] = useState("")
   const [testMessage, setTestMessage] = useState("Jaba SMS test: Zettatel integration is working.")
   const [events, setEvents] = useState<SmsEventSettings>({
     batchCreated: true,
@@ -49,7 +50,7 @@ export default function SmsNotificationsPage() {
       if (!res.ok) throw new Error("Failed to load SMS settings")
       const data = await res.json()
       setEnabled(Boolean(data.enabled))
-      setNumbers(Array.isArray(data.numbers) ? data.numbers.join(", ") : "")
+      setNumbers(Array.isArray(data.numbers) ? data.numbers : [])
       setEvents({
         batchCreated: Boolean(data.events?.batchCreated),
         packagingCreated: Boolean(data.events?.packagingCreated),
@@ -88,6 +89,25 @@ export default function SmsNotificationsPage() {
 
   const setEvent = (key: keyof SmsEventSettings, value: boolean) => {
     setEvents((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const addNumber = () => {
+    const cleaned = newNumber.trim().replace(/\s+/g, "")
+    if (!cleaned) return
+    if (!/^\+?\d{8,15}$/.test(cleaned)) {
+      toast.error("Enter a valid phone number with country code")
+      return
+    }
+    if (numbers.includes(cleaned)) {
+      toast.error("Number already added")
+      return
+    }
+    setNumbers((prev) => [...prev, cleaned])
+    setNewNumber("")
+  }
+
+  const removeNumber = (value: string) => {
+    setNumbers((prev) => prev.filter((n) => n !== value))
   }
 
   const onTestSms = async () => {
@@ -139,7 +159,7 @@ export default function SmsNotificationsPage() {
           <CardHeader>
             <CardTitle>Notification Controls</CardTitle>
             <CardDescription>
-              Add comma-separated numbers (with country code) and choose which events should send SMS.
+              Add recipient numbers with country code and choose which events should send SMS.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -153,12 +173,31 @@ export default function SmsNotificationsPage() {
 
             <div className="space-y-2">
               <Label>Phone numbers</Label>
-              <Textarea
-                value={numbers}
-                onChange={(e) => setNumbers(e.target.value)}
-                placeholder="+2547XXXXXXXX, +2547YYYYYYYY"
-                rows={4}
-              />
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Textarea
+                  value={newNumber}
+                  onChange={(e) => setNewNumber(e.target.value)}
+                  placeholder="+2547XXXXXXXX"
+                  rows={2}
+                />
+                <Button type="button" onClick={addNumber} className="sm:w-36">
+                  Add Number
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {numbers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No numbers added yet.</p>
+                ) : (
+                  numbers.map((num) => (
+                    <div key={num} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                      <span className="text-sm">{num}</span>
+                      <Button type="button" variant="destructive" size="sm" onClick={() => removeNumber(num)}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Only valid numbers are saved. Include country code for each number.
               </p>
