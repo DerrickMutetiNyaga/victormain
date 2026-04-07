@@ -37,7 +37,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
           const packagingResponse = await fetch(`/api/jaba/packaging-output?batchId=${id}`)
           if (packagingResponse.ok) {
             const packagingData = await packagingResponse.json()
-            setPackagingOutputs(packagingData.outputs || [])
+            setPackagingOutputs(packagingData.packagingOutputs || [])
           }
         } catch (e) {
           console.error('Error fetching packaging outputs:', e)
@@ -161,6 +161,54 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
   const totalMaterialCost = batch.ingredients?.reduce((sum: number, ing: any) => sum + (ing.totalCost || 0), 0) || 0
   const batchDate = parseDate(batch.date)
   const totalBottles = Number(batch.outputSummary?.totalBottles ?? 0)
+  const flavourLineLookup = new Map<string, string>()
+  ;(batch.flavourOutputs || []).forEach((row: any) => {
+    const rowId = String(row?._id || row?.id || "")
+    if (!rowId) return
+    flavourLineLookup.set(rowId, String(row?.flavourName || row?.flavor || row?.batchNumber || "Unknown flavour"))
+  })
+  const baseFlavourLabel = String(batch.displayFlavorLabel || batch.flavor || "Unflavoured")
+  const resolveFlavourLabel = (flavourLineId?: string, fallbackFlavour?: string) => {
+    const lineId = String(flavourLineId || "")
+    if (lineId && flavourLineLookup.has(lineId)) return flavourLineLookup.get(lineId)!
+    if (fallbackFlavour) return String(fallbackFlavour)
+    return baseFlavourLabel
+  }
+
+  const packagingByFlavour = new Map<string, { key: string; flavour: string; sessions: number; litres: number; units: number; bySize: Record<string, number> }>()
+  packagingOutputs.forEach((po: any) => {
+    const key = String(po.flavourLineId || po.flavourName || po.flavor || "__base__")
+    const flavour = resolveFlavourLabel(po.flavourLineId, po.flavourName || po.flavor)
+    const existing = packagingByFlavour.get(key) || { key, flavour, sessions: 0, litres: 0, units: 0, bySize: {} }
+    existing.sessions += 1
+    existing.litres += Number(po.packagedLitres) || 0
+    ;(Array.isArray(po.containers) ? po.containers : []).forEach((c: any) => {
+      const size = String(c?.size || "other")
+      const qty = Number(c?.quantity) || 0
+      existing.units += qty
+      existing.bySize[size] = (existing.bySize[size] || 0) + qty
+    })
+    packagingByFlavour.set(key, existing)
+  })
+  const packagingFlavourRows = Array.from(packagingByFlavour.values()).sort((a, b) => b.litres - a.litres)
+
+  const distributionByFlavour = new Map<string, { key: string; flavour: string; notes: number; units: number }>()
+  deliveryNotes.forEach((note: any) => {
+    const seenInNote = new Set<string>()
+    ;(note.items || []).forEach((item: any) => {
+      if (item.batchNumber !== batch.batchNumber) return
+      const key = String(item.flavourLineId || item.flavor || "__base__")
+      const flavour = resolveFlavourLabel(item.flavourLineId, item.flavor)
+      const existing = distributionByFlavour.get(key) || { key, flavour, notes: 0, units: 0 }
+      existing.units += Number(item.quantity) || 0
+      if (!seenInNote.has(key)) {
+        existing.notes += 1
+        seenInNote.add(key)
+      }
+      distributionByFlavour.set(key, existing)
+    })
+  })
+  const distributionFlavourRows = Array.from(distributionByFlavour.values()).sort((a, b) => b.units - a.units)
 
   return (
     <>
@@ -703,6 +751,30 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent className="p-6">
                 <div className="space-y-4">
+                  {packagingFlavourRows.length > 0 && (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {packagingFlavourRows.map((row) => (
+                        <div key={row.key} className="rounded-lg border border-emerald-200/80 bg-white/80 p-3 dark:border-emerald-900/40 dark:bg-slate-900/60">
+                          <p className="text-xs text-muted-foreground">Flavour</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{row.flavour}</p>
+                          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Sessions</p>
+                              <p className="font-semibold">{row.sessions}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Packed</p>
+                              <p className="font-semibold">{row.litres.toFixed(2)}L</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Units</p>
+                              <p className="font-semibold">{row.units.toLocaleString()}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="p-4 rounded-lg bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 border-2 border-green-200 dark:border-green-900/30">
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-semibold text-green-700 dark:text-green-300 flex items-center gap-2">
@@ -776,139 +848,41 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
               </CardHeader>
               <CardContent className="p-6">
                 <div className="space-y-6">
-                  {(() => {
-                    // Calculate distributed quantities from delivery notes
-                    let distributed500ml = 0
-                    let distributed1L = 0
-                    let distributed2L = 0
-                    
-                    deliveryNotes.forEach((note: any) => {
-                      if (note.items && Array.isArray(note.items)) {
-                        note.items.forEach((item: any) => {
-                          if (item.batchNumber === batch.batchNumber) {
-                            const qty = parseFloat(item.quantity) || 0
-                            if (item.size === '500ml') {
-                              distributed500ml += qty
-                            } else if (item.size === '1L') {
-                              distributed1L += qty
-                            } else if (item.size === '2L') {
-                              distributed2L += qty
-                            }
-                          }
-                        })
-                      }
-                    })
-                    
-                    // Calculate remaining quantities
-                    const initial500ml = batch.bottles500ml || 0
-                    const initial1L = batch.bottles1L || 0
-                    const initial2L = batch.bottles2L || 0
-                    
-                    const remaining500ml = Math.max(0, initial500ml - distributed500ml)
-                    const remaining1L = Math.max(0, initial1L - distributed1L)
-                    const remaining2L = Math.max(0, initial2L - distributed2L)
-                    
-                    return (
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <Card className="border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-900/20 shadow-md">
-                          <CardContent className="p-5">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 uppercase">500ml</p>
+                  {packagingFlavourRows.length > 0 ? (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {packagingFlavourRows.map((row) => (
+                        <Card key={row.key} className="border-amber-200 dark:border-amber-900/40 bg-white/80 dark:bg-slate-900/60 shadow-sm">
+                          <CardContent className="p-4 space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{row.flavour}</p>
+                              <Badge variant="outline" className="text-[11px]">{row.sessions} session{row.sessions !== 1 ? "s" : ""}</Badge>
                             </div>
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Initial:</span>
-                                <span className="text-lg font-bold text-blue-900 dark:text-blue-100">{initial500ml.toLocaleString()}</span>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="rounded-md border border-slate-200 dark:border-slate-700 px-2.5 py-2">
+                                <p className="text-muted-foreground">Packed</p>
+                                <p className="font-semibold text-slate-900 dark:text-slate-100">{row.litres.toFixed(2)}L</p>
                               </div>
-                              <div className="flex justify-between items-center pt-1 border-t border-blue-200 dark:border-blue-800">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Remaining:</span>
-                                <span className={cn(
-                                  "text-lg font-bold",
-                                  remaining500ml > 0 
-                                    ? "text-green-700 dark:text-green-400" 
-                                    : "text-slate-500 dark:text-slate-400"
-                                )}>
-                                  {remaining500ml.toLocaleString()}
-                                </span>
+                              <div className="rounded-md border border-slate-200 dark:border-slate-700 px-2.5 py-2">
+                                <p className="text-muted-foreground">Units</p>
+                                <p className="font-semibold text-slate-900 dark:text-slate-100">{row.units.toLocaleString()}</p>
                               </div>
-                              {distributed500ml > 0 && (
-                                <div className="flex justify-between items-center pt-1">
-                                  <span className="text-xs text-slate-500 dark:text-slate-500">Distributed:</span>
-                                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{distributed500ml.toLocaleString()}</span>
-                                </div>
-                              )}
                             </div>
-                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-3 pt-2 border-t border-blue-200 dark:border-blue-800">bottles</p>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {Object.entries(row.bySize).map(([size, qty]) => (
+                                <Badge key={`${row.key}-${size}`} variant="secondary" className="text-[10px]">
+                                  {size}: {Number(qty).toLocaleString()}
+                                </Badge>
+                              ))}
+                            </div>
                           </CardContent>
                         </Card>
-                        <Card className="border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-900/20 shadow-md">
-                          <CardContent className="p-5">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Package className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                              <p className="text-sm font-semibold text-purple-700 dark:text-purple-300 uppercase">1L</p>
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Initial:</span>
-                                <span className="text-lg font-bold text-purple-900 dark:text-purple-100">{initial1L.toLocaleString()}</span>
-                              </div>
-                              <div className="flex justify-between items-center pt-1 border-t border-purple-200 dark:border-purple-800">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Remaining:</span>
-                                <span className={cn(
-                                  "text-lg font-bold",
-                                  remaining1L > 0 
-                                    ? "text-green-700 dark:text-green-400" 
-                                    : "text-slate-500 dark:text-slate-400"
-                                )}>
-                                  {remaining1L.toLocaleString()}
-                                </span>
-                              </div>
-                              {distributed1L > 0 && (
-                                <div className="flex justify-between items-center pt-1">
-                                  <span className="text-xs text-slate-500 dark:text-slate-500">Distributed:</span>
-                                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{distributed1L.toLocaleString()}</span>
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-xs text-purple-600 dark:text-purple-400 mt-3 pt-2 border-t border-purple-200 dark:border-purple-800">bottles</p>
-                          </CardContent>
-                        </Card>
-                        <Card className="border-indigo-200 dark:border-indigo-900/50 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-900/20 shadow-md">
-                          <CardContent className="p-5">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Package className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                              <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 uppercase">2L</p>
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Initial:</span>
-                                <span className="text-lg font-bold text-indigo-900 dark:text-indigo-100">{initial2L.toLocaleString()}</span>
-                              </div>
-                              <div className="flex justify-between items-center pt-1 border-t border-indigo-200 dark:border-indigo-800">
-                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Remaining:</span>
-                                <span className={cn(
-                                  "text-lg font-bold",
-                                  remaining2L > 0 
-                                    ? "text-green-700 dark:text-green-400" 
-                                    : "text-slate-500 dark:text-slate-400"
-                                )}>
-                                  {remaining2L.toLocaleString()}
-                                </span>
-                              </div>
-                              {distributed2L > 0 && (
-                                <div className="flex justify-between items-center pt-1">
-                                  <span className="text-xs text-slate-500 dark:text-slate-500">Distributed:</span>
-                                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{distributed2L.toLocaleString()}</span>
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-3 pt-2 border-t border-indigo-200 dark:border-indigo-800">bottles</p>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    )
-                  })()}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-950/20 p-4 text-sm text-amber-800 dark:text-amber-200">
+                      No packaging sessions have been recorded for this batch yet.
+                    </div>
+                  )}
                   {batch.packagingTeam && batch.packagingTeam.length > 0 && (
                     <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
                       <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
@@ -1150,6 +1124,19 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
+                  {distributionFlavourRows.length > 0 && (
+                    <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {distributionFlavourRows.map((row) => (
+                        <div key={row.key} className="rounded-lg border border-blue-200/80 bg-white/80 px-3 py-2.5 dark:border-blue-900/40 dark:bg-slate-900/60">
+                          <p className="text-xs text-muted-foreground">Flavour distributed</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{row.flavour}</p>
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                            {row.units.toLocaleString()} units across {row.notes} note{row.notes !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="rounded-lg border-2 border-slate-200 dark:border-slate-800 overflow-hidden">
                     <Table>
                       <TableHeader>
@@ -1157,7 +1144,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                           <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-900 dark:text-slate-100 py-3 px-4">Note ID</TableHead>
                           <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Distributor</TableHead>
                           <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Date</TableHead>
-                          <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Items</TableHead>
+                          <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Items by flavour</TableHead>
                           <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Status</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1177,7 +1164,7 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                               <div className="flex flex-col gap-1">
                                 {(note.items || []).map((item: any, itemIdx: number) => (
                                   <Badge key={itemIdx} className="w-fit bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
-                                    {item.quantity}×{item.size || item.containerSize}
+                                    {(item.flavor || resolveFlavourLabel(item.flavourLineId)).toString()} · {item.quantity}×{item.size || item.containerSize}
                                   </Badge>
                                 ))}
                               </div>
