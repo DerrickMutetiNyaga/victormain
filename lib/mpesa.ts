@@ -146,6 +146,8 @@ export async function initiateSTKPush(
       TransactionDesc: request.transactionDesc || 'Payment',
     }
 
+    console.log('STK Push Payload:', payload);
+
     const response = await fetch(stkUrl, {
       method: 'POST',
       headers: {
