@@ -10,7 +10,16 @@ export const revalidate = 60
 
 async function dropLegacyNameUniqueIndexes(db: any) {
   const collection = db.collection('bar_inventory')
-  const indexes = await collection.listIndexes().toArray()
+  let indexes: any[] = []
+  try {
+    indexes = await collection.listIndexes().toArray()
+  } catch (error: any) {
+    // Fresh environments may not have bar_inventory yet; allow first insert to create it.
+    if (error?.code === 26 || error?.codeName === 'NamespaceNotFound') {
+      return
+    }
+    throw error
+  }
   for (const index of indexes) {
     const key = index?.key || {}
     const hasNameKey = Object.prototype.hasOwnProperty.call(key, 'name')
