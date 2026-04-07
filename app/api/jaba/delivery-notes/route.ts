@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
+import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
 
 export const runtime = 'nodejs'
 
@@ -152,6 +153,10 @@ export async function POST(request: Request) {
       })
 
       console.log(`[Delivery Notes API] ✅ Delivery note created successfully: ${noteId}`)
+      await sendJabaSmsForEvent(
+        'distributionCreated',
+        `Jaba: Distribution created. Note ${noteId}, distributor ${distributorName}, items ${itemsWithQuantities.length}.`
+      )
       return NextResponse.json({ success: true, deliveryNote: createdNote }, { status: 201 })
     } finally {
       await mongoSession.endSession()
@@ -265,6 +270,7 @@ export async function PUT(request: Request) {
       await mongoSession.withTransaction(async () => {
         const existing = await db.collection('jaba_deliveryNotes').findOne({ _id: new ObjectId(id) }, { session: mongoSession })
         if (!existing) throw new ApiError('Delivery note not found', 404)
+        const previousStatus = String(existing.status || '').toLowerCase()
 
         const updateData: any = { updatedAt: new Date() }
 
@@ -384,6 +390,13 @@ export async function PUT(request: Request) {
         )
 
         const updated = await db.collection('jaba_deliveryNotes').findOne({ _id: new ObjectId(id) }, { session: mongoSession })
+        const nextStatus = String(updated?.status || '').toLowerCase()
+        if (previousStatus !== 'delivered' && nextStatus === 'delivered') {
+          await sendJabaSmsForEvent(
+            'distributionDelivered',
+            `Jaba: Delivery completed. Note ${updated?.noteId || id}, distributor ${updated?.distributorName || ''}.`
+          )
+        }
         updatedNote = {
           ...updated,
           _id: updated!._id.toString(),

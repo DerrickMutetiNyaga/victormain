@@ -35,7 +35,6 @@ function CreatePackagingSessionPageContent() {
   const [batchId, setBatchId] = useState("")
   const [volumeAllocated, setVolumeAllocated] = useState("")
   const [packagingDate, setPackagingDate] = useState(new Date().toISOString().split("T")[0])
-  const [packagingLine, setPackagingLine] = useState("")
   const [packageNumber, setPackageNumber] = useState("")
   const [supervisor, setSupervisor] = useState("")
   
@@ -218,11 +217,6 @@ function CreatePackagingSessionPageContent() {
       return
     }
 
-    if (!packagingLine) {
-      toast.error("Please enter packaging line number")
-      return
-    }
-
     if (!supervisor) {
       toast.error("Please enter packaging supervisor")
       return
@@ -266,7 +260,6 @@ function CreatePackagingSessionPageContent() {
         packageNumber: packageNumber,
         volumeAllocated: volumeAllocated,
         packagingDate: packagingDate,
-        packagingLine: packagingLine,
         supervisor: supervisor,
         teamMembers: teamMembers,
         containers: containers,
@@ -737,7 +730,7 @@ function CreatePackagingSessionPageContent() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-6">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="packageNumber" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Package Number</Label>
                 <Input
@@ -759,14 +752,19 @@ function CreatePackagingSessionPageContent() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="packagingLine" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Packaging Line Number *</Label>
+                <Label htmlFor="packagingLine" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Packaging Line Number</Label>
                 <Input
                   id="packagingLine"
-                  placeholder="e.g., LINE-01"
-                  value={packagingLine}
-                  onChange={(e) => setPackagingLine(e.target.value)}
-                  className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-purple-500 dark:focus:border-purple-500"
+                  value={
+                    batchData?.batchNumber
+                      ? `${new Date(packagingDate || new Date().toISOString()).getFullYear()}-${batchData.batchNumber}-LXX`
+                      : ""
+                  }
+                  readOnly
+                  placeholder="Auto-generated when saving"
+                  className="h-11 border-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 font-mono"
                 />
+                <p className="text-xs text-slate-500 dark:text-slate-400">Auto-generated from year + batch number + line sequence</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="supervisor" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Packaging Supervisor *</Label>

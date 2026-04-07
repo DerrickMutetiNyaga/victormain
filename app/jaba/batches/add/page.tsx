@@ -102,7 +102,6 @@ export default function AddBatchPage() {
   const [supervisor, setSupervisor] = useState("")
   const [shift, setShift] = useState("Morning")
   const [expectedLitres, setExpectedLitres] = useState("")
-  const [tankNumber, setTankNumber] = useState("")
   const [status, setStatus] = useState("Created")
   const [notes, setNotes] = useState("")
   const [selectedMaterials, setSelectedMaterials] = useState<{ material: string; quantity: string; unit: string; materialId?: string }[]>([])
@@ -332,10 +331,6 @@ export default function AddBatchPage() {
       missingFields.push("Expected Production Volume (Litres)")
     }
 
-    if (!tankNumber || tankNumber.trim() === "") {
-      missingFields.push("Tank Number")
-    }
-
     // If there are missing fields, show specific error
     if (missingFields.length > 0) {
       const fieldsList = missingFields.join(", ")
@@ -348,6 +343,10 @@ export default function AddBatchPage() {
     // Validate expected litres is a valid positive number
     if (isNaN(Number(expectedLitres)) || Number(expectedLitres) <= 0) {
       toast.error("Expected Production Volume must be a positive number")
+      return
+    }
+    if (selectedMaterials.length === 0) {
+      toast.error("Please add at least one raw material before creating a batch")
       return
     }
 
@@ -407,7 +406,6 @@ export default function AddBatchPage() {
           totalLitres: Number(expectedLitres),
           supervisor,
           shift,
-          tankNumber: tankNumber.trim(),
           status,
           notes: notes.trim() || undefined,
           ingredients,
@@ -611,7 +609,7 @@ export default function AddBatchPage() {
               </div>
             </div>
 
-            {/* Supervisor & Tank Number Row */}
+            {/* Supervisor Row */}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="supervisor" className="font-semibold text-foreground">
@@ -622,18 +620,6 @@ export default function AddBatchPage() {
                   placeholder="Enter supervisor name"
                   value={supervisor}
                   onChange={(e) => setSupervisor(e.target.value)}
-                  className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tankNumber" className="font-semibold text-foreground">
-                  Tank Number <span className="text-red-600 dark:text-red-400 font-bold">*</span>
-                </Label>
-                <Input
-                  id="tankNumber"
-                  placeholder="e.g., TANK-001"
-                  value={tankNumber}
-                  onChange={(e) => setTankNumber(e.target.value)}
                   className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
                 />
               </div>

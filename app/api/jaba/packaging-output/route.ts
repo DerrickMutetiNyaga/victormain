@@ -10,6 +10,7 @@ import {
   findPrimaryBottleMaterialForSize,
   findPrimaryStickerMaterialForSize,
 } from '@/lib/jaba-packaging-materials'
+import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +31,21 @@ class ApiError extends Error {
   }
 }
 
+async function generatePackagingLine(
+  db: any,
+  batchId: string,
+  batchNumber: string,
+  packagingDate: string | Date
+): Promise<string> {
+  const year =
+    packagingDate instanceof Date
+      ? packagingDate.getFullYear()
+      : new Date(packagingDate).getFullYear() || new Date().getFullYear()
+  const existingCount = await db.collection('jaba_packagingOutput').countDocuments({ batchId: String(batchId) })
+  const lineNo = String(existingCount + 1).padStart(2, '0')
+  return `${year}-${String(batchNumber).trim()}-L${lineNo}`
+}
+
 // POST create packaging output
 export async function POST(request: Request) {
   const authResult = await requireJabaAction('production.packaging', 'add')
@@ -43,7 +59,6 @@ export async function POST(request: Request) {
       packageNumber,
       volumeAllocated,
       packagingDate,
-      packagingLine,
       supervisor,
       teamMembers,
       containers,
@@ -59,9 +74,9 @@ export async function POST(request: Request) {
       typeof flavourLineIdRaw === 'string' && flavourLineIdRaw.trim() ? flavourLineIdRaw.trim() : ''
 
     // Validate required fields
-    if (!batchId || !batchNumber || !volumeAllocated || !packagingDate || !supervisor || !packagingLine) {
+    if (!batchId || !batchNumber || !volumeAllocated || !packagingDate || !supervisor) {
       return NextResponse.json(
-        { error: 'Missing required fields: batchId, batchNumber, packageNumber, volumeAllocated, packagingDate, packagingLine, and supervisor are required' },
+        { error: 'Missing required fields: batchId, batchNumber, packageNumber, volumeAllocated, packagingDate, and supervisor are required' },
         { status: 400 }
       )
     }
@@ -80,6 +95,7 @@ export async function POST(request: Request) {
     const client = await clientPromise
     const db = client.db('infusion_jaba')
     const { ObjectId } = await import('mongodb')
+    const finalPackagingLine = await generatePackagingLine(db, batchId, batchNumber, packagingDate)
 
     // Get batch to calculate remaining litres
     const batch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) })
@@ -186,7 +202,7 @@ export async function POST(request: Request) {
       volumeAllocated: Number(volumeAllocated),
       packagedLitres: packagedLitres,
       packagingDate: new Date(packagingDate),
-      packagingLine: packagingLine.trim(),
+      packagingLine: finalPackagingLine,
       supervisor: supervisor.trim(),
       teamMembers: teamMembers || [],
       containers: containers || [],
@@ -428,6 +444,10 @@ export async function POST(request: Request) {
     }
 
     console.log(`[Packaging Output API] ✅ Packaging session created successfully (ID: ${createdPackagingId}, Package Number: ${finalPackageNumber})`)
+    await sendJabaSmsForEvent(
+      'packagingCreated',
+      `Jaba: Packaging done. Batch ${batchNumber}, package ${finalPackageNumber}, packed ${packagedLitres.toFixed(2)}L.`
+    )
 
     return NextResponse.json(
       {

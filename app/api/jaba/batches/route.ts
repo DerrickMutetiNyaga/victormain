@@ -12,6 +12,7 @@ import {
   JABA_FLAVOUR_LINES_COLLECTION,
   mergeFlavourRowsFromCaches,
 } from '@/lib/jaba-flavour-lines'
+import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
 
 export const runtime = 'nodejs'
 
@@ -269,16 +270,21 @@ export async function POST(request: Request) {
       totalLitres,
       supervisor,
       shift,
-      tankNumber,
       status,
       ingredients,
       notes,
     } = body
 
     // Validate required fields (neutral/base batch — no flavour at creation)
-    if (!batchNumber || !date || !totalLitres || !supervisor || !shift || !tankNumber) {
+    if (!batchNumber || !date || !totalLitres || !supervisor || !shift) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+    if (!Array.isArray(ingredients) || ingredients.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one raw material is required to create a batch' },
         { status: 400 }
       )
     }
@@ -426,7 +432,6 @@ export async function POST(request: Request) {
       qcStatus: 'Pending',
       supervisor,
       shift,
-      tankNumber: tankNumber.trim(),
       ingredients: ingredients || [],
       locked: false,
       outputSummary: {
@@ -450,6 +455,10 @@ export async function POST(request: Request) {
     }
     
     console.log(`[Batches API] ✅ Batch created successfully: ${batchNumber} (ID: ${batchId})`)
+    await sendJabaSmsForEvent(
+      'batchCreated',
+      `Jaba: Batch created. Batch ${batchNumber}, litres ${vol.toFixed(2)}, supervisor ${supervisor}.`
+    )
 
     return NextResponse.json(
       { 

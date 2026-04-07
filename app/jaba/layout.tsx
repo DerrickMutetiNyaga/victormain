@@ -34,6 +34,7 @@ import {
   X,
   Shield,
   QrCode,
+  MessageSquareText,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -95,6 +96,7 @@ const navigationGroups = [
     items: [
       { name: "User Management", href: "/jaba/users", icon: Shield, pageId: "users" },
       { name: "Settings", href: "/jaba/settings", icon: Settings, pageId: "settings" },
+      { name: "SMS Notifications", href: "/jaba/sms-notifications", icon: MessageSquareText, pageId: "sms-notifications" },
     ],
   },
 ]
@@ -114,6 +116,7 @@ const NAV_ITEM_PERMISSION_MAP: Record<string, string> = {
   '/jaba/barcodes': 'system.dashboard',
   '/jaba/users': 'system.users',
   '/jaba/settings': 'system.settings',
+  '/jaba/sms-notifications': 'system.settings',
 }
 
 function canViewNavItem(href: string, user: JabaUserForPermissions | null): boolean {
@@ -157,7 +160,12 @@ function JabaLayoutContent({
     return navigationGroups
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) => canViewNavItem(item.href, userForPermissions)),
+        items: group.items.filter((item) => {
+          if (item.href === '/jaba/sms-notifications') {
+            return userForPermissions?.role?.toLowerCase() === 'super_admin'
+          }
+          return canViewNavItem(item.href, userForPermissions)
+        }),
       }))
       .filter((group) => group.items.length > 0)
   }, [userForPermissions])
