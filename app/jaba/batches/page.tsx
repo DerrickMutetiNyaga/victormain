@@ -13,7 +13,7 @@ import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, C
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useJabaPermissions } from "@/hooks/use-jaba-permissions"
 import { countAvailableBottlesForFlavourRow } from "@/lib/jaba-flavour-lines"
@@ -106,6 +106,16 @@ interface Batch {
   }
 }
 
+type DeleteIntent = {
+  action: "delete_batch" | "delete_flavour_output" | "delete_flavor"
+  targetId: string
+  title: string
+  description: string
+  confirmLabel: string
+  successMessage: string
+  requestUrl: string
+}
+
 // Helper function to get shift badge colors
 const getShiftColors = (shift: "Morning" | "Afternoon" | "Night") => {
   switch (shift) {
@@ -153,6 +163,10 @@ export default function BatchesPage() {
     { flavorId: string; flavorName: string; quantity: string; notes: string }[]
   >([{ flavorId: "", flavorName: "", quantity: "", notes: "" }])
   const [infuseSaving, setInfuseSaving] = useState(false)
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null)
+  const [deleteOtp, setDeleteOtp] = useState("")
+  const [deleteOtpSent, setDeleteOtpSent] = useState(false)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   const toggleBatchExpand = (bid: string) => {
     setExpandedBatchIds((prev) => {
@@ -232,29 +246,17 @@ export default function BatchesPage() {
   }
 
   const deleteFlavourOutput = async (childId: string, parentLabel: string) => {
-    if (!confirm(`Remove this flavoured output from ${parentLabel}? Volume returns to the neutral batch.`)) return
-    try {
-      const otpReq = await fetch('/api/jaba/delete-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete_flavour_output', targetId: childId }),
-      })
-      const otpReqData = await otpReq.json().catch(() => ({}))
-      if (!otpReq.ok) throw new Error(otpReqData.error || "Failed to send delete OTP")
-      const otp = window.prompt("Enter OTP sent to OT_NUMBER:")?.trim() || ''
-      if (!otp) throw new Error("OTP is required")
-
-      const res = await fetch(`/api/jaba/batches/flavour-output/${childId}`, {
-        method: "DELETE",
-        headers: { 'x-delete-otp': otp },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Delete failed")
-      toast.success("Flavoured output removed.")
-      await fetchBatches()
-    } catch (e: any) {
-      toast.error(e.message || "Delete failed")
-    }
+    setDeleteOtp("")
+    setDeleteOtpSent(false)
+    setDeleteIntent({
+      action: "delete_flavour_output",
+      targetId: childId,
+      title: "Delete Flavoured Output",
+      description: `Remove this flavoured output from ${parentLabel}? Volume returns to the neutral batch.`,
+      confirmLabel: "Delete Flavoured Output",
+      successMessage: "Flavoured output removed.",
+      requestUrl: `/api/jaba/batches/flavour-output/${childId}`,
+    })
   }
 
   const deleteBatch = async (batch: Batch) => {
@@ -264,45 +266,17 @@ export default function BatchesPage() {
       toast.error("Only super admins can delete batches.")
       return
     }
-    const ok = confirm(
-      `Delete batch ${batch.batchNumber} and all linked records (flavour lines, packaging outputs, delivery items, and movement logs)? This cannot be undone.`
-    )
-    if (!ok) return
-
-    try {
-      const otpReq = await fetch('/api/jaba/delete-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete_batch',
-          targetId: batchId,
-        }),
-      })
-      const otpReqData = await otpReq.json().catch(() => ({}))
-      if (!otpReq.ok) {
-        throw new Error(otpReqData.error || 'Failed to send delete OTP')
-      }
-      toast.success("Delete OTP sent to configured number.")
-
-      const otp = window.prompt(`Enter OTP sent to OT_NUMBER to delete batch ${batch.batchNumber}:`)?.trim() || ''
-      if (!otp) {
-        toast.error("Delete cancelled: OTP is required.")
-        return
-      }
-
-      const res = await fetch(`/api/jaba/batches/${batchId}`, {
-        method: "DELETE",
-        headers: {
-          'x-delete-otp': otp,
-        },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to delete batch")
-      toast.success("Batch and linked records deleted.")
-      await fetchBatches()
-    } catch (e: any) {
-      toast.error(e.message || "Failed to delete batch")
-    }
+    setDeleteOtp("")
+    setDeleteOtpSent(false)
+    setDeleteIntent({
+      action: "delete_batch",
+      targetId: batchId,
+      title: "Delete Batch",
+      description: `Delete batch ${batch.batchNumber} and all linked records (flavour lines, packaging outputs, delivery items, and movement logs)? This cannot be undone.`,
+      confirmLabel: "Delete Batch",
+      successMessage: "Batch and linked records deleted.",
+      requestUrl: `/api/jaba/batches/${batchId}`,
+    })
   }
 
   useEffect(() => {
@@ -391,35 +365,66 @@ export default function BatchesPage() {
   }
 
   const handleDeleteFlavor = async (flavorId: string, flavorName: string) => {
-    if (!confirm(`Are you sure you want to delete "${flavorName}"?`)) {
-      return
-    }
+    setDeleteOtp("")
+    setDeleteOtpSent(false)
+    setDeleteIntent({
+      action: "delete_flavor",
+      targetId: flavorId,
+      title: "Delete Flavor",
+      description: `Are you sure you want to delete "${flavorName}"?`,
+      confirmLabel: "Delete Flavor",
+      successMessage: `Flavor "${flavorName}" deleted successfully!`,
+      requestUrl: `/api/jaba/flavors?id=${flavorId}`,
+    })
+  }
 
+  const handleDeleteWithOtp = async () => {
+    if (!deleteIntent) return
+    setDeleteSubmitting(true)
+    try {
+      if (!deleteOtp.trim()) {
+        throw new Error("Enter OTP sent to OT_NUMBER")
+      }
+
+      const response = await fetch(deleteIntent.requestUrl, {
+        method: 'DELETE',
+        headers: { 'x-delete-otp': deleteOtp.trim() },
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Failed to delete')
+
+      toast.success(deleteIntent.successMessage)
+      setDeleteIntent(null)
+      setDeleteOtp("")
+      if (deleteIntent.action === "delete_flavor") {
+        await fetchFlavors()
+      } else {
+        await fetchBatches()
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Delete failed')
+    } finally {
+      setDeleteSubmitting(false)
+    }
+  }
+
+  const handleSendDeleteOtp = async () => {
+    if (!deleteIntent) return
+    setDeleteSubmitting(true)
     try {
       const otpReq = await fetch('/api/jaba/delete-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete_flavor', targetId: flavorId }),
+        body: JSON.stringify({ action: deleteIntent.action, targetId: deleteIntent.targetId }),
       })
       const otpReqData = await otpReq.json().catch(() => ({}))
-      if (!otpReq.ok) throw new Error(otpReqData.error || "Failed to send delete OTP")
-      const otp = window.prompt(`Enter OTP to delete flavor "${flavorName}":`)?.trim() || ''
-      if (!otp) throw new Error("OTP is required")
-
-      const response = await fetch(`/api/jaba/flavors?id=${flavorId}`, {
-        method: 'DELETE',
-        headers: { 'x-delete-otp': otp },
-      })
-
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to delete flavor')
-      }
-
-      toast.success(`Flavor "${flavorName}" deleted successfully!`)
-      await fetchFlavors()
+      if (!otpReq.ok) throw new Error(otpReqData.error || 'Failed to send delete OTP')
+      setDeleteOtpSent(true)
+      toast.success('OTP sent to OT_NUMBER')
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete flavor')
+      toast.error(error.message || 'Failed to send OTP')
+    } finally {
+      setDeleteSubmitting(false)
     }
   }
 
@@ -2157,6 +2162,66 @@ export default function BatchesPage() {
                 Mark as Processed
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteIntent}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteIntent(null)
+            setDeleteOtp("")
+            setDeleteOtpSent(false)
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>{deleteIntent?.title || "Confirm Delete"}</DialogTitle>
+            <DialogDescription>{deleteIntent?.description || "Confirm delete action."}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground rounded-lg border p-2">
+              OTP verification is required before delete to prevent accidental data loss.
+            </div>
+            <Input
+              value={deleteOtp}
+              onChange={(e) => setDeleteOtp(e.target.value)}
+              placeholder="Enter OTP"
+              inputMode="numeric"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteIntent(null)
+                setDeleteOtp("")
+                setDeleteOtpSent(false)
+              }}
+              className="w-full"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleSendDeleteOtp}
+              disabled={deleteSubmitting}
+              className="w-full"
+            >
+              {deleteOtpSent ? "Resend OTP" : "Send OTP"}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteWithOtp}
+              disabled={deleteSubmitting || !deleteOtp.trim()}
+              className="w-full"
+            >
+              {deleteIntent?.confirmLabel || "Delete"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

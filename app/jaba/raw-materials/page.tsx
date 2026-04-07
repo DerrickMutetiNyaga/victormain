@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from "sonner"
 import { Plus, Search, AlertTriangle, Package, Warehouse, TrendingDown, TrendingUp, Box, Hash, Tag, Droplet, Calendar, Building2, LayoutGrid, List, FileBarChart, Loader2, Edit, Trash2, Save } from "lucide-react"
 import Link from "next/link"
-import { materialUsageLogs } from "@/lib/jaba-data"
 import { useState, useEffect, useMemo } from "react"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +26,18 @@ interface RawMaterial {
   lastRestocked?: string | Date
   reorderLevel: number
   preferredSupplier?: string
+}
+
+interface UsageLog {
+  id: string
+  materialName: string
+  batchNumber: string
+  quantityUsed: number
+  unit: string
+  remainingStock: number
+  approvedBy: string
+  reason?: string
+  date: string
 }
 
 export default function RawMaterialsPage() {
@@ -46,6 +57,7 @@ export default function RawMaterialsPage() {
   const [newCategoryName, setNewCategoryName] = useState("")
   const [isSavingCategory, setIsSavingCategory] = useState(false)
   const [isDeletingCategory, setIsDeletingCategory] = useState<string | null>(null)
+  const [usageLogs, setUsageLogs] = useState<UsageLog[]>([])
 
   type PackagingTemplate = "bottles" | "stickers" | "custom"
   type PackagingSize = "250ml" | "500ml" | "1L" | "2L"
@@ -55,7 +67,20 @@ export default function RawMaterialsPage() {
   useEffect(() => {
     fetchRawMaterials()
     fetchCategories()
+    fetchUsageLogs()
   }, [])
+
+  const fetchUsageLogs = async () => {
+    try {
+      const response = await fetch('/api/jaba/raw-materials/usage-logs')
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch usage logs')
+      setUsageLogs(data.logs || [])
+    } catch (error) {
+      console.error('Error fetching usage logs:', error)
+      setUsageLogs([])
+    }
+  }
 
   // When editing a Packaging item, detect bottles/stickers + size from its name,
   // and force the UI to use dropdowns to avoid accidental renaming.
@@ -815,7 +840,7 @@ export default function RawMaterialsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {materialUsageLogs.slice(0, 50).map((log, idx) => (
+                      {usageLogs.slice(0, 100).map((log, idx) => (
                         <TableRow
                           key={log.id}
                           className={cn(
@@ -864,7 +889,7 @@ export default function RawMaterialsPage() {
                             <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
                               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                {log.date.toLocaleDateString()}
+                                {new Date(log.date).toLocaleDateString()}
                               </span>
                             </div>
                           </TableCell>
@@ -878,6 +903,13 @@ export default function RawMaterialsPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                      {usageLogs.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                            No real usage logs found yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
