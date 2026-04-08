@@ -413,26 +413,16 @@ export default function HomePage() {
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4 text-[#1F2937]">Account</h4>
+              <h4 className="font-semibold mb-4 text-[#1F2937]">Partner With Us</h4>
               <ul className="space-y-2 text-sm text-[#6B7280]">
                 <li>
-                  <Link href="/account" className="hover:text-[#8B1A26] transition-colors">
-                    My Account
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/track" className="hover:text-[#8B1A26] transition-colors">
-                    Track Order
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/supplier" className="hover:text-[#8B1A26] transition-colors">
+                  <Link href="/supplier" className="hover:text-[#10B981] transition-colors font-semibold">
                     Become a Supplier
                   </Link>
                 </li>
                 <li>
                   <Link href="/jaba-distributor" className="hover:text-[#10B981] transition-colors font-semibold">
-                    Become a Catha Lounge Distributor
+                    Become a Jaba Distributor
                   </Link>
                 </li>
               </ul>

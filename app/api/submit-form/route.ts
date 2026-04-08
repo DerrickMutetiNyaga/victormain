@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
+import { createDistributorRequest } from '@/lib/models/distributor-request'
 
 const SMTP_EMAIL = process.env.SMTP_EMAIL
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD
@@ -182,13 +183,6 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    if (!SMTP_EMAIL || !SMTP_PASSWORD) {
-      return NextResponse.json(
-        { success: false, error: 'Email not configured. Set SMTP_EMAIL and SMTP_PASSWORD in .env' },
-        { status: 500 }
-      )
-    }
-
     const body = await request.json()
     const type = body.type as string
 
@@ -199,6 +193,48 @@ export async function POST(request: Request) {
       )
     }
 
+    const applicantName = String(body.name ?? '').trim()
+    const applicantPhone = String(body.phone ?? '').trim()
+    const applicantEmail = String(body.email ?? '').trim()
+    const company = String(body.company ?? '').trim()
+
+    if (!applicantName || !applicantPhone || !applicantEmail) {
+      return NextResponse.json(
+        { success: false, error: 'Name, phone, and email are required.' },
+        { status: 400 }
+      )
+    }
+
+    const products =
+      type === 'supplier'
+        ? (Array.isArray(body.products) ? body.products.join(', ') : String(body.products ?? '').trim())
+        : `Distribution area: ${String(body.distributionArea ?? '').trim() || '-'} | Business type: ${
+            String(body.currentBusiness ?? '').trim() || '-'
+          } | Monthly capacity: ${String(body.monthlyCapacity ?? '').trim() || '-'}`
+
+    const notes =
+      type === 'supplier'
+        ? String(body.description ?? '').trim()
+        : [
+            `Location: ${String(body.location ?? '').trim() || '-'}`,
+            `Experience: ${String(body.experience ?? '').trim() || '-'}`,
+            '',
+            String(body.description ?? '').trim() || '(none)',
+          ].join('\n')
+
+    await createDistributorRequest({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: company || applicantName,
+      contact: applicantName,
+      email: applicantEmail,
+      phone: applicantPhone,
+      address: String(body.location ?? '').trim() || undefined,
+      products,
+      status: 'pending',
+      submittedAt: new Date(),
+      notes,
+    })
+
     const subject =
       type === 'distributor'
         ? `[Jaba Distributor] Application from ${body.name ?? 'Unknown'}`
@@ -208,15 +244,20 @@ export async function POST(request: Request) {
     const html =
       type === 'distributor' ? buildDistributorHtml(body) : buildSupplierHtml(body)
 
-    const transporter = getTransporter()
-    await transporter.sendMail({
-      from: `"Infusion Jaba Forms" <${SMTP_EMAIL}>`,
-      to: FORM_SUBMISSION_TO,
-      replyTo: REPLY_TO || undefined,
-      subject,
-      text,
-      html,
-    })
+    // Email notification is best-effort. DB save above is the source of truth.
+    if (SMTP_EMAIL && SMTP_PASSWORD) {
+      const transporter = getTransporter()
+      await transporter.sendMail({
+        from: `"Infusion Jaba Forms" <${SMTP_EMAIL}>`,
+        to: FORM_SUBMISSION_TO,
+        replyTo: REPLY_TO || undefined,
+        subject,
+        text,
+        html,
+      })
+    } else {
+      console.warn('[submit-form] SMTP not configured; saved application without sending email.')
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -198,6 +198,7 @@ function JabaLayoutContent({
       if (
         pathname === "/jaba/login" ||
         pathname === "/jaba/signup" ||
+        pathname === "/jaba/apply" ||
         pathname === "/jaba/waiting" ||
         pathname === "/jaba/unauthorized" ||
         pathname === "/jaba/account-suspended"
@@ -327,6 +328,7 @@ function JabaLayoutContent({
   const isAuthPage =
     pathname === "/jaba/login" ||
     pathname === "/jaba/signup" ||
+    pathname === "/jaba/apply" ||
     pathname === "/jaba/waiting" ||
     pathname === "/jaba/unauthorized" ||
     pathname === "/jaba/account-suspended"
