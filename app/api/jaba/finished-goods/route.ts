@@ -44,6 +44,58 @@ export async function GET(request: Request) {
 
     console.log(`[Finished Goods API] Found ${deliveryNotes.length} delivery notes`)
 
+    type SizeTriplet = { original: number; distributed: number; remaining: number }
+
+    const flavourKey = (poOrItem: any) =>
+      String(poOrItem.flavourLineId || poOrItem.flavourName || poOrItem.flavor || '__base__')
+
+    const addContainerToRow = (row: { l250: number; l500: number; l1: number; l2: number }, container: any) => {
+      const qty = parseFloat(container.quantity) || 0
+      if (container.size === '250ml') row.l250 += qty
+      else if (container.size === '500ml') row.l500 += qty
+      else if (container.size === '1L') row.l1 += qty
+      else if (container.size === '2L') row.l2 += qty
+    }
+
+    const addDistToRow = (row: { l250: number; l500: number; l1: number; l2: number }, item: any) => {
+      const qty = parseFloat(item.quantity) || 0
+      if (item.size === '250ml') row.l250 += qty
+      else if (item.size === '500ml') row.l500 += qty
+      else if (item.size === '1L') row.l1 += qty
+      else if (item.size === '2L') row.l2 += qty
+    }
+
+    const rowToSizes = (
+      p: { l250: number; l500: number; l1: number; l2: number },
+      d: { l250: number; l500: number; l1: number; l2: number }
+    ): {
+      total250ml: SizeTriplet
+      total500ml: SizeTriplet
+      total1L: SizeTriplet
+      total2L: SizeTriplet
+    } => ({
+      total250ml: {
+        original: p.l250,
+        distributed: d.l250,
+        remaining: Math.max(0, p.l250 - d.l250),
+      },
+      total500ml: {
+        original: p.l500,
+        distributed: d.l500,
+        remaining: Math.max(0, p.l500 - d.l500),
+      },
+      total1L: {
+        original: p.l1,
+        distributed: d.l1,
+        remaining: Math.max(0, p.l1 - d.l1),
+      },
+      total2L: {
+        original: p.l2,
+        distributed: d.l2,
+        remaining: Math.max(0, p.l2 - d.l2),
+      },
+    })
+
     // Process batches with packaging and distribution data
     const batchesWithData = batches.map((batch: any) => {
       const batchId = batch._id.toString()
@@ -60,7 +112,21 @@ export async function GET(request: Request) {
       let total2L = 0
       const otherSizes: { size: string; quantity: number }[] = []
 
+      /** Per-flavour packaged bottle counts */
+      const packByFlavour = new Map<string, { l250: number; l500: number; l1: number; l2: number }>()
+      const firstLabelByKey = new Map<string, string>()
+
       batchPackagingOutputs.forEach((po: any) => {
+        const fk = flavourKey(po)
+        if (!firstLabelByKey.has(fk)) {
+          const hint = [po.flavourName, po.flavor, po.displayFlavor].find((x: any) => typeof x === 'string' && x.trim())
+          if (hint) firstLabelByKey.set(fk, hint.trim())
+        }
+        let row = packByFlavour.get(fk)
+        if (!row) {
+          row = { l250: 0, l500: 0, l1: 0, l2: 0 }
+          packByFlavour.set(fk, row)
+        }
         if (po.containers && Array.isArray(po.containers)) {
           po.containers.forEach((container: any) => {
             const qty = parseFloat(container.quantity) || 0
@@ -80,6 +146,7 @@ export async function GET(request: Request) {
                 otherSizes.push({ size: container.size, quantity: qty })
               }
             }
+            addContainerToRow(row, container)
           })
         }
       })
@@ -89,6 +156,8 @@ export async function GET(request: Request) {
       let distributed500ml = 0
       let distributed1L = 0
       let distributed2L = 0
+
+      const distByFlavour = new Map<string, { l250: number; l500: number; l1: number; l2: number }>()
 
       deliveryNotes.forEach((note: any) => {
         if (note.items && Array.isArray(note.items)) {
@@ -104,10 +173,70 @@ export async function GET(request: Request) {
               } else if (item.size === '2L') {
                 distributed2L += qty
               }
+              const fk = flavourKey(item)
+              if (!firstLabelByKey.has(fk)) {
+                const hint = typeof item.flavor === 'string' && item.flavor.trim() ? item.flavor.trim() : ''
+                if (hint) firstLabelByKey.set(fk, hint)
+              }
+              let dRow = distByFlavour.get(fk)
+              if (!dRow) {
+                dRow = { l250: 0, l500: 0, l1: 0, l2: 0 }
+                distByFlavour.set(fk, dRow)
+              }
+              addDistToRow(dRow, item)
             }
           })
         }
       })
+
+      const resolveFlavourLabel = (key: string): string => {
+        if (key === '__base__') {
+          return String(batch.displayFlavorLabel || batch.flavor || 'Neutral / unassigned')
+        }
+        const lines = batch.flavourOutputs || []
+        const fo = lines.find(
+          (row: any) => String(row._id) === key || String(row.id) === key
+        )
+        if (fo) {
+          return String(fo.flavor || fo.flavourName || fo.lineCode || fo.batchNumber || key)
+        }
+        return firstLabelByKey.get(key) || String(batch.displayFlavorLabel || batch.flavor || key)
+      }
+
+      const flavourKeys = new Set<string>([...packByFlavour.keys(), ...distByFlavour.keys()])
+      const byFlavour = Array.from(flavourKeys)
+        .map((key) => {
+          const p = packByFlavour.get(key) || { l250: 0, l500: 0, l1: 0, l2: 0 }
+          const d = distByFlavour.get(key) || { l250: 0, l500: 0, l1: 0, l2: 0 }
+          const sizes = rowToSizes(p, d)
+          const orig =
+            sizes.total250ml.original +
+            sizes.total500ml.original +
+            sizes.total1L.original +
+            sizes.total2L.original
+          const rem =
+            sizes.total250ml.remaining +
+            sizes.total500ml.remaining +
+            sizes.total1L.remaining +
+            sizes.total2L.remaining
+          const dist =
+            sizes.total250ml.distributed +
+            sizes.total500ml.distributed +
+            sizes.total1L.distributed +
+            sizes.total2L.distributed
+          return {
+            key,
+            label: resolveFlavourLabel(key),
+            ...sizes,
+            totalBottles: {
+              original: orig,
+              distributed: dist,
+              remaining: rem,
+            },
+          }
+        })
+        .filter((row) => row.totalBottles.original > 0 || row.totalBottles.distributed > 0)
+        .sort((a, b) => b.totalBottles.remaining - a.totalBottles.remaining)
 
       // Calculate remaining quantities
       const remaining250ml = Math.max(0, total250ml - distributed250ml)
@@ -157,6 +286,7 @@ export async function GET(request: Request) {
           remaining: remainingBottles,
         },
         status,
+        byFlavour,
         packagingOutputs: batchPackagingOutputs.map((po: any) => ({
           _id: po._id.toString(),
           packageNumber: po.packageNumber || '',

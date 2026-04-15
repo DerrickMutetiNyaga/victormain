@@ -183,6 +183,14 @@ export default function RawMaterialsPage() {
     return { label: "In Stock", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" }
   }
 
+  /** One decimal place for display; avoids float noise (e.g. 17.799999999999997 → 17.8). Whole numbers stay integer. */
+  const formatQty = (value: number) => {
+    if (!Number.isFinite(value)) return "0"
+    const rounded = Math.round(value * 10) / 10
+    const s = rounded.toFixed(1)
+    return s.endsWith(".0") ? String(Math.round(rounded)) : s
+  }
+
 
   const [editCategory, setEditCategory] = useState("")
 
@@ -464,7 +472,7 @@ export default function RawMaterialsPage() {
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">Total Stock</p>
                   <p className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-2">
-                    {totalStock.toLocaleString()}
+                    {formatQty(totalStock)}
                   </p>
                   <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
                     <Warehouse className="h-3 w-3" />
@@ -656,7 +664,7 @@ export default function RawMaterialsPage() {
                                 <Warehouse className="h-4 w-4 text-green-600 dark:text-green-400" />
                               </div>
                               <span className="font-semibold text-base text-slate-900 dark:text-slate-100 tabular-nums">
-                                {material.currentStock}
+                                {formatQty(material.currentStock)}
                               </span>
                             </div>
                           </TableCell>
@@ -667,7 +675,7 @@ export default function RawMaterialsPage() {
                           </TableCell>
                           <TableCell className="py-4 px-4">
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300 tabular-nums">
-                              {material.minStock}
+                              {formatQty(material.minStock)}
                             </span>
                           </TableCell>
                           <TableCell className="py-4 px-4">
@@ -782,7 +790,7 @@ export default function RawMaterialsPage() {
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
                           <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                            {material.currentStock}
+                            {formatQty(material.currentStock)}
                           </p>
                           <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">{material.unit}</span>
                         </div>
@@ -800,8 +808,8 @@ export default function RawMaterialsPage() {
                           />
                         </div>
                         <div className="flex justify-between items-center mt-2 text-xs text-slate-600 dark:text-slate-400">
-                          <span>Min: {material.minStock} {material.unit}</span>
-                          <span>Reorder: {material.reorderLevel} {material.unit}</span>
+                          <span>Min: {formatQty(material.minStock)} {material.unit}</span>
+                          <span>Reorder: {formatQty(material.reorderLevel)} {material.unit}</span>
                         </div>
                       </div>
 
@@ -949,7 +957,7 @@ export default function RawMaterialsPage() {
                                 <Droplet className="h-4 w-4 text-green-600 dark:text-green-400" />
                               </div>
                               <span className="font-semibold text-base text-slate-900 dark:text-slate-100 tabular-nums">
-                                {log.quantityUsed}
+                                {formatQty(log.quantityUsed)}
                               </span>
                               <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">{log.unit}</span>
                             </div>
@@ -958,7 +966,7 @@ export default function RawMaterialsPage() {
                             <div className="flex items-center gap-2">
                               <Warehouse className="h-4 w-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
                               <span className="font-medium text-sm text-slate-700 dark:text-slate-300 tabular-nums">
-                                {log.remainingStock} {log.unit}
+                                {formatQty(log.remainingStock)} {log.unit}
                               </span>
                             </div>
                           </TableCell>

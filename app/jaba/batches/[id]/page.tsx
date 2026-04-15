@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, FileText, Package, ClipboardCheck, Truck, Hash, Calendar, User, Clock, Thermometer, TrendingDown, CheckCircle2, XCircle, AlertCircle, Download, Factory, FlaskConical, BarChart3, MapPin, Loader2 } from "lucide-react"
+import { ArrowLeft, FileText, Package, ClipboardCheck, Truck, Hash, Calendar, User, Clock, Thermometer, TrendingDown, CheckCircle2, XCircle, AlertCircle, Download, Factory, FlaskConical, BarChart3, MapPin, Loader2, Warehouse } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -192,15 +192,22 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
   })
   const packagingFlavourRows = Array.from(packagingByFlavour.values()).sort((a, b) => b.litres - a.litres)
 
-  const distributionByFlavour = new Map<string, { key: string; flavour: string; notes: number; units: number }>()
+  const distributionByFlavour = new Map<
+    string,
+    { key: string; flavour: string; notes: number; units: number; bySize: Record<string, number> }
+  >()
   deliveryNotes.forEach((note: any) => {
     const seenInNote = new Set<string>()
     ;(note.items || []).forEach((item: any) => {
       if (item.batchNumber !== batch.batchNumber) return
       const key = String(item.flavourLineId || item.flavor || "__base__")
       const flavour = resolveFlavourLabel(item.flavourLineId, item.flavor)
-      const existing = distributionByFlavour.get(key) || { key, flavour, notes: 0, units: 0 }
-      existing.units += Number(item.quantity) || 0
+      const sizeKey = String(item.size || item.containerSize || "other")
+      const qty = Number(item.quantity) || 0
+      const existing =
+        distributionByFlavour.get(key) || { key, flavour, notes: 0, units: 0, bySize: {} }
+      existing.units += qty
+      existing.bySize[sizeKey] = (existing.bySize[sizeKey] || 0) + qty
       if (!seenInNote.has(key)) {
         existing.notes += 1
         seenInNote.add(key)
@@ -209,6 +216,61 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
     })
   })
   const distributionFlavourRows = Array.from(distributionByFlavour.values()).sort((a, b) => b.units - a.units)
+
+  /** Packaged bottles not yet distributed, per flavour (and by bottle size when data allows) */
+  const storageFlavourRows = (() => {
+    const keys = new Set<string>([...packagingByFlavour.keys(), ...distributionByFlavour.keys()])
+    const rows: Array<{
+      key: string
+      flavour: string
+      packagedBottles: number
+      distributedBottles: number
+      inStorageBottles: number
+      packagedLitres: number
+      bySize: Record<string, number>
+    }> = []
+    keys.forEach((key) => {
+      const pack = packagingByFlavour.get(key)
+      const dist = distributionByFlavour.get(key)
+      const flavour =
+        pack?.flavour ||
+        dist?.flavour ||
+        resolveFlavourLabel(key === "__base__" ? undefined : key, undefined)
+      const packagedBottles = pack?.units ?? 0
+      const distributedBottles = dist?.units ?? 0
+      const inStorageBottles = Math.max(0, packagedBottles - distributedBottles)
+      const packagedLitres = pack?.litres ?? 0
+      const bySize: Record<string, number> = {}
+      const distHasBySize = Object.keys(dist?.bySize || {}).length > 0
+      const sizeKeys = new Set([
+        ...Object.keys(pack?.bySize || {}),
+        ...Object.keys(dist?.bySize || {}),
+      ])
+      sizeKeys.forEach((sz) => {
+        const p = pack?.bySize?.[sz] ?? 0
+        const d = dist?.bySize?.[sz] ?? 0
+        let left = 0
+        if (distributedBottles === 0) {
+          left = p
+        } else if (distHasBySize) {
+          left = Math.max(0, p - d)
+        }
+        // If distribution has totals but no per-size lines, do not infer splits (avoids wrong per-size rows)
+        if (left > 0) bySize[sz] = left
+      })
+      rows.push({
+        key,
+        flavour,
+        packagedBottles,
+        distributedBottles,
+        inStorageBottles,
+        packagedLitres,
+        bySize,
+      })
+    })
+    return rows.sort((a, b) => b.inStorageBottles - a.inStorageBottles)
+  })()
+  const totalStorageBottles = storageFlavourRows.reduce((s, r) => s + r.inStorageBottles, 0)
 
   return (
     <>
@@ -483,6 +545,10 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
             <TabsTrigger value="packaging" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Package className="h-4 w-4 mr-2" />
               Packaging
+            </TabsTrigger>
+            <TabsTrigger value="storage" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
+              <Warehouse className="h-4 w-4 mr-2" />
+              Storage
             </TabsTrigger>
             <TabsTrigger value="materials" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Factory className="h-4 w-4 mr-2" />
@@ -923,6 +989,120 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Storage: packaged bottles not yet distributed, per flavour */}
+          <TabsContent value="storage" className="space-y-6">
+            <Card className="border-teal-200 dark:border-teal-900/50 bg-gradient-to-br from-teal-50/50 to-cyan-50/30 dark:from-teal-950/20 dark:to-cyan-950/10 shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-950/30 dark:to-cyan-950/20 border-b border-teal-200 dark:border-teal-900/50">
+                <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900/30">
+                    <Warehouse className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span>Batch storage</span>
+                    <span className="text-xs font-normal text-muted-foreground mt-0.5">
+                      Packaged bottles still on hand (not yet on delivery notes for this batch)
+                    </span>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-6">
+                <div className="rounded-xl border-2 border-teal-200/80 bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-950/30 dark:to-cyan-950/20 dark:border-teal-900/50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-200">
+                      Total in storage (this batch)
+                    </p>
+                    <p className="text-2xl font-bold text-teal-900 dark:text-teal-100 tabular-nums">
+                      {totalStorageBottles.toLocaleString()} <span className="text-base font-semibold">bottles</span>
+                    </p>
+                  </div>
+                  <p className="text-xs text-teal-800/80 dark:text-teal-200/80 max-w-md">
+                    Per flavour: packaged units minus units shipped on distribution notes for batch{" "}
+                    <span className="font-mono font-semibold">{batch.batchNumber}</span>.
+                  </p>
+                </div>
+
+                {storageFlavourRows.some((r) => r.packagedBottles > 0) ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border-b-2 border-slate-300 dark:border-slate-700">
+                            <TableHead className="font-semibold text-xs uppercase tracking-wider py-3 px-4">Flavour</TableHead>
+                            <TableHead className="font-semibold text-xs uppercase tracking-wider py-3 px-4 text-right">Packaged</TableHead>
+                            <TableHead className="font-semibold text-xs uppercase tracking-wider py-3 px-4 text-right">Distributed</TableHead>
+                            <TableHead className="font-semibold text-xs uppercase tracking-wider py-3 px-4 text-right">In storage</TableHead>
+                            <TableHead className="font-semibold text-xs uppercase tracking-wider py-3 px-4">By bottle size</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {storageFlavourRows
+                            .filter((r) => r.packagedBottles > 0)
+                            .map((row, idx) => (
+                              <TableRow
+                                key={row.key}
+                                className={cn(
+                                  "border-b border-slate-200 dark:border-slate-800",
+                                  idx % 2 === 0 ? "bg-white dark:bg-slate-900/50" : "bg-slate-50/80 dark:bg-slate-900/30"
+                                )}
+                              >
+                                <TableCell className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100">
+                                  {row.flavour}
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                                  {row.packagedBottles.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                                  {row.distributedBottles.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right">
+                                  <span
+                                    className={cn(
+                                      "inline-flex min-w-[3rem] justify-end font-bold tabular-nums",
+                                      row.inStorageBottles <= 0
+                                        ? "text-slate-500 dark:text-slate-400"
+                                        : "text-teal-700 dark:text-teal-300"
+                                    )}
+                                  >
+                                    {row.inStorageBottles.toLocaleString()}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-3 px-4">
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {Object.keys(row.bySize).length > 0 ? (
+                                      Object.entries(row.bySize).map(([size, qty]) => (
+                                        <Badge
+                                          key={`${row.key}-${size}`}
+                                          variant="secondary"
+                                          className="text-[11px] font-medium"
+                                        >
+                                          {size}: {Number(qty).toLocaleString()}
+                                        </Badge>
+                                      ))
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      “By bottle size” appears when delivery note lines include sizes that match packaging. If a note has
+                      quantities but no size, only the flavour totals (packaged / distributed / in storage) are reliable.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-teal-200 dark:border-teal-900/40 bg-teal-50/80 dark:bg-teal-950/20 p-6 text-center text-sm text-teal-900 dark:text-teal-100">
+                    No packaging recorded for this batch yet — nothing in storage. After packaging sessions are
+                    logged, remaining stock per flavour appears here until it is distributed.
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
