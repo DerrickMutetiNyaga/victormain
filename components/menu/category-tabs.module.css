@@ -1,0 +1,96 @@
+/* Scoped styles for CategoryTabs - Ultra premium design */
+
+.categoryContainer {
+  position: relative;
+  background: white;
+  padding: 1rem 0;
+  border-radius: 18px;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.fadeLeft {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.5rem;
+  background: linear-gradient(to right, white, transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.fadeRight {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.5rem;
+  background: linear-gradient(to left, white, transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.scrollContainer {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0 1rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+}
+
+.scrollContainer::-webkit-scrollbar {
+  display: none;
+}
+
+.categoryButton {
+  height: 44px;
+  padding: 0 1.125rem;
+  border-radius: 14px;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: fit-content;
+  touch-action: manipulation;
+  color: #6B7280;
+  background: #F8F7F4;
+  border: 1px solid transparent;
+  font-weight: 500;
+}
+
+.categoryButton:hover {
+  color: #111827;
+  background: #F3F4F6;
+  transform: scale(1.05);
+}
+
+.categoryButton:active {
+  transform: scale(0.98);
+}
+
+.categoryButtonActive {
+  background: #111827;
+  color: white;
+  border-color: #111827;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.15);
+}
+
+.categoryButtonActive:hover {
+  background: #1F2937;
+  color: white;
+  transform: scale(1.05);
+}
+
+.categoryEmoji {
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.categoryText {
+  font-size: 0.8125rem;
+}
