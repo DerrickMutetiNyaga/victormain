@@ -536,7 +536,7 @@ export default function FinishedGoodsPage() {
                                 <Package className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                                 <span className="break-words min-w-0">
                                   <span className="font-medium">Packages:</span>{" "}
-                                  {batch.packagingOutputs.map((po) => po.packageNumber).join(", ")}
+                                  {[...new Set(batch.packagingOutputs.map((po) => po.packageNumber).filter(Boolean))].join(", ")}
                                 </span>
                               </div>
                             )}

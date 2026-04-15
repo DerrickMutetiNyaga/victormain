@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Boxes, FileText, Users, Calendar, TrendingUp, AlertCircle, CheckCircle2, Clock, Grid3x3, Table as TableIcon, Package, Factory, Activity, Loader2, Trash2 } from "lucide-react"
+import { Plus, Search, Boxes, FileText, Users, Calendar, TrendingUp, AlertCircle, CheckCircle2, Clock, Grid3x3, Table as TableIcon, Package, Factory, Activity, Loader2, Trash2, Layers } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -29,6 +29,8 @@ interface PackagingOutput {
   batchId: string
   batchNumber: string
   packageNumber: string
+  packagingSessionGroupId?: string
+  packagingSessionLineIndex?: number
   volumeAllocated: number
   packagedLitres: number
   packagingDate: string | Date
@@ -59,6 +61,8 @@ interface PackagingOutput {
 interface PackagingSession {
   id: string
   sessionId: string
+  /** Human-readable title: package # + line + flavour when multi-line shares one package number */
+  sessionDisplayTitle: string
   batchNumber: string
   date: Date
   totalLitresUsed: number
@@ -78,6 +82,14 @@ interface PackagingSession {
   packedFlavourName?: string
   flavourName?: string
   stickerAuditLines?: string[]
+  packagingSessionGroupId?: string
+  packagingSessionLineIndex?: number
+}
+
+type SessionGroup = {
+  groupKey: string
+  packagingSessionGroupId?: string
+  sessions: PackagingSession[]
 }
 
 export default function PackagingSessionsPage() {
@@ -262,9 +274,15 @@ export default function PackagingSessionsPage() {
             })
           : undefined
 
+      const pkg = output.packageNumber || `PKG-${output.batchNumber}`
+      const flavourPart = String(output.flavourName || output.packedFlavourName || "").trim()
+      const linePart = String(output.packagingLine || "").trim()
+      const sessionDisplayTitle = [pkg, linePart, flavourPart].filter(Boolean).join(" · ")
+
       const session = {
         id: output._id || output.id,
-        sessionId: output.packageNumber || `PKG-${output.batchNumber}`,
+        sessionId: pkg,
+        sessionDisplayTitle,
         batchNumber: output.batchNumber,
         date: packagingDate,
         totalLitresUsed: output.packagedLitres || 0,
@@ -284,6 +302,14 @@ export default function PackagingSessionsPage() {
         packedFlavourName: output.packedFlavourName || output.flavourName,
         flavourName: output.flavourName,
         stickerAuditLines,
+        packagingSessionGroupId:
+          typeof output.packagingSessionGroupId === "string" && output.packagingSessionGroupId.trim()
+            ? output.packagingSessionGroupId.trim()
+            : undefined,
+        packagingSessionLineIndex:
+          typeof output.packagingSessionLineIndex === "number" && Number.isFinite(output.packagingSessionLineIndex)
+            ? output.packagingSessionLineIndex
+            : undefined,
       }
       
       console.log('[Packaging Output Page] Transformed session:', session.sessionId, 'from output:', output._id || output.id)
@@ -301,12 +327,51 @@ export default function PackagingSessionsPage() {
 
   const filteredSessions = useMemo(() => {
     return packagingSessions.filter((session) => {
-    const matchesSearch = session.sessionId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      session.batchNumber.toLowerCase().includes(searchQuery.toLowerCase())
+    const q = searchQuery.toLowerCase()
+    const matchesSearch =
+      session.sessionId.toLowerCase().includes(q) ||
+      session.sessionDisplayTitle.toLowerCase().includes(q) ||
+      session.batchNumber.toLowerCase().includes(q) ||
+      (session.flavourName && session.flavourName.toLowerCase().includes(q)) ||
+      (session.packagingSessionGroupId && session.packagingSessionGroupId.toLowerCase().includes(q))
     const matchesStatus = statusFilter === "all" || session.status === statusFilter
     return matchesSearch && matchesStatus
   })
   }, [packagingSessions, searchQuery, statusFilter])
+
+  const groupedFilteredSessions = useMemo((): SessionGroup[] => {
+    const map = new Map<string, PackagingSession[]>()
+    const order: string[] = []
+    for (const s of filteredSessions) {
+      const gid = s.packagingSessionGroupId?.trim()
+      const key = gid ? `grp:${gid}` : `solo:${s.id}`
+      if (!map.has(key)) {
+        order.push(key)
+        map.set(key, [])
+      }
+      map.get(key)!.push(s)
+    }
+    return order.map((key) => {
+      const sessions = map.get(key)!
+      const sorted = [...sessions].sort((a, b) => {
+        const ai = a.packagingSessionLineIndex ?? 0
+        const bi = b.packagingSessionLineIndex ?? 0
+        if (ai !== bi) return ai - bi
+        return a.sessionDisplayTitle.localeCompare(b.sessionDisplayTitle)
+      })
+      return {
+        groupKey: key,
+        packagingSessionGroupId: key.startsWith("grp:") ? key.slice(4) : undefined,
+        sessions: sorted,
+      }
+    })
+  }, [filteredSessions])
+
+  const sessionStripeIndex = useMemo(() => {
+    const m = new Map<string, number>()
+    filteredSessions.forEach((s, i) => m.set(s.id, i))
+    return m
+  }, [filteredSessions])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -557,8 +622,37 @@ export default function PackagingSessionsPage() {
               </CardContent>
             </Card>
           ) : viewMode === "grid" ? (
-            <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filteredSessions.map((session) => {
+            <div className="space-y-6">
+              {groupedFilteredSessions.map((group) => {
+                const groupLitres = group.sessions.reduce((a, s) => a + s.totalLitresUsed, 0)
+                const multi = group.sessions.length > 1
+                return (
+                  <div
+                    key={group.groupKey}
+                    title={group.packagingSessionGroupId}
+                    className={cn(
+                      "space-y-3",
+                      multi &&
+                        "rounded-xl border border-indigo-200/80 bg-indigo-50/35 p-3 shadow-sm dark:border-indigo-900/55 dark:bg-indigo-950/30 sm:p-4"
+                    )}
+                  >
+                    {multi && (
+                      <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200/70 pb-2.5 dark:border-indigo-800/55">
+                        <Badge
+                          variant="outline"
+                          className="border-indigo-400 bg-indigo-100/90 text-indigo-900 dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-100"
+                        >
+                          <Layers className="mr-1 h-3 w-3" />
+                          Multi-flavour save
+                        </Badge>
+                        <span className="text-sm font-semibold text-foreground">{group.sessions[0]?.sessionId}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {group.sessions.length} lines · {groupLitres.toFixed(2)} L · {group.sessions[0]?.batchNumber}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                      {group.sessions.map((session) => {
                 const totalOutput = session.output250ml + session.output500ml + session.output1L + session.output2L + (session.otherSizes?.reduce((sum, s) => sum + s.quantity, 0) || 0)
                 const StatusIcon = session.status === "Completed" ? CheckCircle2 : session.status === "In Progress" ? Clock : AlertCircle
 
@@ -567,6 +661,7 @@ export default function PackagingSessionsPage() {
                     key={session.id}
                     className={cn(
                       "border-slate-200 dark:border-slate-800 bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-950 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1",
+                      multi && "ring-1 ring-indigo-200/70 dark:ring-indigo-800/50",
                       session.status === "Completed" && "border-green-200 dark:border-green-800/50",
                       session.status === "In Progress" && "border-blue-200 dark:border-blue-800/50",
                       session.status === "Pending" && "border-amber-200 dark:border-amber-800/50"
@@ -575,8 +670,8 @@ export default function PackagingSessionsPage() {
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-base font-bold text-foreground mb-1">
-                            {session.sessionId}
+                          <CardTitle className="text-base font-bold text-foreground mb-1 leading-tight">
+                            {session.sessionDisplayTitle}
                           </CardTitle>
                           <p className="text-xs text-muted-foreground font-medium">{session.batchNumber}</p>
                         </div>
@@ -730,6 +825,10 @@ export default function PackagingSessionsPage() {
                     </CardContent>
                   </Card>
                 )
+                      })}
+                    </div>
+                  </div>
+                )
               })}
             </div>
           ) : (
@@ -798,21 +897,53 @@ export default function PackagingSessionsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredSessions.map((session, idx) => {
+                      {groupedFilteredSessions.map((group) => {
+                        const multi = group.sessions.length > 1
+                        const groupLitres = group.sessions.reduce((a, s) => a + s.totalLitresUsed, 0)
+                        return (
+                          <Fragment key={group.groupKey}>
+                            {multi && (
+                              <TableRow className="bg-indigo-100/85 dark:bg-indigo-950/45 border-b border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100/85 dark:hover:bg-indigo-950/45">
+                                <TableCell colSpan={11} className="py-2.5 px-6">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Layers className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                                    <Badge
+                                      variant="outline"
+                                      className="border-indigo-400 bg-white/80 text-indigo-900 dark:border-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-100"
+                                    >
+                                      Multi-flavour save
+                                    </Badge>
+                                    <span className="text-sm font-semibold">{group.sessions[0]?.sessionId}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {group.sessions.length} lines · {groupLitres.toFixed(2)} L · {group.sessions[0]?.batchNumber}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            {group.sessions.map((session) => {
                         const totalOutput = session.output250ml + session.output500ml + session.output1L + session.output2L + (session.otherSizes?.reduce((sum, s) => sum + s.quantity, 0) || 0)
                         const StatusIcon = session.status === "Completed" ? CheckCircle2 : session.status === "In Progress" ? Clock : AlertCircle
+                        const stripeIdx = sessionStripeIndex.get(session.id) ?? 0
                         return (
                           <TableRow
                             key={session.id}
                             className={cn(
                               "group transition-all duration-200 border-b border-slate-200 dark:border-slate-800",
                               "hover:bg-gradient-to-r hover:from-red-50/80 hover:via-red-50/40 hover:to-transparent dark:hover:from-red-950/30 dark:hover:via-red-950/15 dark:hover:to-transparent",
-                              idx % 2 === 0 ? "bg-white dark:bg-slate-900/50" : "bg-slate-50/30 dark:bg-slate-900/30"
+                              multi && "border-l-4 border-l-indigo-400/90 dark:border-l-indigo-500",
+                              multi
+                                ? stripeIdx % 2 === 0
+                                  ? "bg-indigo-50/40 dark:bg-indigo-950/28"
+                                  : "bg-indigo-50/20 dark:bg-indigo-950/18"
+                                : stripeIdx % 2 === 0
+                                  ? "bg-white dark:bg-slate-900/50"
+                                  : "bg-slate-50/30 dark:bg-slate-900/30"
                             )}
                           >
                             <TableCell className="px-6 py-4">
-                              <div className="font-semibold text-sm text-foreground group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                                {session.sessionId}
+                              <div className="font-semibold text-sm text-foreground group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors max-w-[280px] leading-snug">
+                                {session.sessionDisplayTitle}
                               </div>
                             </TableCell>
                             <TableCell className="px-6 py-4">
@@ -940,6 +1071,9 @@ export default function PackagingSessionsPage() {
                               </Button>
                             </TableCell>
                           </TableRow>
+                        )
+                            })}
+                          </Fragment>
                         )
                       })}
                     </TableBody>

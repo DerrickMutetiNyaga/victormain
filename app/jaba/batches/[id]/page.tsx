@@ -924,7 +924,8 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                       <div className="space-y-2">
                         {packagingOutputs.map((po: any) => (
                           <div key={po._id || po.id} className="text-sm text-blue-900 dark:text-blue-100">
-                            {po.packageNumber || 'N/A'} - {po.packagedLitres || 0}L packaged
+                            {(po.flavourName || po.packedFlavourName || "Line")} · {po.packageNumber || "N/A"} ·{" "}
+                            {po.packagingLine || "—"} — {po.packagedLitres || 0}L
                           </div>
                         ))}
                       </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, Suspense } from "react"
+import { useState, useEffect, useMemo, useRef, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,8 @@ import Link from "next/link"
 import { productionOutputs } from "@/lib/jaba-data"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { computePackagedLitresFromContainers } from "@/lib/jaba-packaging-calculations"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface ContainerRow {
   size: string
@@ -28,6 +30,22 @@ type PackagingStockItem = {
   unit: string
   kind: string
 }
+
+type FlavourLinePackState = {
+  included: boolean
+  containers: ContainerRow[]
+  volumeAllocated: string
+  defects: string
+  defectReasons: string
+  machineEfficiency: string
+}
+
+const defaultContainerRows = (): ContainerRow[] => [
+  { size: "250ml", quantity: "" },
+  { size: "500ml", quantity: "" },
+  { size: "1L", quantity: "" },
+  { size: "2L", quantity: "" },
+]
 
 function CreatePackagingSessionPageContent() {
   const router = useRouter()
@@ -72,6 +90,27 @@ function CreatePackagingSessionPageContent() {
   const [packagingStockLoading, setPackagingStockLoading] = useState(true)
   const [packagingStockError, setPackagingStockError] = useState<string | null>(null)
 
+  /** Multi-flavour session: one entry per flavour line id */
+  const [lineStates, setLineStates] = useState<Record<string, FlavourLinePackState>>({})
+  const [stockByFlavourLineId, setStockByFlavourLineId] = useState<
+    Record<
+      string,
+      {
+        bySize: Record<
+          "250ml" | "500ml" | "1L" | "2L",
+          { bottle: PackagingStockItem | null; sticker: PackagingStockItem | null }
+        >
+      } | null
+    >
+  >({})
+  const [stockByLineLoading, setStockByLineLoading] = useState(false)
+  const idempotencyKeyRef = useRef<string | null>(null)
+
+  const getOrCreateIdempotencyKey = () => {
+    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID()
+    return idempotencyKeyRef.current
+  }
+
   // Fetch available batches for selection
   useEffect(() => {
     fetchAvailableBatches()
@@ -79,6 +118,10 @@ function CreatePackagingSessionPageContent() {
 
 
   // Get batchId from URL params if available and fetch batch data
+  useEffect(() => {
+    idempotencyKeyRef.current = null
+  }, [batchId])
+
   useEffect(() => {
     const batchIdParam = searchParams.get("batchId")
     if (batchIdParam) {
@@ -100,6 +143,28 @@ function CreatePackagingSessionPageContent() {
       const cap = Math.max(0, Number(line.remainingPackLitres) || 0)
       setVolumeAllocated(cap > 0 ? String(cap) : String(Number(line.allocatedLitres) || 0))
     }
+    setLineStates((prev) => {
+      const base =
+        prev[fid] ||
+        ({
+          included: false,
+          containers: defaultContainerRows(),
+          volumeAllocated: "0",
+          defects: "",
+          defectReasons: "",
+          machineEfficiency: "",
+        } satisfies FlavourLinePackState)
+      const cap = Math.max(0, Number(line?.remainingPackLitres) || 0)
+      return {
+        ...prev,
+        [fid]: {
+          ...base,
+          included: true,
+          volumeAllocated:
+            cap > 0 ? String(cap) : String(Number(line?.allocatedLitres) || 0),
+        },
+      }
+    })
   }, [searchParams, batchData])
 
   const fetchAvailableBatches = async () => {
@@ -141,6 +206,22 @@ function CreatePackagingSessionPageContent() {
         const lines = allLines.filter(
           (l: any) => Math.max(0, Number(l.remainingPackLitres) || 0) > 1e-6
         )
+        const nextLineStates: Record<string, FlavourLinePackState> = {}
+        for (const l of lines) {
+          const lid = String(l._id || l.id || "")
+          if (!lid) continue
+          const cap = Math.max(0, Number(l.remainingPackLitres) || 0)
+          nextLineStates[lid] = {
+            included: false,
+            containers: defaultContainerRows(),
+            volumeAllocated: cap > 0 ? String(cap) : String(Number(l.allocatedLitres) || 0),
+            defects: "",
+            defectReasons: "",
+            machineEfficiency: "",
+          }
+        }
+        setLineStates(nextLineStates)
+
         if (lines.length > 0) {
           const pick = lines[0]
           setSelectedFlavourLineId(String(pick._id || pick.id || ""))
@@ -179,14 +260,43 @@ function CreatePackagingSessionPageContent() {
     setContainers(containers.filter((_, i) => i !== index))
   }
 
+  const patchLineState = (lid: string, patch: Partial<FlavourLinePackState>) => {
+    setLineStates((prev) => {
+      const cur = prev[lid]
+      if (!cur) return prev
+      return { ...prev, [lid]: { ...cur, ...patch } }
+    })
+  }
+
+  const updateLineContainer = (lid: string, index: number, field: keyof ContainerRow, value: string) => {
+    setLineStates((prev) => {
+      const st = prev[lid]
+      if (!st) return prev
+      const next = [...st.containers]
+      next[index] = { ...next[index], [field]: value }
+      return { ...prev, [lid]: { ...st, containers: next } }
+    })
+  }
+
+  const addLineContainerRow = (lid: string) => {
+    setLineStates((prev) => {
+      const st = prev[lid]
+      if (!st) return prev
+      return { ...prev, [lid]: { ...st, containers: [...st.containers, { size: "250ml", quantity: "" }] } }
+    })
+  }
+
+  const removeLineContainerRow = (lid: string, index: number) => {
+    setLineStates((prev) => {
+      const st = prev[lid]
+      if (!st) return prev
+      return { ...prev, [lid]: { ...st, containers: st.containers.filter((_, i) => i !== index) } }
+    })
+  }
+
   const handleSavePackaging = async () => {
     if (!batchId || !batchData) {
       toast.error("Please select a batch")
-      return
-    }
-
-    if (!volumeAllocated || parseFloat(volumeAllocated) <= 0) {
-      toast.error("Please enter volume allocated for packaging")
       return
     }
 
@@ -205,6 +315,122 @@ function CreatePackagingSessionPageContent() {
       return
     }
 
+    const openLines = (batchData.flavourOutputs || []).filter(
+      (l: any) => Math.max(0, Number(l.remainingPackLitres) || 0) > 1e-6
+    )
+    const stdSizes = ["250ml", "500ml", "1L", "2L"] as const
+
+    if (openLines.length > 0) {
+      const includedLines = openLines.filter((l: any) => lineStates[String(l._id || l.id)]?.included)
+      if (includedLines.length === 0) {
+        toast.error("Include at least one flavour line and enter quantities before saving.")
+        return
+      }
+      for (const l of includedLines) {
+        const lid = String(l._id || l.id)
+        const st = lineStates[lid]
+        if (!st) continue
+        const lit = computePackagedLitresFromContainers(st.containers)
+        const alloc = parseFloat(st.volumeAllocated) || 0
+        if (lit <= 0) {
+          toast.error(`Enter container quantities for ${l.flavourName || "flavour line"}.`)
+          return
+        }
+        if (alloc <= 0) {
+          toast.error(`Set volume allocated for ${l.flavourName || "flavour line"}.`)
+          return
+        }
+        if (lit > alloc + 1e-6) {
+          toast.error(
+            `Packed litres (${lit.toFixed(2)}L) exceed allocated (${alloc.toFixed(2)}L) for ${l.flavourName || "line"}.`
+          )
+          return
+        }
+        const fname = String(l.flavourName || l.flavor || "").trim()
+        const pack = stockByFlavourLineId[lid]
+        for (const s of stdSizes) {
+          let q = 0
+          for (const c of st.containers) {
+            if (c.size === s) q += Math.max(0, parseFloat(c.quantity) || 0)
+          }
+          if (q > 0 && fname && !pack?.bySize?.[s]?.sticker) {
+            toast.error(
+              `No flavour-specific sticker item for ${s} and "${fname}". Create it under Raw Materials → Packaging (Stickers) before packing.`
+            )
+            return
+          }
+        }
+      }
+      if (packagingStockInsufficient || stickerMissingForPackedSizes) {
+        toast.error(
+          "This session needs more bottles or stickers than are available in the warehouse. Reduce quantities or restock before saving."
+        )
+        return
+      }
+
+      const packagingLines = includedLines.map((l: any) => {
+        const lid = String(l._id || l.id)
+        const st = lineStates[lid]!
+        const lit = computePackagedLitresFromContainers(st.containers)
+        return {
+          flavourLineId: lid,
+          volumeAllocated: parseFloat(st.volumeAllocated) || 0,
+          containers: st.containers,
+          totalPackedLitres: lit,
+          defects: st.defects,
+          defectReasons: st.defectReasons,
+          machineEfficiency: st.machineEfficiency,
+        }
+      })
+
+      const totalLitres = packagingLines.reduce((s, x) => s + (Number(x.totalPackedLitres) || 0), 0)
+
+      setIsSaving(true)
+      try {
+        const requestBody: Record<string, unknown> = {
+          batchId,
+          batchNumber: batchData.batchNumber,
+          packageNumber,
+          packagingDate,
+          supervisor,
+          teamMembers,
+          safetyChecks,
+          packagingLines,
+          idempotencyKey: getOrCreateIdempotencyKey(),
+        }
+        const response = await fetch("/api/jaba/packaging-output", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to save packaging session")
+        }
+        idempotencyKeyRef.current = null
+        const pkg = data.packageNumber || packageNumber
+        if (data.idempotentReplay) {
+          toast.info("This save was already recorded — inventory was not duplicated.")
+        } else {
+          toast.success(
+            `Saved multi-flavour packaging session ${pkg}. Total ${totalLitres.toFixed(2)}L across ${packagingLines.length} line(s).`
+          )
+        }
+        router.push("/jaba/batches")
+      } catch (error: unknown) {
+        console.error("Error saving packaging session:", error)
+        toast.error(error instanceof Error ? error.message : "Failed to save packaging session")
+      } finally {
+        setIsSaving(false)
+      }
+      return
+    }
+
+    if (!volumeAllocated || parseFloat(volumeAllocated) <= 0) {
+      toast.error("Please enter volume allocated for packaging")
+      return
+    }
+
     const totalPacked = calculateOutput()
     if (totalPacked <= 0) {
       toast.error("Please enter container quantities")
@@ -212,22 +438,19 @@ function CreatePackagingSessionPageContent() {
     }
 
     if (packagingStockInsufficient) {
-      toast.error("This session needs more bottles or stickers than are available in the warehouse. Reduce quantities or restock before saving.")
+      toast.error(
+        "This session needs more bottles or stickers than are available in the warehouse. Reduce quantities or restock before saving."
+      )
       return
     }
 
-    const openLines = (batchData.flavourOutputs || []).filter(
-      (l: any) => Math.max(0, Number(l.remainingPackLitres) || 0) > 1e-6
-    )
-    let saveFlavour = ""
-    if (openLines.length > 0) {
-      const line = openLines.find((l: any) => String(l._id || l.id) === selectedFlavourLineId)
-      saveFlavour = line ? String(line.flavourName || line.flavor || "").trim() : ""
-    } else {
-      saveFlavour = String(batchData.flavor || batchData.flavour || "").trim()
+    const saveFlavour = String(batchData.flavor || batchData.flavour || "").trim()
+    const draftQty: Record<(typeof stdSizes)[number], number> = {
+      "250ml": 0,
+      "500ml": 0,
+      "1L": 0,
+      "2L": 0,
     }
-    const stdSizes = ["250ml", "500ml", "1L", "2L"] as const
-    const draftQty: Record<(typeof stdSizes)[number], number> = { "250ml": 0, "500ml": 0, "1L": 0, "2L": 0 }
     for (const c of containers) {
       const sz = c.size as (typeof stdSizes)[number]
       if (stdSizes.includes(sz)) {
@@ -245,7 +468,6 @@ function CreatePackagingSessionPageContent() {
       }
     }
 
-    // Validate that total packed doesn't exceed allocated volume
     const allocated = getAllocatedVolume()
     if (totalPacked > allocated) {
       toast.error(`Total packed (${totalPacked.toFixed(2)}L) exceeds allocated volume (${allocated.toFixed(2)}L)`)
@@ -254,8 +476,6 @@ function CreatePackagingSessionPageContent() {
 
     setIsSaving(true)
     try {
-      console.log('[Packaging Form] Sending package number:', packageNumber)
-      const lines = batchData.flavourOutputs || []
       const requestBody: Record<string, unknown> = {
         batchId: batchId,
         batchNumber: batchData.batchNumber,
@@ -270,40 +490,34 @@ function CreatePackagingSessionPageContent() {
         defectReasons: defectReasons,
         machineEfficiency: machineEfficiency,
         safetyChecks: safetyChecks,
+        idempotencyKey: getOrCreateIdempotencyKey(),
       }
-      if (lines.length > 0) {
-        if (!selectedFlavourLineId) {
-          toast.error("Select a flavour line for this batch")
-          setIsSaving(false)
-          return
-        }
-        requestBody.flavourLineId = selectedFlavourLineId
-      }
-      console.log('[Packaging Form] Request body:', JSON.stringify(requestBody, null, 2))
-      
-      const response = await fetch('/api/jaba/packaging-output', {
-        method: 'POST',
+      const response = await fetch("/api/jaba/packaging-output", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to save packaging session')
+        throw new Error(data.error || "Failed to save packaging session")
       }
 
-      console.log('[Packaging Form] Response received:', data)
-      console.log('[Packaging Form] Package number in response:', data.packaging?.packageNumber)
-      
-      toast.success(`Packaging session saved! Package: ${data.packaging?.packageNumber || packageNumber}. Packaged ${totalPacked.toFixed(2)}L. Remaining: ${data.packaging.remainingLitres.toFixed(2)}L`)
-      
-      // Redirect back to batches page to see updated remaining litres
-      router.push('/jaba/batches')
-    } catch (error: any) {
-      console.error('Error saving packaging session:', error)
-      toast.error(error.message || 'Failed to save packaging session')
+      idempotencyKeyRef.current = null
+      if (data.idempotentReplay) {
+        toast.info("This save was already recorded — inventory was not duplicated.")
+      } else {
+        toast.success(
+          `Packaging session saved! Package: ${data.packaging?.packageNumber || packageNumber}. Packaged ${totalPacked.toFixed(2)}L. Remaining: ${data.packaging.remainingLitres.toFixed(2)}L`
+        )
+      }
+
+      router.push("/jaba/batches")
+    } catch (error: unknown) {
+      console.error("Error saving packaging session:", error)
+      toast.error(error instanceof Error ? error.message : "Failed to save packaging session")
     } finally {
       setIsSaving(false)
     }
@@ -427,9 +641,57 @@ function CreatePackagingSessionPageContent() {
     (l: any) => Math.max(0, Number(l.remainingPackLitres) || 0) > 1e-6
   )
   const hasFlavourOutputs = allFlavourLines.length > 0
-  const selectedLine = flavourLines.find(
-    (l: any) => String(l._id || l.id) === selectedFlavourLineId
-  )
+
+  useEffect(() => {
+    const lines = (batchData?.flavourOutputs || []).filter(
+      (l: any) => Math.max(0, Number(l.remainingPackLitres) || 0) > 1e-6
+    )
+    if (!lines.length) {
+      setStockByFlavourLineId({})
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setStockByLineLoading(true)
+      try {
+        const entries = await Promise.all(
+          lines.map(async (l: any) => {
+            const lid = String(l._id || l.id || "")
+            const name = String(l.flavourName || l.flavor || "").trim()
+            const q = name ? `?flavour=${encodeURIComponent(name)}` : ""
+            const res = await fetch(`/api/jaba/packaging-material-stock${q}`)
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || "Failed to load packaging material stock")
+            return [
+              lid,
+              {
+                bySize:
+                  data.bySize ??
+                  ({
+                    "250ml": { bottle: null, sticker: null },
+                    "500ml": { bottle: null, sticker: null },
+                    "1L": { bottle: null, sticker: null },
+                    "2L": { bottle: null, sticker: null },
+                  } as Record<
+                    "250ml" | "500ml" | "1L" | "2L",
+                    { bottle: PackagingStockItem | null; sticker: PackagingStockItem | null }
+                  >),
+              },
+            ] as const
+          })
+        )
+        if (!cancelled) setStockByFlavourLineId(Object.fromEntries(entries))
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) setStockByFlavourLineId({})
+      } finally {
+        if (!cancelled) setStockByLineLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [batchData?.flavourOutputs, batchId])
 
   /** Flavour used to resolve sticker SKUs (must match raw material flavour tag / name). */
   const resolvedFlavourForStock = useMemo(() => {
@@ -479,14 +741,17 @@ function CreatePackagingSessionPageContent() {
   }, [resolvedFlavourForStock])
 
   const availableVolume = batchData
-    ? flavourLines.length > 0 && selectedLine
-      ? Math.max(0, Number(selectedLine.remainingPackLitres) || 0)
+    ? flavourLines.length > 0
+      ? flavourLines.reduce(
+          (sum, l: any) => sum + Math.max(0, Number(l.remainingPackLitres) || 0),
+          0
+        )
       : hasFlavourOutputs
         ? 0
-      : batchData.outputSummary?.remainingLitres !== undefined &&
-          batchData.outputSummary.remainingLitres <= batchData.totalLitres
-        ? batchData.outputSummary.remainingLitres
-        : batchData.totalLitres
+        : batchData.outputSummary?.remainingLitres !== undefined &&
+            batchData.outputSummary.remainingLitres <= batchData.totalLitres
+          ? batchData.outputSummary.remainingLitres
+          : batchData.totalLitres
     : 0
   
   const remainingLitres = batchData && volumeAllocated
@@ -522,8 +787,8 @@ function CreatePackagingSessionPageContent() {
   }
 
   type PreviewEntry = { stock: number; unit: string; name: string; deduct: number }
-  const bottlePreviewByDocId = new Map<string, PreviewEntry>()
-  const stickerPreviewByDocId = new Map<string, PreviewEntry>()
+  let bottlePreviewByDocId = new Map<string, PreviewEntry>()
+  let stickerPreviewByDocId = new Map<string, PreviewEntry>()
 
   for (const size of standardSizes) {
     const bottle = packagingStock?.bySize?.[size]?.bottle
@@ -543,20 +808,84 @@ function CreatePackagingSessionPageContent() {
     }
   }
 
+  /** Combined bottle/sticker usage when multiple flavour lines are selected (same warehouse SKUs may be shared). */
+  if (flavourLines.length > 0) {
+    const bMap = new Map<string, PreviewEntry>()
+    const sMap = new Map<string, PreviewEntry>()
+    for (const l of flavourLines) {
+      const lid = String(l._id || l.id)
+      const st = lineStates[lid]
+      if (!st?.included) continue
+      const pack = stockByFlavourLineId[lid]
+      const flavourName = String(l.flavourName || l.flavor || "").trim()
+      for (const size of standardSizes) {
+        let qty = 0
+        for (const c of st.containers) {
+          if (c.size === size) qty += Math.max(0, parseFloat(c.quantity) || 0)
+        }
+        const bottle = pack?.bySize?.[size]?.bottle ?? null
+        const sticker = pack?.bySize?.[size]?.sticker ?? null
+        if (bottle && qty > 0) {
+          const existing = bMap.get(bottle.id)
+          if (existing) existing.deduct += qty
+          else bMap.set(bottle.id, { stock: bottle.currentStock, unit: bottle.unit, name: bottle.name, deduct: qty })
+        }
+        if (sticker && qty > 0) {
+          const existing = sMap.get(sticker.id)
+          if (existing) existing.deduct += qty
+          else sMap.set(sticker.id, { stock: sticker.currentStock, unit: sticker.unit, name: sticker.name, deduct: qty })
+        }
+        if (qty > 0 && flavourName && !sticker) {
+          /* stickerMissing tracked below */
+        }
+      }
+    }
+    bottlePreviewByDocId = bMap
+    stickerPreviewByDocId = sMap
+  }
+
   const packagingStockInsufficient = Array.from(bottlePreviewByDocId.values()).some((e) => e.stock - e.deduct < 0) ||
     Array.from(stickerPreviewByDocId.values()).some((e) => e.stock - e.deduct < 0)
 
   const stickerMissingForPackedSizes =
-    resolvedFlavourForStock.length > 0 &&
-    standardSizes.some((size) => {
-      const qty = draftUnitsBySize[size]
-      if (qty <= 0) return false
-      return !packagingStock?.bySize?.[size]?.sticker
-    })
+    flavourLines.length > 0
+      ? flavourLines.some((l: any) => {
+          const lid = String(l._id || l.id)
+          const st = lineStates[lid]
+          if (!st?.included) return false
+          const pack = stockByFlavourLineId[lid]
+          const fname = String(l.flavourName || l.flavor || "").trim()
+          return standardSizes.some((size) => {
+            let qty = 0
+            for (const c of st.containers) {
+              if (c.size === size) qty += Math.max(0, parseFloat(c.quantity) || 0)
+            }
+            return qty > 0 && fname.length > 0 && !pack?.bySize?.[size]?.sticker
+          })
+        })
+      : resolvedFlavourForStock.length > 0 &&
+        standardSizes.some((size) => {
+          const qty = draftUnitsBySize[size]
+          if (qty <= 0) return false
+          return !packagingStock?.bySize?.[size]?.sticker
+        })
 
   const packagingMaterialsBlocked = packagingStockInsufficient || stickerMissingForPackedSizes
 
   const previewBottleRemainingForSize = (size: (typeof standardSizes)[number]) => {
+    if (flavourLines.length > 0) {
+      const bottle = flavourLines
+        .map((l: any) => {
+          const lid = String(l._id || l.id)
+          if (!lineStates[lid]?.included) return null
+          return stockByFlavourLineId[lid]?.bySize?.[size]?.bottle ?? null
+        })
+        .find((b: PackagingStockItem | null | undefined) => b != null)
+      if (!bottle) return null
+      const entry = bottlePreviewByDocId.get(bottle.id)
+      if (!entry) return bottle.currentStock
+      return entry.stock - entry.deduct
+    }
     const bottle = packagingStock?.bySize?.[size]?.bottle
     if (!bottle) return null
     const entry = bottlePreviewByDocId.get(bottle.id)
@@ -565,12 +894,123 @@ function CreatePackagingSessionPageContent() {
   }
 
   const previewStickerRemainingForSize = (size: (typeof standardSizes)[number]) => {
+    if (flavourLines.length > 0) {
+      const sticker = flavourLines
+        .map((l: any) => {
+          const lid = String(l._id || l.id)
+          if (!lineStates[lid]?.included) return null
+          return stockByFlavourLineId[lid]?.bySize?.[size]?.sticker ?? null
+        })
+        .find((s: PackagingStockItem | null | undefined) => s != null)
+      if (!sticker) return null
+      const entry = stickerPreviewByDocId.get(sticker.id)
+      if (!entry) return sticker.currentStock
+      return entry.stock - entry.deduct
+    }
     const sticker = packagingStock?.bySize?.[size]?.sticker
     if (!sticker) return null
     const entry = stickerPreviewByDocId.get(sticker.id)
     if (!entry) return sticker.currentStock
     return entry.stock - entry.deduct
   }
+
+  const getMaterialsPreviewForSize = (size: (typeof standardSizes)[number]) => {
+    if (flavourLines.length === 0) {
+      return packagingStock?.bySize?.[size] ?? { bottle: null, sticker: null }
+    }
+    const hit = flavourLines
+      .map((l: any) => {
+        const lid = String(l._id || l.id)
+        if (!lineStates[lid]?.included) return null
+        return stockByFlavourLineId[lid]?.bySize?.[size] ?? null
+      })
+      .find((p) => p?.bottle || p?.sticker)
+    return hit ?? stockByFlavourLineId[String(flavourLines[0]?._id || flavourLines[0]?.id)]?.bySize?.[size] ?? {
+      bottle: null,
+      sticker: null,
+    }
+  }
+
+  const linePackedLitres = (lid: string) => {
+    const st = lineStates[lid]
+    if (!st) return 0
+    return computePackagedLitresFromContainers(st.containers)
+  }
+
+  const getLineMaxQtyForSize = (lid: string, size: string, customSize?: string) => {
+    const allocated = parseFloat(lineStates[lid]?.volumeAllocated || "0") || 0
+    if (allocated <= 0) return 0
+    if (size === "250ml") return Math.floor(allocated / 0.25)
+    if (size === "500ml") return Math.floor(allocated / 0.5)
+    if (size === "1L") return Math.floor(allocated / 1)
+    if (size === "2L") return Math.floor(allocated / 2)
+    if (customSize) {
+      const customSizeLitres = parseFloat(customSize) / 1000
+      if (customSizeLitres <= 0) return 0
+      return Math.floor(allocated / customSizeLitres)
+    }
+    return 0
+  }
+
+  const isValidLineContainerQuantity = (
+    lid: string,
+    index: number,
+    quantity: string
+  ): { valid: boolean; error: string } => {
+    const st = lineStates[lid]
+    if (!st) return { valid: true, error: "" }
+    const container = st.containers[index]
+    const qty = parseFloat(quantity) || 0
+    if (quantity.trim() !== "" && qty < 0) {
+      return { valid: false, error: "Quantity cannot be negative" }
+    }
+    if (qty <= 0) return { valid: true, error: "" }
+    const allocated = parseFloat(st.volumeAllocated) || 0
+    if (allocated <= 0) {
+      return { valid: false, error: "Set volume allocated for this line first" }
+    }
+    let totalLitres = 0
+    st.containers.forEach((c, idx) => {
+      const currentQty = idx === index ? qty : Math.max(0, parseFloat(c.quantity) || 0)
+      if (c.size === "250ml") totalLitres += currentQty * 0.25
+      else if (c.size === "500ml") totalLitres += currentQty * 0.5
+      else if (c.size === "1L") totalLitres += currentQty * 1
+      else if (c.size === "2L") totalLitres += currentQty * 2
+      else if (c.customSize) {
+        const customSizeLitres = parseFloat(c.customSize) / 1000
+        totalLitres += currentQty * customSizeLitres
+      }
+    })
+    if (totalLitres > allocated + 1e-6) {
+      return {
+        valid: false,
+        error: `Total exceeds allocated (${allocated.toFixed(2)}L). Current: ${totalLitres.toFixed(2)}L`,
+      }
+    }
+    const maxQty = getLineMaxQtyForSize(lid, container.size, container.customSize)
+    if (qty > maxQty) {
+      return { valid: false, error: `Max ${maxQty} for this size (${allocated.toFixed(2)}L allocated)` }
+    }
+    return { valid: true, error: "" }
+  }
+
+  const multiSessionTotalLitres = flavourLines.reduce((sum, l: any) => {
+    const lid = String(l._id || l.id)
+    if (!lineStates[lid]?.included) return sum
+    return sum + linePackedLitres(lid)
+  }, 0)
+
+  const multiAllocatedSessionSum = flavourLines.reduce((sum, l: any) => {
+    const lid = String(l._id || l.id)
+    if (!lineStates[lid]?.included) return sum
+    return sum + (parseFloat(lineStates[lid]?.volumeAllocated || "0") || 0)
+  }, 0)
+
+  const summaryPackedLitres = flavourLines.length > 0 ? multiSessionTotalLitres : totalPackedLitres
+  const summaryAllocatedLitres = flavourLines.length > 0 ? multiAllocatedSessionSum : getAllocatedVolume()
+  const summaryOverPacked = summaryPackedLitres > summaryAllocatedLitres + 1e-6
+
+  const stockPanelLoading = packagingStockLoading || (flavourLines.length > 0 && stockByLineLoading)
 
   return (
     <>
@@ -614,6 +1054,7 @@ function CreatePackagingSessionPageContent() {
                     setSupervisor("")
                     setVolumeAllocated("")
                     setSelectedFlavourLineId("")
+                    setLineStates({})
                   }
                 }}
                 disabled={loadingBatch}
@@ -664,62 +1105,45 @@ function CreatePackagingSessionPageContent() {
                     </div>
                   </div>
                   {flavourLines.length > 0 && (
-                    <div className="space-y-2 pt-1 border-t border-green-200/70 dark:border-green-900/50">
+                    <div className="space-y-3 pt-1 border-t border-green-200/70 dark:border-green-900/50">
                       <Label className="text-xs font-semibold text-green-900 dark:text-green-100">
-                        Flavour line to package *
+                        Flavour lines in this session
                       </Label>
-                      <Select
-                        value={selectedFlavourLineId}
-                        onValueChange={(v) => {
-                          setSelectedFlavourLineId(v)
-                          const line = flavourLines.find(
-                            (l: any) => String(l._id || l.id) === v
+                      <p className="text-xs text-green-800/90 dark:text-green-200/90">
+                        Tick every flavour you are packaging in this save. Stock checks combine all selected lines.
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {flavourLines.map((l: any) => {
+                          const lid = String(l._id || l.id)
+                          const checked = Boolean(lineStates[lid]?.included)
+                          return (
+                            <label
+                              key={lid}
+                              className={cn(
+                                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                                checked
+                                  ? "border-emerald-400 bg-emerald-50/90 dark:border-emerald-700 dark:bg-emerald-950/40"
+                                  : "border-green-200/80 bg-white/70 dark:border-green-900/50 dark:bg-slate-900/50"
+                              )}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(v) => patchLineState(lid, { included: v === true })}
+                                className="mt-0.5"
+                              />
+                              <span className="space-y-1 text-sm leading-snug">
+                                <span className="font-bold text-green-900 dark:text-green-50">
+                                  {l.flavourName || l.flavor}
+                                </span>
+                                <span className="block text-[11px] text-muted-foreground">
+                                  Alloc {Number(l.allocatedLitres || 0).toFixed(2)}L · Left to pack{" "}
+                                  {Number(l.remainingPackLitres ?? 0).toFixed(2)}L
+                                </span>
+                              </span>
+                            </label>
                           )
-                          if (line) {
-                            const cap = Math.max(0, Number(line.remainingPackLitres) || 0)
-                            setVolumeAllocated(
-                              cap > 0 ? String(cap) : String(Number(line.allocatedLitres) || 0)
-                            )
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-10 border-green-200 dark:border-green-900 bg-white/80 dark:bg-slate-900">
-                          <SelectValue placeholder="Choose flavour" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {flavourLines.map((l: any) => (
-                            <SelectItem key={l._id || l.id} value={String(l._id || l.id)}>
-                              {l.flavourName || l.flavor} — {Number(l.allocatedLitres).toFixed(1)}L alloc ·{" "}
-                              {Number(l.remainingPackLitres ?? 0).toFixed(1)}L left to pack
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      {selectedLine ? (
-                        <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/30 dark:border-emerald-700 p-3 shadow-sm">
-                          <p className="text-[11px] uppercase tracking-wide font-bold text-emerald-700 dark:text-emerald-300">
-                            Now packaging
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-3">
-                            <span className="text-sm font-bold text-emerald-900 dark:text-emerald-100">
-                              {selectedLine.flavourName || selectedLine.flavor}
-                            </span>
-                            <Badge variant="secondary" className="bg-white/90 border border-emerald-200 text-emerald-800 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-200">
-                              Alloc: {Number(selectedLine.allocatedLitres || 0).toFixed(2)}L
-                            </Badge>
-                            <Badge variant="secondary" className="bg-white/90 border border-amber-200 text-amber-700 dark:bg-amber-900/40 dark:border-amber-700 dark:text-amber-200">
-                              Left: {Number(selectedLine.remainingPackLitres || 0).toFixed(2)}L
-                            </Badge>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-amber-300 bg-amber-50/90 dark:bg-amber-950/30 dark:border-amber-700 p-3">
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                            Select the exact flavour line before entering quantities.
-                          </p>
-                        </div>
-                      )}
+                        })}
+                      </div>
                     </div>
                   )}
                   {hasFlavourOutputs && flavourLines.length === 0 && (
@@ -732,44 +1156,59 @@ function CreatePackagingSessionPageContent() {
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="volumeAllocated" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Volume Allocated for Packaging (Litres) *</Label>
-              <Input
-                id="volumeAllocated"
-                type="number"
-                placeholder="0"
-                value={volumeAllocated}
-                onChange={(e) => setVolumeAllocated(e.target.value)}
-                max={batchData ? availableVolume : undefined}
-                className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500"
-              />
-              {selectedBatch && volumeAllocated && (
-                <div className={cn(
-                  "p-4 rounded-xl border-2 shadow-sm transition-all",
-                  remainingLitres >= 0 
-                    ? "bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-amber-200 dark:border-amber-900/50"
-                    : "bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 border-red-200 dark:border-red-900/50"
-                )}>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">After this packaging session:</span>
-                      <span className={cn(
-                        "font-bold text-base",
-                        remainingLitres >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
-                      )}>
-                        {remainingLitres >= 0 ? `${remainingLitres.toFixed(2)}L` : "Invalid allocation"}
-                      </span>
+            {flavourLines.length === 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="volumeAllocated" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Volume Allocated for Packaging (Litres) *
+                </Label>
+                <Input
+                  id="volumeAllocated"
+                  type="number"
+                  placeholder="0"
+                  value={volumeAllocated}
+                  onChange={(e) => setVolumeAllocated(e.target.value)}
+                  max={batchData ? availableVolume : undefined}
+                  className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500"
+                />
+                {selectedBatch && volumeAllocated && (
+                  <div
+                    className={cn(
+                      "p-4 rounded-xl border-2 shadow-sm transition-all",
+                      remainingLitres >= 0
+                        ? "bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-amber-200 dark:border-amber-900/50"
+                        : "bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/30 border-red-200 dark:border-red-900/50"
+                    )}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          After this packaging session:
+                        </span>
+                        <span
+                          className={cn(
+                            "font-bold text-base",
+                            remainingLitres >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
+                          )}
+                        >
+                          {remainingLitres >= 0 ? `${remainingLitres.toFixed(2)}L` : "Invalid allocation"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {remainingLitres >= 0
+                          ? `This is the volume that will remain in storage after packaging ${parseFloat(volumeAllocated).toFixed(2)}L`
+                          : "Allocated volume exceeds available volume"}
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {remainingLitres >= 0 
-                        ? `This is the volume that will remain in storage after packaging ${parseFloat(volumeAllocated).toFixed(2)}L`
-                        : "Allocated volume exceeds available volume"
-                      }
-                    </p>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
+            {flavourLines.length > 0 && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/80 dark:border-blue-900 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-900 dark:text-blue-100">
+                Volume is set <span className="font-semibold">per flavour line</span> below. Combined bottles and stickers
+                are validated against warehouse stock in one go.
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -881,7 +1320,7 @@ function CreatePackagingSessionPageContent() {
             <div
               className={cn(
                 "rounded-xl border-2 p-4 space-y-3",
-                packagingStockLoading
+                stockPanelLoading
                   ? "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/40"
                   : packagingStockError
                     ? "border-amber-200 bg-amber-50/90 dark:border-amber-900/50 dark:bg-amber-950/25"
@@ -894,19 +1333,23 @@ function CreatePackagingSessionPageContent() {
                 <Layers className="h-4 w-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                   Raw materials (warehouse)
+                  {flavourLines.length > 1 && (
+                    <span className="text-muted-foreground font-normal"> — combined session preview</span>
+                  )}
                 </span>
-                {packagingStockLoading && (
+                {stockPanelLoading && (
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
                 )}
               </div>
               {packagingStockError && (
                 <p className="text-sm text-amber-800 dark:text-amber-200">{packagingStockError}</p>
               )}
-              {!packagingStockLoading && !packagingStockError && packagingStock?.bySize && (
+              {!stockPanelLoading && !packagingStockError && (flavourLines.length === 0 ? packagingStock?.bySize : true) && (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {standardSizes.map((size) => {
-                    const b = packagingStock.bySize?.[size]?.bottle ?? null
-                    const s = packagingStock.bySize?.[size]?.sticker ?? null
+                    const mat = getMaterialsPreviewForSize(size)
+                    const b = mat?.bottle ?? null
+                    const s = mat?.sticker ?? null
                     const afterB = previewBottleRemainingForSize(size)
                     const afterS = previewStickerRemainingForSize(size)
 
@@ -987,31 +1430,240 @@ function CreatePackagingSessionPageContent() {
                   })}
                 </div>
               )}
-              {resolvedFlavourForStock.length > 0 && !packagingStockLoading && !packagingStockError && (
+              {flavourLines.length === 0 && resolvedFlavourForStock.length > 0 && !stockPanelLoading && !packagingStockError && (
                 <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
                   Sticker preview uses flavour-specific SKUs for{" "}
                   <span className="font-bold text-emerald-800 dark:text-emerald-200">{resolvedFlavourForStock}</span>.
                 </p>
               )}
-              {flavourLines.length > 0 && !selectedLine && !packagingStockLoading && (
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  Select a flavour line to load the correct sticker stock for that line.
-                </p>
-              )}
-              {stickerMissingForPackedSizes && !packagingStockLoading && (
+              {flavourLines.length > 0 &&
+                !flavourLines.some((l: any) => lineStates[String(l._id || l.id)]?.included) &&
+                !stockPanelLoading && (
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Tick at least one flavour line above to enter container quantities.
+                  </p>
+                )}
+              {stickerMissingForPackedSizes && !stockPanelLoading && (
                 <p className="text-sm font-medium text-red-700 dark:text-red-300">
                   You entered quantities but there is no flavour-specific sticker item for one or more sizes. Create
                   matching sticker rows under Raw Materials (Packaging) or pick a flavour line that matches your sticker
                   names.
                 </p>
               )}
-              {packagingStockInsufficient && !packagingStockLoading && (
+              {packagingStockInsufficient && !stockPanelLoading && (
                 <p className="text-sm font-medium text-red-700 dark:text-red-300">
                   This session needs more bottles or stickers than are in stock. Reduce quantities or restock before saving.
                 </p>
               )}
             </div>
 
+            {flavourLines.length > 0 ? (
+              <div className="space-y-6">
+                {flavourLines.map((line: any) => {
+                  const lid = String(line._id || line.id)
+                  const st = lineStates[lid]
+                  if (!st?.included) return null
+                  const allocLine = Number(line.allocatedLitres) || 0
+                  const leftBefore = Number(line.remainingPackLitres) || 0
+                  const packed = linePackedLitres(lid)
+                  const volAlloc = parseFloat(st.volumeAllocated) || 0
+                  const delta = volAlloc - packed
+                  const ratio = volAlloc > 0 ? Math.min(100, (packed / volAlloc) * 100) : 0
+                  return (
+                    <div
+                      key={lid}
+                      className="rounded-xl border-2 border-indigo-200/90 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30 dark:border-indigo-900/60 p-4 sm:p-5 space-y-4 shadow-sm"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                            Flavour line
+                          </p>
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">
+                            {line.flavourName || line.flavor}
+                          </h3>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">Alloc: {allocLine.toFixed(2)}L</Badge>
+                          <Badge variant="secondary">Left before: {leftBefore.toFixed(2)}L</Badge>
+                          <Badge variant="outline" className="border-emerald-400 text-emerald-800 dark:text-emerald-200">
+                            This session: {packed.toFixed(2)}L
+                          </Badge>
+                          <Badge variant="outline" className="border-amber-400">
+                            After (preview): {Math.max(0, leftBefore - packed).toFixed(2)}L
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold">Volume for this session (L) *</Label>
+                          <Input
+                            type="number"
+                            value={st.volumeAllocated}
+                            onChange={(e) => patchLineState(lid, { volumeAllocated: e.target.value })}
+                            max={leftBefore}
+                            className="h-11 border-2"
+                          />
+                          <p className="text-[11px] text-muted-foreground">Max {leftBefore.toFixed(2)}L left on this line.</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-2">
+                            <Label className="text-xs font-semibold">Defects</Label>
+                            <Input
+                              type="number"
+                              value={st.defects}
+                              onChange={(e) => patchLineState(lid, { defects: e.target.value })}
+                              className="h-10"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-semibold">Machine eff. %</Label>
+                            <Input
+                              type="number"
+                              value={st.machineEfficiency}
+                              onChange={(e) => patchLineState(lid, { machineEfficiency: e.target.value })}
+                              className="h-10"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Defect reasons</Label>
+                        <Textarea
+                          value={st.defectReasons}
+                          onChange={(e) => patchLineState(lid, { defectReasons: e.target.value })}
+                          className="min-h-[56px] text-sm"
+                        />
+                      </div>
+                      <div className="space-y-3 pt-1 border-t border-indigo-200/60 dark:border-indigo-900/50">
+                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Containers</p>
+                        {st.containers.map((container, index) => (
+                          <div
+                            key={index}
+                            className="grid gap-4 md:grid-cols-4 items-end p-4 rounded-lg bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700"
+                          >
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold">Size</Label>
+                              {container.size === "custom" ? (
+                                <div className="flex gap-2">
+                                  <Input
+                                    placeholder="ml"
+                                    value={container.customSize || ""}
+                                    onChange={(e) => updateLineContainer(lid, index, "customSize", e.target.value)}
+                                    className="h-11 border-2"
+                                  />
+                                  <span className="self-center text-sm">ml</span>
+                                </div>
+                              ) : (
+                                <Select
+                                  value={container.size}
+                                  onValueChange={(value) => updateLineContainer(lid, index, "size", value)}
+                                >
+                                  <SelectTrigger className="h-11 border-2">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="250ml">250ml</SelectItem>
+                                    <SelectItem value="500ml">500ml</SelectItem>
+                                    <SelectItem value="1L">1L</SelectItem>
+                                    <SelectItem value="2L">2L</SelectItem>
+                                    <SelectItem value="custom">Custom Size</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold">
+                                Qty
+                                {st.volumeAllocated && (
+                                  <span className="text-xs font-normal text-muted-foreground ml-1">
+                                    (max {getLineMaxQtyForSize(lid, container.size, container.customSize)})
+                                  </span>
+                                )}
+                              </Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={container.quantity}
+                                onChange={(e) => updateLineContainer(lid, index, "quantity", e.target.value)}
+                                className={cn(
+                                  "h-11 border-2",
+                                  container.quantity &&
+                                    !isValidLineContainerQuantity(lid, index, container.quantity).valid &&
+                                    "border-red-500"
+                                )}
+                              />
+                              {container.quantity && !isValidLineContainerQuantity(lid, index, container.quantity).valid && (
+                                <p className="text-xs text-red-600">
+                                  {isValidLineContainerQuantity(lid, index, container.quantity).error}
+                                </p>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold">Litres</Label>
+                              <div className="p-2 rounded-md bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-sm font-bold text-blue-800 dark:text-blue-200">
+                                {computePackagedLitresFromContainers([container]).toFixed(2)}L
+                              </div>
+                            </div>
+                            {st.containers.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeLineContainerRow(lid, index)}
+                                className="text-red-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          onClick={() => addLineContainerRow(lid)}
+                          variant="outline"
+                          className="w-full border-dashed"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add container size
+                        </Button>
+                      </div>
+                      <div
+                        className={cn(
+                          "rounded-lg border p-3 text-sm",
+                          delta < 0
+                            ? "border-red-200 bg-red-50/80 dark:border-red-900 dark:bg-red-950/30"
+                            : "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/25"
+                        )}
+                      >
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="font-medium text-slate-800 dark:text-slate-100">Line fill</span>
+                          <Badge variant="outline" className={delta < 0 ? "text-red-700" : "text-emerald-700"}>
+                            {delta < 0 ? `Over by ${Math.abs(delta).toFixed(2)}L` : `${delta.toFixed(2)}L headroom`}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                          <div
+                            className={cn("h-full transition-all", delta < 0 ? "bg-red-500" : "bg-emerald-500")}
+                            style={{ width: `${ratio}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50 p-4">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Session totals (preview)</p>
+                  <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                    {multiSessionTotalLitres.toFixed(2)}L
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Sum of packed litres across all selected flavour lines in this save.
+                  </p>
+                </div>
+              </div>
+            ) : (
+            <>
             {containers.map((container, index) => (
               <div key={index} className="grid gap-4 md:grid-cols-4 items-end p-5 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-800/50 dark:to-slate-900/50 border-2 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
                 <div className="space-y-2">
@@ -1183,6 +1835,8 @@ function CreatePackagingSessionPageContent() {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </CardContent>
         </Card>
 
@@ -1197,41 +1851,56 @@ function CreatePackagingSessionPageContent() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="defects" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Defects/Rejected Bottles</Label>
-                <Input
-                  id="defects"
-                  type="number"
-                  placeholder="0"
-                  value={defects}
-                  onChange={(e) => setDefects(e.target.value)}
-                  className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="machineEfficiency" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Machine Efficiency (%)</Label>
-                <Input
-                  id="machineEfficiency"
-                  type="number"
-                  placeholder="0"
-                  value={machineEfficiency}
-                  onChange={(e) => setMachineEfficiency(e.target.value)}
-                  max={100}
-                  className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="defectReasons" className="text-sm font-semibold text-slate-700 dark:text-slate-300">Defect Reasons</Label>
-              <Textarea
-                id="defectReasons"
-                placeholder="Describe reasons for defects..."
-                value={defectReasons}
-                onChange={(e) => setDefectReasons(e.target.value)}
-                className="min-h-[80px] border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
-              />
-            </div>
+            {flavourLines.length === 0 && (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="defects" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Defects/Rejected Bottles
+                    </Label>
+                    <Input
+                      id="defects"
+                      type="number"
+                      placeholder="0"
+                      value={defects}
+                      onChange={(e) => setDefects(e.target.value)}
+                      className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="machineEfficiency" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Machine Efficiency (%)
+                    </Label>
+                    <Input
+                      id="machineEfficiency"
+                      type="number"
+                      placeholder="0"
+                      value={machineEfficiency}
+                      onChange={(e) => setMachineEfficiency(e.target.value)}
+                      max={100}
+                      className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="defectReasons" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Defect Reasons
+                  </Label>
+                  <Textarea
+                    id="defectReasons"
+                    placeholder="Describe reasons for defects..."
+                    value={defectReasons}
+                    onChange={(e) => setDefectReasons(e.target.value)}
+                    className="min-h-[80px] border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500"
+                  />
+                </div>
+              </>
+            )}
+            {flavourLines.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Defects and machine efficiency are captured per flavour line in the packaging blocks above.
+              </p>
+            )}
             <div className="flex items-center space-x-3 p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-2 border-green-200 dark:border-green-900/50 shadow-sm">
               <input
                 type="checkbox"
@@ -1262,42 +1931,42 @@ function CreatePackagingSessionPageContent() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className={cn(
                 "p-5 rounded-xl border-2 shadow-md hover:shadow-lg transition-shadow",
-                totalPackedLitres > getAllocatedVolume()
+                summaryOverPacked
                   ? "bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/40 dark:to-rose-950/40 border-red-200 dark:border-red-900/50"
                   : "bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/40 dark:to-emerald-950/40 border-green-200 dark:border-green-900/50"
               )}>
                 <div className="flex items-center gap-2 mb-2">
                   <Droplet className={cn(
                     "h-4 w-4",
-                    totalPackedLitres > getAllocatedVolume() 
+                    summaryOverPacked
                       ? "text-red-600 dark:text-red-400" 
                       : "text-green-600 dark:text-green-400"
                   )} />
                   <p className={cn(
                     "text-sm font-semibold uppercase tracking-wide",
-                    totalPackedLitres > getAllocatedVolume()
+                    summaryOverPacked
                       ? "text-red-900 dark:text-red-100"
                       : "text-green-900 dark:text-green-100"
                   )}>
                     Total Litres Packed
-                    {volumeAllocated && (
+                    {(flavourLines.length > 0 ? multiAllocatedSessionSum > 0 : volumeAllocated) && (
                       <span className="text-xs font-normal normal-case ml-2">
-                        (of {getAllocatedVolume().toFixed(2)}L allocated)
+                        (of {summaryAllocatedLitres.toFixed(2)}L allocated this session)
                       </span>
                     )}
                   </p>
                 </div>
                 <p className={cn(
                   "text-3xl font-bold",
-                  totalPackedLitres > getAllocatedVolume()
+                  summaryOverPacked
                     ? "text-red-600 dark:text-red-400"
                     : "text-green-600 dark:text-green-400"
                 )}>
-                  {totalPackedLitres.toFixed(2)}L
+                  {summaryPackedLitres.toFixed(2)}L
                 </p>
-                {totalPackedLitres > getAllocatedVolume() && (
+                {summaryOverPacked && (
                   <p className="text-xs text-red-600 dark:text-red-400 font-medium mt-2">
-                    Exceeds allocated volume by {(totalPackedLitres - getAllocatedVolume()).toFixed(2)}L
+                    Exceeds allocated volume by {(summaryPackedLitres - summaryAllocatedLitres).toFixed(2)}L
                   </p>
                 )}
               </div>
@@ -1306,12 +1975,19 @@ function CreatePackagingSessionPageContent() {
                   <Warehouse className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 uppercase tracking-wide">Remaining in Storage</p>
                 </div>
-                <p className={cn(
-                  "text-3xl font-bold",
-                  remainingLitres >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
-                )}>
-                  {remainingLitres >= 0 ? `${remainingLitres.toFixed(2)}L` : "Invalid"}
-                </p>
+                {flavourLines.length > 0 ? (
+                  <p className="text-sm text-amber-800 dark:text-amber-200 leading-snug">
+                    Neutral / master batch storage is tracked at batch level; each flavour line card above shows remaining
+                    litres for that line after this session.
+                  </p>
+                ) : (
+                  <p className={cn(
+                    "text-3xl font-bold",
+                    remainingLitres >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
+                  )}>
+                    {remainingLitres >= 0 ? `${remainingLitres.toFixed(2)}L` : "Invalid"}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -1320,14 +1996,26 @@ function CreatePackagingSessionPageContent() {
                   <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 uppercase tracking-wide">Packaging Efficiency</p>
                 </div>
-                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{packagingEfficiency}%</p>
+                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                  {flavourLines.length > 0
+                    ? summaryAllocatedLitres > 0
+                      ? ((summaryPackedLitres / summaryAllocatedLitres) * 100).toFixed(1)
+                      : "0.0"
+                    : packagingEfficiency}
+                  %
+                </p>
               </div>
               <div className="p-5 rounded-xl bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/40 dark:to-rose-950/40 border-2 border-red-200 dark:border-red-900/50 shadow-md hover:shadow-lg transition-shadow">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
                   <p className="text-sm font-semibold text-red-900 dark:text-red-100 uppercase tracking-wide">Defect Percentage</p>
                 </div>
-                <p className="text-3xl font-bold text-red-600 dark:text-red-400">{defectPercentage}%</p>
+                <p className="text-3xl font-bold text-red-600 dark:text-red-400">
+                  {flavourLines.length > 0 ? "—" : `${defectPercentage}%`}
+                </p>
+                {flavourLines.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">Per-line defects are entered in each flavour block.</p>
+                )}
               </div>
             </div>
           </CardContent>

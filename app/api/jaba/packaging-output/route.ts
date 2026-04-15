@@ -13,17 +13,20 @@ import {
 } from '@/lib/jaba-packaging-materials'
 import { buildPackagingSmsBody, sendJabaSmsForEvent } from '@/lib/jaba-sms'
 import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
+import {
+  normalizeQty,
+  getTotalContainerUnits,
+  computePackagedLitresFromContainers,
+} from '@/lib/jaba-packaging-calculations'
+import {
+  executeMultiFlavourPackagingTransaction,
+  PackagingApiError,
+} from '@/lib/jaba-packaging-multi-save'
+import type { MongoClient } from 'mongodb'
 
 export const runtime = 'nodejs'
 
-function normalizeQty(value: unknown): number {
-  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
-  return Number.isFinite(n) ? n : 0
-}
-
-function getTotalContainerUnits(containers: Array<{ quantity?: string | number }>): number {
-  return containers.reduce((sum, c) => sum + normalizeQty(c.quantity), 0)
-}
+const JABA_PACKAGING_IDEMPOTENCY = 'jaba_packaging_idempotency'
 
 class ApiError extends Error {
   status: number
@@ -48,6 +51,180 @@ async function generatePackagingLine(
   return `${year}-${String(batchNumber).trim()}-L${lineNo}`
 }
 
+async function ensurePackagingIdempotencyIndex(db: any) {
+  try {
+    await db.collection(JABA_PACKAGING_IDEMPOTENCY).createIndex({ key: 1 }, { unique: true })
+  } catch {
+    /* index may already exist */
+  }
+}
+
+type IdempotencyReserve = 'fresh' | { replay: Record<string, unknown> } | 'blocked'
+
+async function reservePackagingIdempotencyKey(
+  db: any,
+  key: string,
+  batchId: string
+): Promise<IdempotencyReserve> {
+  try {
+    await db.collection(JABA_PACKAGING_IDEMPOTENCY).insertOne({
+      key,
+      batchId: String(batchId),
+      createdAt: new Date(),
+    })
+    return 'fresh'
+  } catch (e: any) {
+    if (e?.code !== 11000) throw e
+    const doc = await db.collection(JABA_PACKAGING_IDEMPOTENCY).findOne({ key })
+    if (doc?.result) return { replay: doc.result as Record<string, unknown> }
+    return 'blocked'
+  }
+}
+
+async function handleMultiFlavourPackagingPost(
+  body: Record<string, unknown>,
+  client: MongoClient,
+  db: any,
+  ObjectId: typeof import('mongodb').ObjectId,
+  idempotencyKey: string
+) {
+  const batchId = String(body.batchId || '')
+  const batchNumber = String(body.batchNumber || '')
+  const packagingDate = body.packagingDate
+  const supervisor = body.supervisor
+  const teamMembers = body.teamMembers
+  const safetyChecks = Boolean(body.safetyChecks)
+  const packagingLines = body.packagingLines as Array<Record<string, unknown>>
+
+  if (!batchId || !batchNumber || !packagingDate || !supervisor) {
+    return NextResponse.json(
+      {
+        error:
+          'Missing required fields for multi-flavour packaging: batchId, batchNumber, packagingDate, supervisor.',
+      },
+      { status: 400 }
+    )
+  }
+
+  const finalPackageNumber =
+    (typeof body.packageNumber === 'string' && body.packageNumber.trim()) ||
+    (() => {
+      const currentYear = new Date().getFullYear()
+      const randomNum = String(Math.floor(Math.random() * 99999)).padStart(5, '0')
+      return `PKG-${currentYear}-${randomNum}`
+    })()
+
+  const batch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) })
+  if (!batch) {
+    return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
+  }
+
+  const hasFlavourLines =
+    !batch.parentBatchId &&
+    (await db.collection(JABA_FLAVOUR_LINES_COLLECTION).countDocuments({ parentBatchId: batchId })) > 0
+
+  if (!hasFlavourLines) {
+    return NextResponse.json(
+      { error: 'Multi-flavour packaging is only for batches that have flavour lines allocated.' },
+      { status: 400 }
+    )
+  }
+
+  let idempotencyReserved: 'fresh' | null = null
+  if (idempotencyKey) {
+    const slot = await reservePackagingIdempotencyKey(db, idempotencyKey, batchId)
+    if (typeof slot === 'object' && 'replay' in slot) {
+      return NextResponse.json(
+        { ...(slot.replay as Record<string, unknown>), idempotentReplay: true },
+        { status: 201 }
+      )
+    }
+    if (slot === 'blocked') {
+      return NextResponse.json(
+        { error: 'This packaging save is already being processed. Wait a moment or use a new session.' },
+        { status: 409 }
+      )
+    }
+    idempotencyReserved = 'fresh'
+  }
+
+  try {
+    const result = await executeMultiFlavourPackagingTransaction({
+      client,
+      db,
+      ObjectId,
+      batchId,
+      batchNumber,
+      finalPackageNumber,
+      packagingDate: packagingDate as string | Date,
+      supervisor: String(supervisor),
+      teamMembers,
+      safetyChecks,
+      batch: batch as Record<string, unknown>,
+      lineInputs: packagingLines,
+    })
+
+    const allContainers = packagingLines.flatMap((l) => (Array.isArray(l.containers) ? l.containers : []))
+    const flavourNames = result.packagingDocs
+      .map((d) => String(d.flavourName || '').trim())
+      .filter(Boolean)
+    const flavourLabel = flavourNames.length > 0 ? flavourNames.join(' · ') : 'Batch'
+
+    let packagingSms: string
+    try {
+      packagingSms = buildPackagingSmsBody({
+        batchNumber: batchNumber.trim(),
+        containers: allContainers,
+        flavourLabel,
+      })
+    } catch (smsBodyErr) {
+      console.error('[Packaging Output API] SMS summary build failed (multi):', smsBodyErr)
+      const litresStr = Number.isFinite(Number(result.totalLitresPacked))
+        ? Number(result.totalLitresPacked).toFixed(2)
+        : '0.00'
+      packagingSms = `PACKAGING COMPLETE\n\nBatch No: ${batchNumber.trim()}\n\nTotal session: ${litresStr}L`
+    }
+    await sendJabaSmsForEvent('packagingCreated', packagingSms)
+
+    const responsePayload = {
+      success: true,
+      multiFlavour: true,
+      packagingSessionGroupId: result.sessionGroupId,
+      packageNumber: finalPackageNumber.trim(),
+      totalLitresPacked: result.totalLitresPacked,
+      packagingOutputs: result.packagingDocs.map((d, i) => ({
+        ...d,
+        _id: result.createdIds[i],
+        id: result.createdIds[i],
+      })),
+      remainingLitresByFlavourLine: result.remainingByFlavourLineId,
+      packaging: {
+        _id: result.createdIds[0],
+        id: result.createdIds[0],
+        packageNumber: finalPackageNumber.trim(),
+        remainingLitres: result.remainingByFlavourLineId[packagingLines[0]?.flavourLineId as string] ?? 0,
+      },
+    }
+
+    if (idempotencyKey && idempotencyReserved === 'fresh') {
+      await db.collection(JABA_PACKAGING_IDEMPOTENCY).updateOne(
+        { key: idempotencyKey },
+        { $set: { result: responsePayload, completedAt: new Date() } }
+      )
+    }
+
+    return NextResponse.json(responsePayload, { status: 201 })
+  } catch (err: unknown) {
+    if (idempotencyKey && idempotencyReserved === 'fresh') {
+      await db.collection(JABA_PACKAGING_IDEMPOTENCY).deleteOne({ key: idempotencyKey })
+    }
+    if (err instanceof PackagingApiError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    throw err
+  }
+}
+
 // POST create packaging output
 export async function POST(request: Request) {
   const authResult = await requireJabaAction('production.packaging', 'add')
@@ -55,6 +232,23 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
+    const idempotencyKey =
+      typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
+        ? body.idempotencyKey.trim()
+        : ''
+
+    const client = await clientPromise
+    const db = client.db('infusion_jaba')
+    const { ObjectId } = await import('mongodb')
+    await ensurePackagingIdempotencyIndex(db)
+
+    const packagingLinesRaw = body.packagingLines
+    if (Array.isArray(packagingLinesRaw) && packagingLinesRaw.length >= 1) {
+      return await handleMultiFlavourPackagingPost(body, client, db, ObjectId, idempotencyKey)
+    }
+
+    let singleIdempotencyReserved: 'fresh' | null = null
+
     const {
       batchId,
       batchNumber,
@@ -94,9 +288,6 @@ export async function POST(request: Request) {
     console.log('[Packaging Output API] Package number received:', packageNumber)
     console.log('[Packaging Output API] Final package number to save:', finalPackageNumber)
 
-    const client = await clientPromise
-    const db = client.db('infusion_jaba')
-    const { ObjectId } = await import('mongodb')
     const finalPackagingLine = await generatePackagingLine(db, batchId, batchNumber, packagingDate)
 
     // Get batch to calculate remaining litres
@@ -114,23 +305,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // Calculate packaged litres from containers
-    const packagedLitres = totalPackedLitres || containers.reduce((sum: number, container: any) => {
-      const qty = parseFloat(container.quantity) || 0
-      if (container.size === "250ml") {
-        return sum + (qty * 0.25)
-      } else if (container.size === "500ml") {
-        return sum + (qty * 0.5)
-      } else if (container.size === "1L") {
-        return sum + (qty * 1)
-      } else if (container.size === "2L") {
-        return sum + (qty * 2)
-      } else if (container.customSize) {
-        const customSize = parseFloat(container.customSize) || 0
-        return sum + (qty * (customSize / 1000))
-      }
-      return sum
-    }, 0)
+    const packagedLitres =
+      totalPackedLitres !== undefined && totalPackedLitres !== null && totalPackedLitres !== ''
+        ? Number(totalPackedLitres)
+        : computePackagedLitresFromContainers(containers || [])
     const allocatedVolume = Number(volumeAllocated) || 0
     if (allocatedVolume <= 0) {
       return NextResponse.json({ error: 'Volume allocated must be greater than 0.' }, { status: 400 })
@@ -226,6 +404,23 @@ export async function POST(request: Request) {
         { error: 'No container quantity entered. Add at least one packaged bottle.' },
         { status: 400 }
       )
+    }
+
+    if (idempotencyKey) {
+      const slot = await reservePackagingIdempotencyKey(db, idempotencyKey, String(batchId))
+      if (typeof slot === 'object' && 'replay' in slot) {
+        return NextResponse.json(
+          { ...(slot.replay as Record<string, unknown>), idempotentReplay: true },
+          { status: 201 }
+        )
+      }
+      if (slot === 'blocked') {
+        return NextResponse.json(
+          { error: 'This packaging save is already being processed. Wait a moment or use a new session.' },
+          { status: 409 }
+        )
+      }
+      singleIdempotencyReserved = 'fresh'
     }
 
     const rawMaterialsCollection = db.collection('jaba_rawMaterials')
@@ -548,22 +743,34 @@ export async function POST(request: Request) {
     }
     await sendJabaSmsForEvent('packagingCreated', packagingSms)
 
-    return NextResponse.json(
-      {
-        success: true,
-        packaging: {
-          ...packagingData,
-          _id: createdPackagingId,
-          id: createdPackagingId,
-          remainingLitres: txRemainingLitres,
-          remainingOnFlavourLineLitres: flavourLineId ? txRemainingLitres : undefined,
-          flavourAllocatedLitres: lineAllocated ?? undefined,
-        }
+    const responsePayload = {
+      success: true,
+      packaging: {
+        ...packagingData,
+        _id: createdPackagingId,
+        id: createdPackagingId,
+        remainingLitres: txRemainingLitres,
+        remainingOnFlavourLineLitres: flavourLineId ? txRemainingLitres : undefined,
+        flavourAllocatedLitres: lineAllocated ?? undefined,
       },
-      { status: 201 }
-    )
+    }
+
+    if (idempotencyKey && singleIdempotencyReserved === 'fresh') {
+      await db.collection(JABA_PACKAGING_IDEMPOTENCY).updateOne(
+        { key: idempotencyKey },
+        { $set: { result: responsePayload, completedAt: new Date() } }
+      )
+    }
+
+    return NextResponse.json(responsePayload, { status: 201 })
   } catch (error: any) {
+    if (idempotencyKey && singleIdempotencyReserved === 'fresh') {
+      await db.collection(JABA_PACKAGING_IDEMPOTENCY).deleteOne({ key: idempotencyKey }).catch(() => {})
+    }
     if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    if (error instanceof PackagingApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
     console.error('[Packaging Output API] Error creating packaging output:', error)

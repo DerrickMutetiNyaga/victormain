@@ -4,6 +4,7 @@
  */
 
 import type { Db, Document } from "mongodb"
+import { rowLitresFromContainer } from "@/lib/jaba-packaging-calculations"
 
 export const JABA_FLAVOUR_LINES_COLLECTION = "jaba_batch_flavour_lines"
 
@@ -17,6 +18,7 @@ export type JabaFlavourLineWorkflowStatus =
 
 export function bottleRowToLitres(qty: number, size: string): number {
   const q = Number(qty) || 0
+  if (size === "250ml") return q * 0.25
   if (size === "500ml") return q * 0.5
   if (size === "1L") return q * 1
   if (size === "2L") return q * 2
@@ -42,7 +44,7 @@ export function sumPackagedLitresForFlavourLine(
     const containers = po.containers
     if (!containers || !Array.isArray(containers)) continue
     for (const c of containers) {
-      sum += bottleRowToLitres(parseFloat(c.quantity) || 0, c.size || "500ml")
+      sum += rowLitresFromContainer(c as { quantity?: unknown; size?: string; customSize?: unknown })
     }
   }
   return sum
