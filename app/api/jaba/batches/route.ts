@@ -13,9 +13,29 @@ import {
   JABA_FLAVOUR_LINES_COLLECTION,
   mergeFlavourRowsFromCaches,
 } from '@/lib/jaba-flavour-lines'
+import { allocateFlavourLinesToParent } from '@/lib/jaba-allocate-flavour-lines'
+import { validateCompletedBatchFlavourLines } from '@/lib/jaba-batch-creation-validation'
 import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
 
 export const runtime = 'nodejs'
+
+async function rollbackJabaBatchCreationAfterAllocationFailure(
+  db: import('mongodb').Db,
+  batchId: string,
+  stockRefunds: { materialId: string; quantity: number }[]
+) {
+  const { ObjectId } = await import('mongodb')
+  await db.collection(JABA_FLAVOUR_LINES_COLLECTION).deleteMany({ parentBatchId: batchId })
+  await db.collection('jaba_inventory_movements').deleteMany({ batchId })
+  await db.collection('jaba_batches').deleteOne({ _id: new ObjectId(batchId) })
+  for (const r of stockRefunds) {
+    if (!r.materialId || !(r.quantity > 0)) continue
+    await db.collection('jaba_rawMaterials').updateOne(
+      { _id: new ObjectId(r.materialId) },
+      { $inc: { currentStock: r.quantity }, $set: { updatedAt: new Date() } }
+    )
+  }
+}
 
 export async function GET(request: Request) {
   const authResult = await requireJabaAction('production.batches', 'view')
@@ -163,6 +183,10 @@ export async function GET(request: Request) {
       id: batch._id.toString(),
       _id: batch._id.toString(),
       date: batch.date instanceof Date ? batch.date.toISOString() : batch.date,
+      productionDate:
+        batch.productionDate instanceof Date
+          ? batch.productionDate.toISOString()
+          : batch.productionDate,
       infusionDate:
         batch.infusionDate instanceof Date ? batch.infusionDate.toISOString() : batch.infusionDate,
       productionStartTime:
@@ -273,7 +297,12 @@ export async function POST(request: Request) {
       shift,
       ingredients,
       notes,
+      infusionDate: infusionDateBody,
+      flavourLines: flavourLinesBody,
     } = body
+
+    const batchCreationStatus =
+      body.batchCreationStatus === 'completed' ? 'completed' : 'creating'
 
     // Validate required fields (neutral/base batch — no flavour at creation)
     if (!batchNumber || !date || !totalLitres || !supervisor || !shift) {
@@ -289,9 +318,57 @@ export async function POST(request: Request) {
       )
     }
 
+    const vol = Number(totalLitres)
+    if (!Number.isFinite(vol) || vol <= 0) {
+      return NextResponse.json(
+        { error: 'Expected production volume must be a positive number' },
+        { status: 400 }
+      )
+    }
+
+    let outputsForAllocate: {
+      flavorId?: string | null
+      flavorName: string
+      quantityLitres: number
+      notes?: string | null
+    }[] = []
+    let infusionDateForAllocate = new Date(
+      typeof date === 'string' && date.length <= 10 ? `${date}T12:00:00` : date
+    )
+
+    if (batchCreationStatus === 'completed') {
+      if (!Array.isArray(flavourLinesBody) || flavourLinesBody.length === 0) {
+        return NextResponse.json(
+          { error: 'When batch status is completed, flavourLines[] is required with at least one row.' },
+          { status: 400 }
+        )
+      }
+      const parsedForValidation = flavourLinesBody.map((row: Record<string, unknown>) => ({
+        flavorName: String(row.flavorName ?? ''),
+        quantityLitres: Number(row.quantityLitres ?? row.quantity ?? 0),
+      }))
+      const validation = validateCompletedBatchFlavourLines(vol, parsedForValidation)
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 400 })
+      }
+      outputsForAllocate = flavourLinesBody
+        .map((row: Record<string, unknown>) => ({
+          flavorId: (row.flavorId as string) || null,
+          flavorName: String(row.flavorName ?? '').trim(),
+          quantityLitres: Number(row.quantityLitres ?? row.quantity ?? 0),
+          notes: row.notes != null ? String(row.notes).trim() : '',
+        }))
+        .filter((o) => o.quantityLitres > 0)
+
+      const rawInfusion = infusionDateBody != null ? String(infusionDateBody) : String(date)
+      infusionDateForAllocate = new Date(
+        rawInfusion.length <= 10 ? `${rawInfusion}T12:00:00` : rawInfusion
+      )
+    }
+
     const flavor = NEUTRAL_BATCH_DISPLAY_FLAVOR
 
-    console.log('[Batches API] Creating new batch:', batchNumber)
+    console.log('[Batches API] Creating new batch:', batchNumber, 'batchCreationStatus:', batchCreationStatus)
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')
@@ -415,14 +492,20 @@ export async function POST(request: Request) {
       }
     }
 
+    const isCompletedAtCreation = batchCreationStatus === 'completed'
+    const infusionKey = infusionDateBody != null ? String(infusionDateBody) : String(date)
+    const productionDateDoc = isCompletedAtCreation
+      ? new Date(infusionKey.length <= 10 ? `${infusionKey}T12:00:00` : infusionKey)
+      : undefined
+
     // Prepare batch document
-    const vol = Number(totalLitres)
-    const batchData = {
+    const batchData: Record<string, unknown> = {
       batchNumber,
       date: new Date(date),
       flavor,
       batchType: 'neutral' as const,
       parentBatchId: null as null,
+      batchCreationStatus,
       infusedAllocatedLitres: 0,
       infusionAllocationStatus: 'none' as const,
       notes: typeof notes === 'string' ? notes.trim() || null : null,
@@ -433,11 +516,11 @@ export async function POST(request: Request) {
       bottles500ml: 0,
       bottles1L: 0,
       bottles2L: 0,
-      status: 'Created',
+      status: isCompletedAtCreation ? 'Processed' : 'Created',
       supervisor,
       shift,
       ingredients: ingredientsForBatch,
-      locked: false,
+      locked: isCompletedAtCreation ? true : false,
       outputSummary: {
         totalBottles: 0,
         remainingLitres: vol,
@@ -446,10 +529,19 @@ export async function POST(request: Request) {
       createdAt: new Date(),
     }
 
+    if (isCompletedAtCreation && productionDateDoc) {
+      batchData.productionDate = productionDateDoc
+    }
+
     // Insert batch
-    const result = await db.collection('jaba_batches').insertOne(batchData)
+    const result = await db.collection('jaba_batches').insertOne(batchData as never)
     const batchId = result.insertedId.toString()
-    
+
+    const stockRefunds = inventoryMovements.map((m) => ({
+      materialId: m.materialId as string,
+      quantity: Number(m.quantity) || 0,
+    }))
+
     // Update inventory movements with batchId
     if (inventoryMovements.length > 0) {
       for (const movement of inventoryMovements) {
@@ -457,7 +549,41 @@ export async function POST(request: Request) {
         await db.collection('jaba_inventory_movements').insertOne(movement)
       }
     }
-    
+
+    if (isCompletedAtCreation && outputsForAllocate.length > 0) {
+      const parentFresh = (await db
+        .collection('jaba_batches')
+        .findOne({ _id: new ObjectId(batchId) })) as Record<string, unknown> | null
+      if (!parentFresh) {
+        await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
+        return NextResponse.json({ error: 'Batch insert inconsistency' }, { status: 500 })
+      }
+      try {
+        await allocateFlavourLinesToParent(
+          db,
+          batchId,
+          parentFresh as {
+            batchNumber?: string
+            totalLitres?: number
+            infusedAllocatedLitres?: number
+            status?: string
+          },
+          outputsForAllocate,
+          infusionDateForAllocate
+        )
+      } catch (allocErr: unknown) {
+        console.error('[Batches API] Flavour allocation failed after batch insert; rolling back:', allocErr)
+        await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
+        const msg = allocErr instanceof Error ? allocErr.message : String(allocErr)
+        return NextResponse.json(
+          { error: 'Failed to create flavour outputs for completed batch', details: msg },
+          { status: 500 }
+        )
+      }
+    }
+
+    const batchAfter = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) })
+
     console.log(`[Batches API] ✅ Batch created successfully: ${batchNumber} (ID: ${batchId})`)
     await sendJabaSmsForEvent(
       'batchCreated',
@@ -465,13 +591,13 @@ export async function POST(request: Request) {
     )
 
     return NextResponse.json(
-      { 
+      {
         success: true,
         batch: {
-          ...batchData,
-          _id: result.insertedId.toString(),
-          id: result.insertedId.toString(),
-        }
+          ...(batchAfter || batchData),
+          _id: batchId,
+          id: batchId,
+        },
       },
       { status: 201 }
     )

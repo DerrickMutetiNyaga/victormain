@@ -33,6 +33,10 @@ function serializeBatchDoc(batch: any) {
     _id: batch._id.toString(),
     id: batch._id.toString(),
     date: batch.date instanceof Date ? batch.date.toISOString() : batch.date,
+    productionDate:
+      batch.productionDate instanceof Date
+        ? batch.productionDate.toISOString()
+        : batch.productionDate,
     infusionDate:
       batch.infusionDate instanceof Date ? batch.infusionDate.toISOString() : batch.infusionDate,
     productionStartTime:

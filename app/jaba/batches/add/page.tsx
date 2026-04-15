@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, X, Save, Hash, Package, Loader2, Check, AlertTriangle, RefreshCw } from "lucide-react"
+import { Plus, X, Save, Hash, Package, Loader2, Check, AlertTriangle, FlaskConical } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import Link from "next/link"
@@ -16,6 +16,8 @@ import { toast } from "sonner"
 import { useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { NEUTRAL_BATCH_DISPLAY_FLAVOR } from "@/lib/jaba-batch-utils"
+import { JABA_DEFAULT_INFUSION_FLAVOUR_NAMES } from "@/lib/jaba-default-infusion-flavours"
+import { validateCompletedBatchFlavourLines } from "@/lib/jaba-batch-creation-validation"
 import { Textarea } from "@/components/ui/textarea"
 
 interface RawMaterial {
@@ -29,6 +31,24 @@ interface RawMaterial {
   lowStockThreshold?: number
   reorderThreshold?: number
   supplier: string
+}
+
+type FlavourLineRow = {
+  key: string
+  flavorName: string
+  flavorId: string
+  quantity: string
+  notes: string
+}
+
+function buildDefaultFlavourRows(): FlavourLineRow[] {
+  return JABA_DEFAULT_INFUSION_FLAVOUR_NAMES.map((name, i) => ({
+    key: `preset-${i}-${name}`,
+    flavorName: name,
+    flavorId: "",
+    quantity: "",
+    notes: "",
+  }))
 }
 
 export default function AddBatchPage() {
@@ -104,6 +124,11 @@ export default function AddBatchPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
   const [loadingMaterials, setLoadingMaterials] = useState(true)
+  const [batchCreationStatus, setBatchCreationStatus] = useState<"creating" | "completed">("creating")
+  const [infusionDate, setInfusionDate] = useState(() => new Date().toISOString().split("T")[0])
+  const [jabaFlavors, setJabaFlavors] = useState<{ _id: string; name: string }[]>([])
+  const [flavourLines, setFlavourLines] = useState<FlavourLineRow[]>([])
+  const [infuseFieldErrors, setInfuseFieldErrors] = useState<string | null>(null)
 
   // Stock threshold defaults by unit type
   const getDefaultThresholds = (unit: string) => {
@@ -276,6 +301,69 @@ export default function AddBatchPage() {
     fetchRawMaterials()
   }, [])
 
+  useEffect(() => {
+    const loadFlavors = async () => {
+      try {
+        const response = await fetch("/api/jaba/flavors")
+        if (!response.ok) return
+        const data = await response.json()
+        setJabaFlavors(data.flavors || [])
+      } catch {
+        /* optional */
+      }
+    }
+    loadFlavors()
+  }, [])
+
+  const resolveFlavorId = (name: string) => {
+    const t = name.trim().toLowerCase()
+    if (!t) return ""
+    const f = jabaFlavors.find((x) => x.name.toLowerCase() === t)
+    return f?._id || ""
+  }
+
+  const onBatchCreationStatusChange = (v: "creating" | "completed") => {
+    setBatchCreationStatus(v)
+    setInfuseFieldErrors(null)
+    if (v === "completed") {
+      setInfusionDate(date)
+      setFlavourLines(buildDefaultFlavourRows())
+    } else {
+      setFlavourLines([])
+    }
+  }
+
+  const addFlavourLine = () => {
+    setFlavourLines((prev) => [
+      ...prev,
+      {
+        key: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        flavorName: "",
+        flavorId: "",
+        quantity: "",
+        notes: "",
+      },
+    ])
+  }
+
+  const removeFlavourLine = (key: string) => {
+    setFlavourLines((prev) => prev.filter((r) => r.key !== key))
+  }
+
+  const updateFlavourLine = (key: string, patch: Partial<FlavourLineRow>) => {
+    setFlavourLines((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+  }
+
+  const availableNeutralLitres = Math.max(0, Number(expectedLitres) || 0)
+  const plannedInfuseLitres = flavourLines.reduce((s, r) => s + (Number(r.quantity) || 0), 0)
+  const remainingInfuseLitres = Math.max(0, availableNeutralLitres - plannedInfuseLitres)
+  const infuseOverAllocated = plannedInfuseLitres > availableNeutralLitres + 1e-6
+
+  const flavourSelectOptions =
+    jabaFlavors.length > 0
+      ? jabaFlavors
+      : JABA_DEFAULT_INFUSION_FLAVOUR_NAMES.map((n) => ({ _id: `fallback-${n}`, name: n }))
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -311,6 +399,28 @@ export default function AddBatchPage() {
     if (selectedMaterials.length === 0) {
       toast.error("Please add at least one raw material before creating a batch")
       return
+    }
+
+    if (batchCreationStatus === "completed") {
+      if (infuseOverAllocated) {
+        toast.error("Planned litres cannot exceed expected production volume.")
+        return
+      }
+      const linesForValidation = flavourLines.map((r) => ({
+        flavorName: r.flavorName,
+        quantityLitres: Number(r.quantity) || 0,
+      }))
+      const v = validateCompletedBatchFlavourLines(Number(expectedLitres), linesForValidation)
+      if (!v.ok) {
+        setInfuseFieldErrors(v.error)
+        toast.error(v.error)
+        return
+      }
+      setInfuseFieldErrors(null)
+      if (flavourLines.length === 0) {
+        toast.error("Add at least one flavour line.")
+        return
+      }
     }
 
     setIsSubmitting(true)
@@ -357,6 +467,18 @@ export default function AddBatchPage() {
         }
       })
 
+      const flavourLinesPayload =
+        batchCreationStatus === "completed"
+          ? flavourLines
+              .map((r) => ({
+                flavorName: r.flavorName.trim(),
+                flavorId: resolveFlavorId(r.flavorName) || undefined,
+                quantityLitres: Number(r.quantity) || 0,
+                notes: r.notes.trim() || undefined,
+              }))
+              .filter((r) => r.quantityLitres > 0)
+          : undefined
+
       const response = await fetch('/api/jaba/batches', {
         method: 'POST',
         headers: {
@@ -371,6 +493,11 @@ export default function AddBatchPage() {
           shift,
           notes: notes.trim() || undefined,
           ingredients,
+          batchCreationStatus,
+          ...(batchCreationStatus === "completed" && {
+            infusionDate,
+            flavourLines: flavourLinesPayload,
+          }),
         }),
       })
 
@@ -454,7 +581,11 @@ export default function AddBatchPage() {
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Create Production Batch</h1>
-          <p className="text-sm text-muted-foreground">Create a neutral base batch — add flavours later after processing</p>
+          <p className="text-sm text-muted-foreground">
+            {batchCreationStatus === "completed"
+              ? "Create a processed batch with flavoured outputs in one step — raw materials deduct on save."
+              : "Create a neutral base batch — add flavours later after processing."}
+          </p>
         </div>
         <Link href="/jaba/batches">
           <Button variant="outline">Cancel</Button>
@@ -571,7 +702,7 @@ export default function AddBatchPage() {
               </div>
             </div>
 
-            {/* Supervisor Row */}
+            {/* Supervisor + batch status */}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="supervisor" className="font-semibold text-foreground">
@@ -585,9 +716,216 @@ export default function AddBatchPage() {
                   className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="batchCreationStatus" className="font-semibold text-foreground">
+                  Batch status <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+                </Label>
+                <Select
+                  value={batchCreationStatus}
+                  onValueChange={(v) => onBatchCreationStatusChange(v as "creating" | "completed")}
+                >
+                  <SelectTrigger
+                    id="batchCreationStatus"
+                    className="w-full border-2 border-slate-300 dark:border-slate-700 min-w-[200px]"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="creating">creating</SelectItem>
+                    <SelectItem value="completed">completed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">creating</span>: normal flow.{" "}
+                  <span className="font-medium">completed</span>: mark processed and allocate flavours now.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {batchCreationStatus === "completed" && (
+          <Card className="border-2 border-violet-300 dark:border-violet-800 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+            <CardHeader className="border-b border-violet-200 dark:border-violet-900 bg-gradient-to-r from-violet-50/90 to-fuchsia-50/50 dark:from-violet-950/50 dark:to-fuchsia-950/30">
+              <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-violet-600 dark:bg-violet-700 shadow-sm">
+                  <FlaskConical className="h-5 w-5 text-white" />
+                </div>
+                Create flavoured outputs
+              </CardTitle>
+              <p className="text-sm text-muted-foreground pt-1">
+                Split neutral volume into one or more flavour lines. Total litres cannot exceed available neutral volume.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border-2 border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                    Available
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-violet-900 dark:text-violet-100">
+                    {availableNeutralLitres.toFixed(2)}L
+                  </p>
+                </div>
+                <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                    Planned
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">
+                    {plannedInfuseLitres.toFixed(2)}L
+                  </p>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-xl border-2 p-4",
+                    infuseOverAllocated
+                      ? "border-red-300 bg-red-50/90 dark:border-red-900 dark:bg-red-950/40"
+                      : "border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40"
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "text-xs font-semibold uppercase tracking-wide",
+                      infuseOverAllocated
+                        ? "text-red-700 dark:text-red-300"
+                        : "text-emerald-700 dark:text-emerald-300"
+                    )}
+                  >
+                    Remaining
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-1 text-2xl font-bold",
+                      infuseOverAllocated
+                        ? "text-red-900 dark:text-red-100"
+                        : "text-emerald-900 dark:text-emerald-100"
+                    )}
+                  >
+                    {infuseOverAllocated
+                      ? `-${(plannedInfuseLitres - availableNeutralLitres).toFixed(2)}L`
+                      : `${remainingInfuseLitres.toFixed(2)}L`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-w-md">
+                <Label htmlFor="infusionDate">Infusion date</Label>
+                <Input
+                  id="infusionDate"
+                  type="date"
+                  value={infusionDate}
+                  onChange={(e) => setInfusionDate(e.target.value)}
+                  className="border-2 border-slate-300 dark:border-slate-700"
+                />
+              </div>
+
+              {infuseFieldErrors && (
+                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+                  {infuseFieldErrors}
+                </div>
+              )}
+              {infuseOverAllocated && (
+                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+                  Planned volume exceeds expected production volume. Reduce litres or increase expected volume.
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {flavourLines.map((row, index) => (
+                  <div
+                    key={row.key}
+                    className="rounded-xl border-2 border-violet-200 dark:border-violet-900 bg-slate-50/50 dark:bg-slate-950/30 p-4 space-y-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+                          {index + 1}
+                        </div>
+                        <span className="text-sm font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300 truncate">
+                          Flavour line
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
+                        onClick={() => removeFlavourLine(row.key)}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-1">
+                      <div className="space-y-2">
+                        <Label>Flavour</Label>
+                        <Select
+                          value={row.flavorName || undefined}
+                          onValueChange={(name) => {
+                            const f = flavourSelectOptions.find((x) => x.name === name)
+                            updateFlavourLine(row.key, {
+                              flavorName: name,
+                              flavorId: f && !String(f._id).startsWith("fallback-") ? f._id : "",
+                            })
+                          }}
+                        >
+                          <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 w-full">
+                            <SelectValue placeholder="Select flavour" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {flavourSelectOptions.map((f) => (
+                              <SelectItem key={f._id} value={f.name}>
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Litres</Label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="0.00"
+                              value={row.quantity}
+                              onChange={(e) => updateFlavourLine(row.key, { quantity: e.target.value })}
+                              className="border-2 border-slate-300 dark:border-slate-700 pr-10"
+                            />
+                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                              L
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Notes (optional)</Label>
+                          <Input
+                            placeholder="Any notes for this line…"
+                            value={row.notes}
+                            onChange={(e) => updateFlavourLine(row.key, { notes: e.target.value })}
+                            className="border-2 border-slate-300 dark:border-slate-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-violet-300 text-violet-800 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-200"
+                onClick={addFlavourLine}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add flavour line
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Raw Materials */}
         <Card className="border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
@@ -868,7 +1206,7 @@ export default function AddBatchPage() {
           <Button 
             type="submit"
             className="bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 shadow-lg shadow-orange-500/30 text-white"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (batchCreationStatus === "completed" && infuseOverAllocated)}
           >
             {isSubmitting ? (
               <>
