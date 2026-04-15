@@ -3,10 +3,71 @@
  * Legacy child batches in jaba_batches are still merged in API responses for old data.
  */
 
-import type { Db, Document } from "mongodb"
+import type { Db, Document, WithId } from "mongodb"
+import { ObjectId } from "mongodb"
 import { rowLitresFromContainer } from "@/lib/jaba-packaging-calculations"
 
 export const JABA_FLAVOUR_LINES_COLLECTION = "jaba_batch_flavour_lines"
+
+/** Stable comparison for matching an existing flavour line on re-infusion (same batch + flavour). */
+export function normalizeFlavourNameForMatch(name: string): string {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+}
+
+function flavourIdsEqual(a: unknown, b: string): boolean {
+  if (a == null || b == null) return false
+  const sa = String(a)
+  const sb = String(b)
+  if (sa === sb) return true
+  if (ObjectId.isValid(sa) && ObjectId.isValid(sb)) {
+    try {
+      return new ObjectId(sa).equals(new ObjectId(sb))
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+/**
+ * Find an existing flavour line document when allocating more volume to the same flavour.
+ * Prefers flavourId (catalog id) when provided; otherwise matches normalized flavour name.
+ * When flavourId is set on the request, does not merge into a line that already has a different catalogue id.
+ */
+export async function findExistingFlavourLineForParent(
+  db: Db,
+  parentId: string,
+  flavorId: string | null | undefined,
+  flavorName: string
+): Promise<WithId<Document> | null> {
+  const coll = db.collection(JABA_FLAVOUR_LINES_COLLECTION)
+  const nameNorm = normalizeFlavourNameForMatch(flavorName)
+  const lines = await coll.find({ parentBatchId: parentId }).toArray()
+
+  const fid = flavorId && String(flavorId).trim() ? String(flavorId).trim() : ""
+
+  if (fid) {
+    for (const line of lines) {
+      if (flavourIdsEqual(line.flavourId, fid)) return line as WithId<Document>
+    }
+    for (const line of lines) {
+      const n = normalizeFlavourNameForMatch(String(line.flavourName || ""))
+      if (n !== nameNorm) continue
+      const lineHasId = line.flavourId != null && String(line.flavourId).trim() !== ""
+      if (!lineHasId) return line as WithId<Document>
+    }
+    return null
+  }
+
+  for (const line of lines) {
+    const n = normalizeFlavourNameForMatch(String(line.flavourName || ""))
+    if (n === nameNorm) return line as WithId<Document>
+  }
+  return null
+}
 
 export type JabaFlavourLineWorkflowStatus =
   | "Allocated"

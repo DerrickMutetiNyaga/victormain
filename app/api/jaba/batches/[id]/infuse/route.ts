@@ -111,6 +111,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({
       success: true,
       created: result.created,
+      updated: result.updated,
       parent: {
         infusedAllocatedLitres: result.newAllocated,
         neutralRemainingLitres: result.newRemaining,

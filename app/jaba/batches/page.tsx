@@ -259,7 +259,15 @@ export default function BatchesPage() {
       if (!res.ok) {
         throw new Error(data.error || "Infusion failed")
       }
-      toast.success(`Allocated ${outputs.length} flavour line(s) on the same batch.`)
+      const nCreated = Array.isArray(data.created) ? data.created.length : 0
+      const nUpdated = Array.isArray(data.updated) ? data.updated.length : 0
+      if (nUpdated > 0 && nCreated > 0) {
+        toast.success(`Merged into ${nUpdated} existing line(s); added ${nCreated} new flavour line(s).`)
+      } else if (nUpdated > 0) {
+        toast.success(`Merged infusion into ${nUpdated} existing flavour line(s) (no duplicate rows).`)
+      } else {
+        toast.success(`Allocated ${nCreated} flavour line(s) on the same batch.`)
+      }
       setInfuseOpen(false)
       setInfuseParentId(null)
       await fetchBatches()
