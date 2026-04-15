@@ -434,7 +434,6 @@ export async function POST(request: Request) {
       bottles1L: 0,
       bottles2L: 0,
       status: 'Created',
-      qcStatus: 'Pending',
       supervisor,
       shift,
       ingredients: ingredientsForBatch,

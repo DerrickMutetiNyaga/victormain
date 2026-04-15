@@ -50,7 +50,6 @@ import {
   LayoutDashboard,
   Package,
   Boxes,
-  ClipboardCheck,
   FileText,
   Truck,
   Warehouse,
@@ -82,8 +81,6 @@ const availablePages = [
   { id: 'packaging-add', name: 'Create Session', path: '/jaba/packaging-output/add', icon: Boxes, color: 'purple' },
   { id: 'raw-materials', name: 'Raw Materials', path: '/jaba/raw-materials', icon: Package, color: 'orange' },
   { id: 'raw-materials-add', name: 'Add Material', path: '/jaba/raw-materials/add', icon: Package, color: 'orange' },
-  { id: 'qc-checklist', name: 'QC Checklist', path: '/jaba/qc/checklist', icon: ClipboardCheck, color: 'green' },
-  { id: 'qc-results', name: 'QC Results', path: '/jaba/qc/results', icon: ClipboardCheck, color: 'green' },
   { id: 'distribution', name: 'Distribution', path: '/jaba/distribution', icon: Truck, color: 'indigo' },
   { id: 'distribution-create', name: 'Create Delivery Note', path: '/jaba/distribution/create', icon: FileText, color: 'indigo' },
   { id: 'dispatch', name: 'Dispatch Records', path: '/jaba/distribution/dispatch', icon: Truck, color: 'indigo' },
@@ -115,7 +112,6 @@ const STATUS_OPTIONS = [
 // Permission groups for accordion
 const PERMISSION_GROUPS = {
   Production: ['batches', 'batches-add', 'packaging', 'packaging-add', 'raw-materials', 'raw-materials-add'],
-  Quality: ['qc-checklist', 'qc-results'],
   Distribution: ['distribution', 'distribution-create', 'dispatch', 'suppliers', 'suppliers-add', 'distributors', 'distributors-add'],
   Storage: ['storage-finished', 'storage-movement'],
   Reports: ['reports-batches', 'reports-production', 'reports-materials', 'reports-distribution'],

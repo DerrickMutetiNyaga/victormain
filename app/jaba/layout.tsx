@@ -25,7 +25,6 @@ import {
   Warehouse,
   FileBarChart,
   List,
-  CheckSquare,
   PackageSearch,
   TrendingUp,
   Home,
@@ -63,7 +62,6 @@ const navigationGroups = [
     items: [
       { name: "Batch Production", href: "/jaba/batches", icon: List, pageId: "batches" },
       { name: "Packaging", href: "/jaba/packaging-output", icon: Boxes, pageId: "packaging" },
-      { name: "Quality Control", href: "/jaba/qc/checklist", icon: CheckSquare, pageId: "qc-checklist" },
     ],
   },
   {
@@ -109,7 +107,6 @@ const NAV_ITEM_PERMISSION_MAP: Record<string, string> = {
   '/jaba': 'system.dashboard',
   '/jaba/batches': 'production.batches',
   '/jaba/packaging-output': 'production.packaging',
-  '/jaba/qc/checklist': 'production.qcChecklist',
   '/jaba/raw-materials': 'production.rawMaterials',
   '/jaba/raw-materials/flow': 'production.rawMaterials',
   '/jaba/storage/finished': 'storage.finished',

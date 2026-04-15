@@ -5,12 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from "recharts"
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
 import { Plus, Truck, Package, TrendingUp, Factory, ArrowRight, AlertTriangle, FileText, Boxes, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
-
-const COLORS = ["#10b981", "#ef4444", "#f59e0b", "#1e293b"]
 
 interface DashboardData {
   dashboardStats: {
@@ -19,7 +17,7 @@ interface DashboardData {
     batchesToday: number
     totalLitresManufactured: number
     litresProducedToday: number
-    batchesInQC: number
+    batchesAwaitingPackaging: number
     finishedGoodsStock: {
       "500ml": number
       "1L": number
@@ -69,11 +67,6 @@ interface DashboardData {
   materialUsageTrends: Array<{
     date: string
     usage: number
-  }>
-  qcPassFailData: Array<{
-    name: string
-    value: number
-    color: string
   }>
   weeklyDistributionData: Array<{
     date: string
@@ -166,7 +159,7 @@ export default function JabaDashboard() {
     )
   }
 
-  const { dashboardStats, recentBatches, recentDeliveries, lowStockMaterials, dailyProductionData, weeklyProductionData, materialUsageTrends, qcPassFailData, weeklyDistributionData } = data
+  const { dashboardStats, recentBatches, recentDeliveries, lowStockMaterials, dailyProductionData, weeklyProductionData, materialUsageTrends, weeklyDistributionData } = data
 
   return (
     <>
@@ -223,9 +216,9 @@ export default function JabaDashboard() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Batches in QC</p>
-                  <p className="mt-1 text-2xl font-bold text-card-foreground">{dashboardStats.batchesInQC}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Pending quality checks</p>
+                  <p className="text-sm text-muted-foreground">Awaiting packaging</p>
+                  <p className="mt-1 text-2xl font-bold text-card-foreground">{dashboardStats.batchesAwaitingPackaging}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Batches not yet sent to packaging</p>
                 </div>
                 <div className="rounded-lg p-2.5 bg-red-600/10">
                   <Package className="h-5 w-5 text-red-600" />
@@ -422,7 +415,7 @@ export default function JabaDashboard() {
         </div>
 
         {/* More Charts Row */}
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-6 lg:grid-cols-2">
           {/* Material Usage Trends */}
           <Card className="border-border bg-card">
             <CardHeader className="pb-2">
@@ -445,34 +438,6 @@ export default function JabaDashboard() {
                     <Area type="monotone" dataKey="usage" stroke="#10b981" strokeWidth={2} fill="url(#usageGradient)" />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* QC Pass/Fail Chart */}
-          <Card className="border-border bg-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-semibold text-card-foreground">QC Pass/Fail</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="h-[250px]">
-                {qcPassFailData && qcPassFailData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={qcPassFailData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
-                        {qcPassFailData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: "#1c1c28", border: "1px solid #2a2a3c", borderRadius: "8px", color: "#fafafa" }} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    No QC data available
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>

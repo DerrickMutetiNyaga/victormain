@@ -760,7 +760,7 @@ export const dashboardStats = {
       return batchDate.getTime() === today.getTime()
     })
     .reduce((sum, b) => sum + b.totalLitres, 0) || 245,
-  batchesInQC: batches.filter((b) => b.qcStatus === "In Progress" || b.qcStatus === "Pending").length,
+  batchesAwaitingPackaging: batches.filter((b) => b.status === "QC Pending").length,
   finishedGoodsStock: {
     "500ml": finishedGoods.filter((fg) => fg.size === "500ml").reduce((sum, fg) => sum + fg.quantity, 0),
     "1L": finishedGoods.filter((fg) => fg.size === "1L").reduce((sum, fg) => sum + fg.quantity, 0),
@@ -824,13 +824,6 @@ export const materialUsageTrends = Array.from({ length: 7 }, (_, i) => {
     usage: dayLogs.reduce((sum, log) => sum + log.quantityUsed, 0) || Math.floor(Math.random() * 200) + 50,
   }
 })
-
-// QC Pass/Fail Data
-export const qcPassFailData = [
-  { name: "Pass", value: qcResults.filter((qc) => qc.status === "Pass").length, color: "#10b981" },
-  { name: "Fail", value: qcResults.filter((qc) => qc.status === "Fail").length, color: "#ef4444" },
-  { name: "Pending", value: qcResults.filter((qc) => qc.status === "Pending").length, color: "#f59e0b" },
-]
 
 // Distribution Deliveries for Week
 export const weeklyDistributionData = Array.from({ length: 7 }, (_, i) => {

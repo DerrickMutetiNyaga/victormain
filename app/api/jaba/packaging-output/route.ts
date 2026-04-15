@@ -490,14 +490,22 @@ export async function POST(request: Request) {
         }
 
         if (flavourLineId) {
-          if (txBatch.status === 'QC Passed - Ready for Packaging' || txBatch.status === 'Partially Allocated' || txBatch.status === 'Fully Allocated') {
+          if (
+            txBatch.status === 'QC Passed - Ready for Packaging' ||
+            txBatch.status === 'Ready for Packaging' ||
+            txBatch.status === 'Partially Allocated' ||
+            txBatch.status === 'Fully Allocated'
+          ) {
             updateData.status = 'Partially Packaged'
           }
         } else {
           updateData['outputSummary.remainingLitres'] = txRemainingLitres
           if (txRemainingLitres <= 0) {
             updateData.status = 'Ready for Distribution'
-          } else if (txBatch.status === 'QC Passed - Ready for Packaging') {
+          } else if (
+            txBatch.status === 'QC Passed - Ready for Packaging' ||
+            txBatch.status === 'Ready for Packaging'
+          ) {
             updateData.status = 'Partially Packaged'
           }
         }

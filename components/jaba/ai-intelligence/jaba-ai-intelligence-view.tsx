@@ -529,7 +529,11 @@ export function JabaAiIntelligenceView({
         <HealthPill label="Health score" value={ex.healthScore} tone={healthTone === 'emerald' ? 'emerald' : 'amber'} />
         <HealthPill label="Batches today" value={data.kpis.batchesToday} tone="slate" />
         <HealthPill label="Litres today" value={fmt(data.kpis.litresProducedToday)} tone="slate" />
-        <HealthPill label="QC queue" value={data.kpis.batchesInQC} tone={data.kpis.batchesInQC > 6 ? 'amber' : 'emerald'} />
+        <HealthPill
+          label="Awaiting packaging"
+          value={data.kpis.batchesAwaitingPackaging}
+          tone={data.kpis.batchesAwaitingPackaging > 6 ? 'amber' : 'emerald'}
+        />
       </div>
 
       {/* Executive summary */}
@@ -581,7 +585,7 @@ export function JabaAiIntelligenceView({
           <KpiCard title="Batches today" value={fmt(data.kpis.batchesToday)} icon={TrendingUp} />
           <KpiCard title="Litres produced today" value={fmt(data.kpis.litresProducedToday)} icon={Zap} />
           <KpiCard title="Total litres manufactured" value={fmt(data.kpis.totalLitresManufactured)} icon={Zap} />
-          <KpiCard title="Batches in QC" value={fmt(data.kpis.batchesInQC)} icon={Shield} />
+          <KpiCard title="Awaiting packaging" value={fmt(data.kpis.batchesAwaitingPackaging)} icon={Shield} />
           <KpiCard title="Finished goods (bottles)" value={fmt(data.kpis.finishedGoodsStockTotalBottles)} icon={CheckCircle2} />
           <KpiCard title="Low stock materials" value={fmt(data.kpis.lowStockMaterialsCount)} sub="Raw & tracked inputs" icon={AlertTriangle} />
           <KpiCard title="Pending distributions" value={fmt(data.kpis.pendingDistributions)} icon={ArrowRight} />
@@ -659,23 +663,6 @@ export function JabaAiIntelligenceView({
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip contentStyle={{ borderRadius: 12 }} />
                   <Line type="monotone" dataKey="usage" name="Usage" stroke={CHART_COLORS.violet} strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartCard>
-
-          <ChartCard title="QC activity (recent batches)" description="Pass / fail / pending by day for batches in view">
-            <div className="h-[280px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data.charts.qcTrend}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-700" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ borderRadius: 12 }} />
-                  <Legend />
-                  <Line type="monotone" dataKey="pass" name="Pass" stroke="#10b981" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="fail" name="Fail" stroke="#ef4444" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="pending" name="Pending" stroke="#f59e0b" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -778,7 +765,7 @@ export function JabaAiIntelligenceView({
           <Textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask about throughput, materials, QC, distributors…"
+            placeholder="Ask about throughput, materials, packaging, distributors…"
             className="min-h-[100px] resize-y rounded-xl border-slate-200 dark:border-slate-700"
           />
           <Button onClick={ask} disabled={askLoading || !question.trim()} className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700">

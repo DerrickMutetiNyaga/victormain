@@ -82,7 +82,6 @@ export async function GET(request: Request) {
       'Bottles 2L': parseFloat(batch.bottles2L) || 0,
       'Shift': batch.shift || 'N/A',
       'Status': batch.status || 'Processing',
-      'QC Status': batch.qcStatus || 'Pending',
       'Supervisor': batch.supervisor || 'N/A',
       'Efficiency': batch.expectedLoss !== undefined 
         ? (100 - (parseFloat(batch.expectedLoss) || 0)).toFixed(1) + '%'
@@ -120,7 +119,6 @@ export async function GET(request: Request) {
       { wch: 10 }, // Bottles 2L
       { wch: 12 }, // Shift
       { wch: 20 }, // Status
-      { wch: 12 }, // QC Status
       { wch: 15 }, // Supervisor
       { wch: 12 }, // Efficiency
     ]

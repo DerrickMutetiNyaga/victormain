@@ -356,8 +356,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 'packaging-add': '/jaba/packaging-output/add',
                 'raw-materials': '/jaba/raw-materials',
                 'raw-materials-add': '/jaba/raw-materials/add',
-                'qc-checklist': '/jaba/qc/checklist',
-                'qc-results': '/jaba/qc/results',
                 'distribution': '/jaba/distribution',
                 'distribution-create': '/jaba/distribution/create',
                 'dispatch': '/jaba/distribution/dispatch',

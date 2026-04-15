@@ -311,7 +311,7 @@ export function buildDigests(
   const todaySummary = `Health ${executive.healthStatus} (score ${executive.healthScore}). ${kpis.batchesToday} batches today, ${Math.round(
     kpis.litresProducedToday
   )}L, ${kpis.pendingDistributions} pending distributions, ${kpis.lowStockMaterialsCount} low-stock materials.`
-  const weeklyOperational = `QC queue ${kpis.batchesInQC}. Finished goods ~${kpis.finishedGoodsStockTotalBottles} bottles on hand. ${
+  const weeklyOperational = `Awaiting packaging: ${kpis.batchesAwaitingPackaging} batches. Finished goods ~${kpis.finishedGoodsStockTotalBottles} bottles on hand. ${
     profit.bestEstimatedMarginFlavours[0]
       ? `Leading flavour by mix: ${profit.bestEstimatedMarginFlavours[0].flavor}.`
       : ''
@@ -406,13 +406,13 @@ export function buildNeedsAttentionToday(
     })
   }
 
-  if (kpis.batchesInQC >= 2) {
+  if (kpis.batchesAwaitingPackaging >= 2) {
     items.push({
-      id: 'na-qc',
-      urgency: kpis.batchesInQC >= 6 ? 'critical' : 'high',
-      title: `${kpis.batchesInQC} batches in QC`,
-      detail: 'Prioritise QC completion to unblock packaging and dispatch.',
-      category: 'qc',
+      id: 'na-packaging-queue',
+      urgency: kpis.batchesAwaitingPackaging >= 6 ? 'critical' : 'high',
+      title: `${kpis.batchesAwaitingPackaging} batches awaiting packaging`,
+      detail: 'Prioritise packaging sessions to unblock dispatch.',
+      category: 'packaging',
       sources: ['dashboard', 'batch-reports'],
     })
   }

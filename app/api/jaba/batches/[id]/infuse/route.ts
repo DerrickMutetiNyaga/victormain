@@ -82,6 +82,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       'Processed',
       'QC Pending',
       'QC Passed - Ready for Packaging',
+      'Ready for Packaging',
       'Partially Packaged',
       'Ready for Distribution',
       'Completed',

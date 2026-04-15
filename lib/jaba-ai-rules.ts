@@ -71,25 +71,14 @@ export function buildExecutiveAndAlerts(
     })
   }
 
-  // --- QC bottleneck
-  if (kpis.batchesInQC >= 5) {
+  // --- Packaging backlog (legacy “QC Pending” status in DB)
+  if (kpis.batchesAwaitingPackaging >= 5) {
     alerts.push({
-      id: 'qc-bottleneck',
+      id: 'packaging-backlog',
       severity: 'warning',
-      title: 'QC queue pressure',
-      detail: `${kpis.batchesInQC} batches in QC. Consider staffing or prioritization to protect downstream packaging.`,
-      metric: String(kpis.batchesInQC),
-    })
-  }
-
-  const qcPendingTrend = charts.qcTrend.slice(-3).reduce((s, d) => s + d.pending, 0)
-  const qcPendingPrior = charts.qcTrend.slice(0, 4).reduce((s, d) => s + d.pending, 0)
-  if (qcPendingTrend > qcPendingPrior && qcPendingTrend >= 3) {
-    alerts.push({
-      id: 'qc-pending-trend',
-      severity: 'warning',
-      title: 'QC risk trend',
-      detail: 'Pending QC counts have increased recently. Investigate checklist failures or lab turnaround.',
+      title: 'Packaging backlog',
+      detail: `${kpis.batchesAwaitingPackaging} batches awaiting packaging. Consider staffing or prioritization for packaging lines.`,
+      metric: String(kpis.batchesAwaitingPackaging),
     })
   }
 
@@ -167,7 +156,7 @@ export function buildExecutiveAndAlerts(
   // --- Executive scoring (simple heuristic)
   let score = 78
   if (kpis.lowStockMaterialsCount > 0) score -= 12
-  if (kpis.batchesInQC > 8) score -= 8
+  if (kpis.batchesAwaitingPackaging > 8) score -= 8
   if (top && top.share >= 0.55) score -= 7
   const mu2 = charts.materialUsage.map((m) => m.usage)
   if (mu2.length >= 5) {
@@ -195,11 +184,11 @@ export function buildExecutiveAndAlerts(
   const biggestRisk =
     kpis.lowStockMaterialsCount > 0
       ? `Material availability: ${kpis.lowStockMaterialsCount} items at or below minimum stock.`
-      : kpis.batchesInQC >= 5
-        ? `QC throughput: ${kpis.batchesInQC} batches waiting on QC.`
+      : kpis.batchesAwaitingPackaging >= 5
+        ? `Packaging backlog: ${kpis.batchesAwaitingPackaging} batches waiting before packaging.`
         : top && top.share >= 0.45
           ? `Channel risk: high volume concentration with ${top.name}.`
-          : 'Maintain visibility on dispatch and QC as volumes grow.'
+          : 'Maintain visibility on dispatch and packaging as volumes grow.'
 
   const topFlavor = charts.topFlavours[0]
   const biggestOpportunity = topFlavor
@@ -211,7 +200,7 @@ export function buildExecutiveAndAlerts(
       ? 'Approve restocks for low raw materials and confirm supplier ETAs.'
       : kpis.pendingDistributions > 0
         ? 'Clear pending distributions: confirm vehicles, drivers, and delivery windows.'
-        : 'Review QC queue and packaging schedule for today’s batches.'
+        : 'Review packaging schedule for today’s batches.'
 
   const actionThisWeek =
     kpis.lowPackagingMaterialsCount > 0 || kpis.lowStockMaterialsCount > 3
@@ -276,12 +265,12 @@ export function buildRecommendations(
     })
   }
 
-  if (kpis.batchesInQC >= 4) {
+  if (kpis.batchesAwaitingPackaging >= 4) {
     recs.push({
-      id: 'watch-qc',
+      id: 'watch-packaging-queue',
       category: 'watch',
-      title: 'Watch closely: QC queue',
-      detail: 'Multiple batches in QC — track turnaround and packaging readiness.',
+      title: 'Watch closely: packaging queue',
+      detail: 'Multiple batches awaiting packaging — track throughput and line readiness.',
       priority: 'high',
     })
   }

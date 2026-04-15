@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Hash, Tag, LayoutGrid, List, Loader2, X, Save, ClipboardCheck, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX, FlaskConical, GitBranch } from "lucide-react"
+import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Hash, Tag, LayoutGrid, List, Loader2, X, Save, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX, FlaskConical, GitBranch } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -75,10 +75,9 @@ interface Batch {
     | "Completed"
     | "Ready for Distribution"
     | "QC Passed - Ready for Packaging"
+    | "Ready for Packaging"
     | "QC Failed"
     | "Partially Packaged"
-  qcStage?: "initial" | "final"
-  qcStatus: "Pending" | "Pass" | "Fail" | "In Progress"
   supervisor: string
   shift: "Morning" | "Afternoon" | "Night"
   productionStartTime?: string
@@ -221,6 +220,7 @@ export default function BatchesPage() {
       "Processed",
       "QC Pending",
       "QC Passed - Ready for Packaging",
+      "Ready for Packaging",
       "Partially Packaged",
       "Ready for Distribution",
       "Completed",
@@ -770,7 +770,8 @@ export default function BatchesPage() {
   const totalBatches = batches.length
   const totalLitres = batches.reduce((sum, b) => sum + b.totalLitres, 0)
   const completedBatches = batches.filter((b) => b.status === "Completed" || b.status === "Ready for Distribution").length
-  const qcPendingBatches = batches.filter((b) => b.status === "QC Pending").length
+  /** Legacy DB status before packaging; counted in “In progress” overview. */
+  const awaitingPackagingLegacy = batches.filter((b) => b.status === "QC Pending").length
   const processingBatches = batches.filter((b) => b.status === "Processing").length
   const selectedInfuseParent = batches.find((b) => (b._id || b.id) === infuseParentId)
   const availableNeutralLitres =
@@ -850,7 +851,7 @@ export default function BatchesPage() {
               <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Overview</h2>
               {!isOverviewExpanded && (
                 <span className="text-sm text-slate-500 dark:text-slate-400 font-normal">
-                  — {totalBatches} Batches • {totalLitres.toLocaleString()}L • {processingBatches + qcPendingBatches} In Progress
+                  — {totalBatches} Batches • {totalLitres.toLocaleString()}L • {processingBatches + awaitingPackagingLegacy} In Progress
                 </span>
               )}
             </div>
@@ -921,7 +922,7 @@ export default function BatchesPage() {
                     <div className="flex-1">
                       <p className="text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">In Progress</p>
                       <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                        {processingBatches + qcPendingBatches}
+                        {processingBatches + awaitingPackagingLegacy}
                       </p>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center flex-shrink-0">
@@ -976,12 +977,13 @@ export default function BatchesPage() {
                     <SelectItem value="Partially Allocated">Partially Allocated</SelectItem>
                     <SelectItem value="Fully Infused">Fully Infused</SelectItem>
                     <SelectItem value="Fully Allocated">Fully Allocated</SelectItem>
-                    <SelectItem value="QC Pending">QC Pending</SelectItem>
-                    <SelectItem value="QC Passed - Ready for Packaging">QC Passed - Ready for Packaging</SelectItem>
+                    <SelectItem value="QC Pending">Awaiting packaging</SelectItem>
+                    <SelectItem value="QC Passed - Ready for Packaging">Ready for packaging (legacy)</SelectItem>
+                    <SelectItem value="Ready for Packaging">Ready for packaging</SelectItem>
                     <SelectItem value="Partially Packaged">Partially Packaged</SelectItem>
                     <SelectItem value="Completed">Completed</SelectItem>
                     <SelectItem value="Ready for Distribution">Ready for Distribution</SelectItem>
-                    <SelectItem value="QC Failed">QC Failed</SelectItem>
+                    <SelectItem value="QC Failed">Failed</SelectItem>
                   </SelectContent>
                 </Select>
                 <Dialog open={showFlavorDialog} onOpenChange={setShowFlavorDialog}>
@@ -1323,19 +1325,13 @@ export default function BatchesPage() {
                                 <FlaskConical className="h-4 w-4" />
                               </Button>
                             )}
-                            {(batch.status === "Processed" || batch.status === "QC Pending") && (
-                              <Link href={`/jaba/qc/checklist?batchId=${batch._id || batch.id}&stage=initial`}>
-                                <Button
-                                  size="sm"
-                                  className="h-8 w-8 p-0 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02]"
-                                  title="Start Quality Control"
-                                >
-                                  <ClipboardCheck className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                            )}
-                            {/* Show packaging button if QC passed, Processed (skip QC), or partially packaged */}
-                            {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || batch.status === "Partially Allocated" || batch.status === "Fully Allocated" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
+                            {/* Show packaging when batch is eligible for packaging session */}
+                            {((batch.status === "QC Passed - Ready for Packaging" ||
+                              batch.status === "Ready for Packaging" ||
+                              batch.status === "Processed" ||
+                              batch.status === "Partially Packaged" ||
+                              batch.status === "Partially Allocated" ||
+                              batch.status === "Fully Allocated") &&
                               canPackThisBatch(batch)) && (
                               <Link href={`/jaba/packaging-output/add?batchId=${batch._id || batch.id}`}>
                                 <Button
@@ -1694,19 +1690,12 @@ export default function BatchesPage() {
                           Infuse
                         </Button>
                       )}
-                      {(batch.status === "Processed" || batch.status === "QC Pending") && (
-                        <Link href={`/jaba/qc/checklist?batchId=${batch._id || batch.id}&stage=initial`} className="flex-1">
-                        <Button
-                          size="sm"
-                            className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-[1.02]"
-                        >
-                            <ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />
-                            QC
-                        </Button>
-                      </Link>
-                      )}
-                      {/* Show packaging button if QC passed, Processed (skip QC), or partially packaged */}
-                      {((batch.status === "QC Passed - Ready for Packaging" || batch.status === "Processed" || batch.status === "Partially Packaged" || batch.status === "Partially Allocated" || batch.status === "Fully Allocated" || (batch.qcStatus === "Pass" && batch.status !== "Ready for Distribution")) && 
+                      {((batch.status === "QC Passed - Ready for Packaging" ||
+                        batch.status === "Ready for Packaging" ||
+                        batch.status === "Processed" ||
+                        batch.status === "Partially Packaged" ||
+                        batch.status === "Partially Allocated" ||
+                        batch.status === "Fully Allocated") &&
                         canPackThisBatch(batch)) && (
                         <Link href={`/jaba/packaging-output/add?batchId=${batch._id || batch.id}`} className="flex-1">
                           <Button

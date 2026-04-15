@@ -30,9 +30,7 @@ export async function GET(request: Request) {
     const processingBatches = batches.filter((b: any) => 
       b.status === 'Processing' || b.status === 'Processed'
     ).length
-    const qcPendingBatches = batches.filter((b: any) => 
-      b.status === 'QC Pending'
-    ).length
+    const awaitingPackagingBatches = batches.filter((b: any) => b.status === 'QC Pending').length
     const readyForDistributionBatches = batches.filter((b: any) => 
       b.status === 'Ready for Distribution'
     ).length
@@ -52,20 +50,6 @@ export async function GET(request: Request) {
       const bottles2L = parseFloat(b.bottles2L) || 0
       return sum + bottles250ml + bottles500ml + bottles1L + bottles2L
     }, 0)
-
-    // QC statistics
-    const qcPassed = batches.filter((b: any) => 
-      b.qcStatus === 'Pass' || b.status === 'QC Passed - Ready for Packaging'
-    ).length
-    const qcFailed = batches.filter((b: any) => 
-      b.qcStatus === 'Fail' || b.status === 'QC Failed'
-    ).length
-    const qcPending = batches.filter((b: any) => 
-      b.qcStatus === 'Pending' || b.status === 'QC Pending'
-    ).length
-    const qcPassRate = totalBatches > 0 
-      ? ((qcPassed / (qcPassed + qcFailed)) * 100).toFixed(1)
-      : '0'
 
     // Monthly production trend (last 6 months)
     const monthlyProduction: { month: string; batches: number; litres: number; bottles: number }[] = []
@@ -187,7 +171,7 @@ export async function GET(request: Request) {
     const statusData = [
       { status: 'Completed', count: completedBatches, color: '#10b981' },
       { status: 'Processing', count: processingBatches, color: '#3b82f6' },
-      { status: 'QC Pending', count: qcPendingBatches, color: '#f59e0b' },
+      { status: 'Awaiting packaging', count: awaitingPackagingBatches, color: '#f59e0b' },
       { status: 'Ready for Distribution', count: readyForDistributionBatches, color: '#8b5cf6' },
     ]
 
@@ -238,7 +222,6 @@ export async function GET(request: Request) {
         bottles1L: parseFloat(batch.bottles1L) || 0,
         bottles2L: parseFloat(batch.bottles2L) || 0,
         status: batch.status || 'Processing',
-        qcStatus: batch.qcStatus || 'Pending',
         supervisor: batch.supervisor || 'N/A',
         parentBatchId: batch.parentBatchId ? String(batch.parentBatchId) : null,
       }))
@@ -257,7 +240,6 @@ export async function GET(request: Request) {
       bottles1L: parseFloat(batch.bottles1L) || 0,
       bottles2L: parseFloat(batch.bottles2L) || 0,
       status: batch.status || 'Processing',
-      qcStatus: batch.qcStatus || 'Pending',
       supervisor: batch.supervisor || 'N/A',
       shift: batch.shift || 'N/A',
       parentBatchId: batch.parentBatchId ? String(batch.parentBatchId) : null,
@@ -316,15 +298,11 @@ export async function GET(request: Request) {
       flavouredOutputCount: flavouredChildren.length,
       completedBatches,
       processingBatches,
-      qcPendingBatches,
+      awaitingPackagingBatches,
       readyForDistributionBatches,
       totalLitres,
       infusedFlavourLitres,
       totalBottles,
-      qcPassed,
-      qcFailed,
-      qcPending,
-      qcPassRate,
       monthlyProduction,
       weeklyProduction,
       statusData,

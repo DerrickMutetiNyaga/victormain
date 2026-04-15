@@ -50,7 +50,7 @@ function serializeBatchDoc(batch: any) {
   }
 }
 
-// PUT update batch by ID (supports QC updates)
+// PUT update batch by ID
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -62,12 +62,7 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
     const {
-      qcStatus,
-      qcStage,
-      qcNotes,
-      qcChecklist,
       status,
-      // Allow partial updates for QC
       batchNumber,
       date,
       flavor,
@@ -112,31 +107,6 @@ export async function PUT(
     // Prepare update data - allow partial updates
     const updateData: any = {
       updatedAt: new Date(),
-    }
-
-    // QC-specific updates
-    if (qcStatus !== undefined) {
-      updateData.qcStatus = qcStatus
-    }
-    if (qcStage !== undefined) {
-      updateData.qcStage = qcStage
-    }
-    if (qcNotes !== undefined) {
-      updateData.qcNotes = qcNotes
-    }
-    if (qcChecklist !== undefined) {
-      updateData.qcChecklist = qcChecklist
-    }
-    if (qcStage === 'initial' && qcStatus === 'Pass') {
-      // After initial QC passes, update status to ready for packaging
-      updateData.status = 'QC Passed - Ready for Packaging'
-    }
-    if (qcStage === 'final' && qcStatus === 'Pass') {
-      // After final QC passes, batch is ready for dispatch
-      updateData.status = 'Ready for Distribution'
-    }
-    if (qcStatus === 'Fail') {
-      updateData.status = 'QC Failed'
     }
 
     // Standard batch field updates (if provided)

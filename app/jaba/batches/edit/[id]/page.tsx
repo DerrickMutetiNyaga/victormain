@@ -491,7 +491,7 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
             <CardContent className="p-6 space-y-4">
               <p className="text-sm text-muted-foreground leading-relaxed">
                 This record is a <span className="font-semibold text-foreground">flavoured output</span> from a neutral batch.
-                Open the parent batch to see all outputs, or view this line for packaging and QC.
+                Open the parent batch to see all outputs, or view this line for packaging.
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
                 <Link href={`/jaba/batches/${parentBatchIdForChild}`} className="flex-1">
@@ -749,12 +749,13 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
                   <SelectContent>
                     <SelectItem value="Processing">Processing</SelectItem>
                     <SelectItem value="Processed">Processed</SelectItem>
-                    <SelectItem value="QC Pending">QC Pending</SelectItem>
-                    <SelectItem value="QC Passed - Ready for Packaging">QC Passed - Ready for Packaging</SelectItem>
+                    <SelectItem value="QC Pending">Awaiting packaging</SelectItem>
+                    <SelectItem value="QC Passed - Ready for Packaging">Ready for packaging (legacy)</SelectItem>
+                    <SelectItem value="Ready for Packaging">Ready for packaging</SelectItem>
                     <SelectItem value="Partially Packaged">Partially Packaged</SelectItem>
                     <SelectItem value="Ready for Distribution">Ready for Distribution</SelectItem>
                     <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="QC Failed">QC Failed</SelectItem>
+                    <SelectItem value="QC Failed">Failed</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -16,9 +16,9 @@ export function buildRuleBasedAnswer(question: string, ctx: JabaAiContext): AiAn
     issues.push(`${ctx.kpis.lowStockMaterialsCount} materials at or below minimum stock`)
     actions.push('Prioritise restock approvals and confirm supplier lead times')
   }
-  if (ctx.kpis.batchesInQC >= 4) {
-    issues.push(`${ctx.kpis.batchesInQC} batches in QC — potential bottleneck`)
-    actions.push('Review QC capacity and batch priority for packaging')
+  if (ctx.kpis.batchesAwaitingPackaging >= 4) {
+    issues.push(`${ctx.kpis.batchesAwaitingPackaging} batches awaiting packaging — potential bottleneck`)
+    actions.push('Review packaging capacity and batch priority')
   }
   if (ctx.chatHints.distributorConcentrationTop1Pct >= 45) {
     issues.push(

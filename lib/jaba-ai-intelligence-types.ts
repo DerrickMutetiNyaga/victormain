@@ -11,7 +11,7 @@ export type JabaAiKpis = {
   batchesToday: number
   litresProducedToday: number
   totalLitresManufactured: number
-  batchesInQC: number
+  batchesAwaitingPackaging: number
   finishedGoodsStockTotalBottles: number
   finishedGoodsBySize: Record<'250ml' | '500ml' | '1L' | '2L', number>
   lowStockMaterialsCount: number
@@ -20,18 +20,10 @@ export type JabaAiKpis = {
   completedDistributions: number
 }
 
-export type QcTrendPoint = {
-  date: string
-  pass: number
-  fail: number
-  pending: number
-}
-
 export type JabaAiCharts = {
   dailyProduction: { date: string; litres: number; batches: number }[]
   weeklyProduction: { label: string; litres: number; batches: number }[]
   materialUsage: { label: string; usage: number }[]
-  qcTrend: QcTrendPoint[]
   weeklyDistribution: { label: string; deliveries: number; quantity: number }[]
   topBottleSizes: { size: string; stockBottles: number; dispatchedBottles: number }[]
   topFlavours: { flavor: string; batches: number; litres: number }[]
@@ -110,7 +102,8 @@ export type NeedsAttentionItem = {
   urgency: 'critical' | 'high'
   title: string
   detail: string
-  category: 'material' | 'qc' | 'distribution' | 'stock' | 'data' | 'wastage' | 'supplier'
+  category: 'material' | 'packaging' | 'distribution' | 'stock' | 'data' | 'wastage' | 'supplier'
+
   sources: string[]
 }
 

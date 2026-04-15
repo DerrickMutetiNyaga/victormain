@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, FileText, Package, ClipboardCheck, Truck, Hash, Calendar, User, Clock, Thermometer, TrendingDown, CheckCircle2, XCircle, AlertCircle, Download, Factory, FlaskConical, BarChart3, MapPin, Loader2, Warehouse } from "lucide-react"
+import { ArrowLeft, FileText, Package, Truck, Hash, Calendar, User, Clock, Thermometer, TrendingDown, CheckCircle2, XCircle, AlertCircle, Download, Factory, FlaskConical, BarChart3, MapPin, Loader2, Warehouse } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -135,19 +135,6 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
         return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/30"
       default:
         return "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-    }
-  }
-
-  const getQCStatusColor = (status: string) => {
-    switch (status) {
-      case "Pass":
-        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/30"
-      case "Fail":
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/30"
-      case "In Progress":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-900/30"
-      default:
-        return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/30"
     }
   }
 
@@ -330,8 +317,8 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                   <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{batch.supervisor || "N/A"}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200/80 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60">
-                  <p className="text-[11px] text-muted-foreground">QC</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{batch.qcStatus || "Pending"}</p>
+                  <p className="text-[11px] text-muted-foreground">Status</p>
+                  <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{batch.status || "—"}</p>
                 </div>
               </div>
             </div>
@@ -485,51 +472,19 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
             </CardContent>
           </Card>
 
-          <Card className={cn(
-            "shadow-lg hover:shadow-xl transition-shadow",
-            batch.qcStatus === "Pass"
-              ? "border-green-200 dark:border-green-900/50 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-900/20"
-              : batch.qcStatus === "Fail"
-              ? "border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-900/20"
-              : "border-amber-200 dark:border-amber-900/50 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-900/20"
-          )}>
+          <Card className="border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50 to-slate-100/80 dark:from-slate-900/40 dark:to-slate-950/40 shadow-lg hover:shadow-xl transition-shadow">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className={cn(
-                    "text-sm font-medium mb-1",
-                    batch.qcStatus === "Pass" ? "text-green-700 dark:text-green-300" :
-                    batch.qcStatus === "Fail" ? "text-red-700 dark:text-red-300" :
-                    "text-amber-700 dark:text-amber-300"
-                  )}>QC Status</p>
-                  <p className={cn(
-                    "text-2xl font-bold",
-                    batch.qcStatus === "Pass" ? "text-green-900 dark:text-green-100" :
-                    batch.qcStatus === "Fail" ? "text-red-900 dark:text-red-100" :
-                    "text-amber-900 dark:text-amber-100"
-                  )}>{batch.qcStatus}</p>
-                  <div className={cn(
-                    "flex items-center gap-2 text-xs mt-2",
-                    batch.qcStatus === "Pass" ? "text-green-600 dark:text-green-400" :
-                    batch.qcStatus === "Fail" ? "text-red-600 dark:text-red-400" :
-                    "text-amber-600 dark:text-amber-400"
-                  )}>
-                    <ClipboardCheck className="h-3 w-3" />
-                    <span>Quality Check</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Workflow status</p>
+                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">{batch.status}</p>
+                  <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 mt-2">
+                    <BarChart3 className="h-3 w-3 shrink-0" />
+                    <span>Production pipeline</span>
                   </div>
                 </div>
-                <div className={cn(
-                  "rounded-xl p-3 border",
-                  batch.qcStatus === "Pass" ? "bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-800/50" :
-                  batch.qcStatus === "Fail" ? "bg-red-100 dark:bg-red-900/40 border-red-200 dark:border-red-800/50" :
-                  "bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-800/50"
-                )}>
-                  <ClipboardCheck className={cn(
-                    "h-6 w-6",
-                    batch.qcStatus === "Pass" ? "text-green-600 dark:text-green-400" :
-                    batch.qcStatus === "Fail" ? "text-red-600 dark:text-red-400" :
-                    "text-amber-600 dark:text-amber-400"
-                  )} />
+                <div className="rounded-xl p-3 border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/60">
+                  <BarChart3 className="h-6 w-6 text-slate-600 dark:text-slate-400" />
                 </div>
               </div>
             </CardContent>
@@ -553,10 +508,6 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
             <TabsTrigger value="materials" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Factory className="h-4 w-4 mr-2" />
               Materials
-            </TabsTrigger>
-            <TabsTrigger value="qc" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
-              <ClipboardCheck className="h-4 w-4 mr-2" />
-              QC Results
             </TabsTrigger>
             <TabsTrigger value="distribution" className="data-[state=active]:bg-white data-[state=active]:shadow-md dark:data-[state=active]:bg-slate-900 px-3 py-2 text-xs sm:px-4 sm:text-sm">
               <Truck className="h-4 w-4 mr-2" />
@@ -622,15 +573,6 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                       Shift:
                     </span>
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{batch.shift}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center gap-2">
-                      <ClipboardCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      QC Status:
-                    </span>
-                    <Badge className={cn("font-semibold text-xs px-2.5 py-1 border-2", getQCStatusColor(batch.qcStatus))}>
-                      {batch.qcStatus}
-                    </Badge>
                   </div>
                 </CardContent>
               </Card>
@@ -1164,131 +1106,6 @@ export default function BatchDetailsPage({ params }: { params: Promise<{ id: str
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* QC Results Tab */}
-          <TabsContent value="qc" className="space-y-6">
-            {batch.qcChecklist && batch.qcChecklist.length > 0 ? (
-              <Card className="border-green-200 dark:border-green-900/50 bg-gradient-to-br from-green-50/50 to-emerald-50/30 dark:from-green-950/20 dark:to-emerald-950/10 shadow-lg">
-                <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/20 border-b border-green-200 dark:border-green-900/50">
-                  <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
-                    <div className="p-2 rounded-lg bg-green-100 dark:bg-green-950/40 border border-green-200 dark:border-green-900/30">
-                      <ClipboardCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    </div>
-                    QC Results
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <Card className="border-green-200 dark:border-green-900/50 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-900/20">
-                      <CardContent className="p-4">
-                        <p className="text-sm font-semibold text-green-700 dark:text-green-300 mb-2">Status</p>
-                        <Badge className={cn("font-semibold text-sm px-3 py-1.5 border-2", getQCStatusColor(batch.qcStatus || 'Pending'))}>
-                          {batch.qcStatus || 'Pending'}
-                        </Badge>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-blue-200 dark:border-blue-900/50 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-900/20">
-                      <CardContent className="p-4">
-                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 mb-2">Stage</p>
-                        <p className="font-bold text-blue-900 dark:text-blue-100">{batch.qcStage || 'N/A'}</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-900/20">
-                      <CardContent className="p-4">
-                        <p className="text-sm font-semibold text-purple-700 dark:text-purple-300 mb-2">Date</p>
-                        <p className="font-bold text-purple-900 dark:text-purple-100">{batchDate.toLocaleDateString()}</p>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  <div className="rounded-lg border-2 border-slate-200 dark:border-slate-800 overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border-b-2 border-slate-300 dark:border-slate-700">
-                          <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-900 dark:text-slate-100 py-3 px-4">Check Item</TableHead>
-                          <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Result</TableHead>
-                          <TableHead className="font-semibold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 py-3 px-4">Notes</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {batch.qcChecklist.map((item: any, idx: number) => (
-                          <TableRow
-                            key={idx}
-                            className={cn(
-                              "hover:bg-gradient-to-r hover:from-green-50/70 hover:to-emerald-50/30 dark:hover:from-green-950/30 dark:hover:to-emerald-950/10 transition-all border-b border-slate-200 dark:border-slate-800",
-                              idx % 2 === 0 ? "bg-white dark:bg-slate-900/50" : "bg-slate-50/80 dark:bg-slate-900/30"
-                            )}
-                          >
-                            <TableCell className="py-4 px-4 font-semibold text-slate-900 dark:text-slate-100">{item.item || item.check || 'N/A'}</TableCell>
-                            <TableCell className="py-4 px-4">
-                              {(() => {
-                                // Determine result based on checked status and overall QC status
-                                let result = 'Pending'
-                                
-                                // First check if result or status is explicitly set
-                                if (item.result) {
-                                  result = item.result
-                                } else if (item.status) {
-                                  result = item.status
-                                } else if (item.checked !== undefined) {
-                                  // If checked is true and overall QC status is Pass, show Pass
-                                  if (item.checked && batch.qcStatus === 'Pass') {
-                                    result = 'Pass'
-                                  } else if (item.checked && batch.qcStatus === 'Fail') {
-                                    result = 'Fail'
-                                  } else if (!item.checked) {
-                                    result = 'Pending'
-                                  }
-                                } else if (batch.qcStatus === 'Pass') {
-                                  // If overall QC passed but no checked status, assume Pass
-                                  result = 'Pass'
-                                } else if (batch.qcStatus === 'Fail') {
-                                  result = 'Fail'
-                                }
-                                
-                                return (
-                                  <Badge className={cn(
-                                    "font-semibold text-xs px-2.5 py-1 border-2",
-                                    result === "Pass" 
-                                      ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-900/30"
-                                      : result === "Fail"
-                                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-900/30"
-                                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/30"
-                                  )}>
-                                    {result}
-                                  </Badge>
-                                )
-                              })()}
-                            </TableCell>
-                            <TableCell className="py-4 px-4 text-slate-600 dark:text-slate-400">{item.notes || "N/A"}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  {batch.qcNotes && (
-                    <div className="p-5 rounded-lg bg-slate-50 dark:bg-slate-900/50 border-2 border-slate-200 dark:border-slate-800">
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        Additional Notes:
-                      </p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">{batch.qcNotes}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-amber-200 dark:border-amber-900/50 bg-gradient-to-br from-amber-50/50 to-orange-50/30 dark:from-amber-950/20 dark:to-orange-950/10 shadow-lg">
-                <CardContent className="p-12 text-center">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="p-4 rounded-full bg-amber-100 dark:bg-amber-900/40 border-2 border-amber-200 dark:border-amber-900/30">
-                      <ClipboardCheck className="h-12 w-12 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">No QC results available for this batch</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           {/* Distribution Tab */}

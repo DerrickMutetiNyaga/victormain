@@ -110,12 +110,12 @@ function CreatePackagingSessionPageContent() {
       if (response.ok && data.batches) {
         // Filter batches that are ready for packaging
         const readyBatches = data.batches.filter((b: any) => 
-          b.status === "QC Passed - Ready for Packaging" || 
+          b.status === "QC Passed - Ready for Packaging" ||
+          b.status === "Ready for Packaging" ||
           b.status === "Processed" ||
           b.status === "Partially Packaged" ||
           b.status === "Partially Allocated" ||
-          b.status === "Fully Allocated" ||
-          (b.qcStatus === "Pass" && b.status !== "Ready for Distribution")
+          b.status === "Fully Allocated"
         )
         setAvailableBatches(readyBatches)
       }
@@ -660,11 +660,6 @@ function CreatePackagingSessionPageContent() {
                             ? `Remaining on line: ${availableVolume.toFixed(2)}L`
                             : `Remaining: ${availableVolume.toFixed(2)}L`}
                         </span>
-                        {batchData.qcStatus && (
-                        <Badge variant="outline" className="text-xs border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">
-                            QC: {batchData.qcStatus}
-                        </Badge>
-                        )}
                       </div>
                     </div>
                   </div>

@@ -3,7 +3,7 @@
  * (same handlers as the dashboard and reports UI). Used by /api/jaba/ai-context
  * and answer generation.
  */
-import type { DataQualityIssue, JabaAiCharts, JabaAiContext, JabaAiKpis, QcTrendPoint } from '@/lib/jaba-ai-intelligence-types'
+import type { DataQualityIssue, JabaAiCharts, JabaAiContext, JabaAiKpis } from '@/lib/jaba-ai-intelligence-types'
 import {
   buildApiWastageSignals,
   buildComparisons,
@@ -51,52 +51,6 @@ function num(v: unknown): number {
   if (typeof v === 'number' && !Number.isNaN(v)) return v
   const n = parseFloat(String(v ?? ''))
   return Number.isFinite(n) ? n : 0
-}
-
-function normalizeDateKey(d: Date): string {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x.toISOString().slice(0, 10)
-}
-
-function buildQcTrendFromBatches(
-  batchRows: Array<{ date?: string; qcStatus?: string; status?: string }>
-): QcTrendPoint[] {
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  const dayKeys: string[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    dayKeys.push(normalizeDateKey(d))
-  }
-  const counts = new Map<string, { pass: number; fail: number; pending: number }>()
-  for (const k of dayKeys) {
-    counts.set(k, { pass: 0, fail: 0, pending: 0 })
-  }
-  for (const b of batchRows) {
-    if (!b.date) continue
-    const t = new Date(b.date)
-    if (Number.isNaN(t.getTime())) continue
-    const key = normalizeDateKey(t)
-    if (!counts.has(key)) continue
-    const qc = String(b.qcStatus || '')
-    const st = String(b.status || '')
-    const bucket = counts.get(key)!
-    if (qc === 'Pass' || st === 'QC Passed - Ready for Packaging') bucket.pass += 1
-    else if (qc === 'Fail' || st === 'QC Failed') bucket.fail += 1
-    else if (qc === 'Pending' || st === 'QC Pending') bucket.pending += 1
-  }
-  return dayKeys.map((k) => {
-    const d = new Date(k + 'T12:00:00')
-    const c = counts.get(k)!
-    return {
-      date: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-      pass: c.pass,
-      fail: c.fail,
-      pending: c.pending,
-    }
-  })
 }
 
 /** Aggregate bottle dispatch counts from distribution report recent deliveries */
@@ -174,7 +128,6 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
   }>
   const recentBatchesBatch = (batchRep['recentBatches'] ?? []) as Array<{
     date?: string
-    qcStatus?: string
     status?: string
   }>
   const monthlyProductionBr = (batchRep['monthlyProduction'] ?? []) as Array<{
@@ -270,7 +223,7 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
     batchesToday: num(dashStats['batchesToday']),
     litresProducedToday: num(dashStats['litresProducedToday']),
     totalLitresManufactured: num(dashStats['totalLitresManufactured']),
-    batchesInQC: num(dashStats['batchesInQC']),
+    batchesAwaitingPackaging: num(dashStats['batchesAwaitingPackaging']),
     finishedGoodsStockTotalBottles: Math.round(finishedTotal),
     finishedGoodsBySize: stockBySize,
     lowStockMaterialsCount,
@@ -306,10 +259,6 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
         batches: num(w.batches),
       }))
 
-  const qcBatchRows = [...recentBatchesBatch]
-  const prodRecent = (prod['recentBatches'] ?? []) as typeof recentBatchesBatch
-  qcBatchRows.push(...prodRecent)
-
   const charts: JabaAiCharts = {
     dailyProduction: dailyProduction.map((d) => ({
       date: String(d.date ?? ''),
@@ -321,7 +270,6 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
       label: String(m.date ?? ''),
       usage: num(m.usage),
     })),
-    qcTrend: buildQcTrendFromBatches(qcBatchRows),
     weeklyDistribution: weeklyDistributionDash.map((w) => ({
       label: String(w.date ?? ''),
       deliveries: num(w.deliveries),

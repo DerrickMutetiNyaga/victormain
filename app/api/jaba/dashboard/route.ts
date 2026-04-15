@@ -80,10 +80,8 @@ export async function GET(request: Request) {
       })
       .reduce((sum: number, b: any) => sum + (parseFloat(b.totalLitres) || 0), 0)
 
-    // Batches in QC
-    const batchesInQC = batches.filter((b: any) => 
-      b.qcStatus === 'Pending' || b.qcStatus === 'In Progress' || b.status === 'QC Pending'
-    ).length
+    /** Legacy “QC Pending” rows still in DB — shown as awaiting packaging in the UI. */
+    const batchesAwaitingPackaging = batches.filter((b: any) => b.status === 'QC Pending').length
 
     // Finished goods stock from packaging outputs
     let finishedGoodsStock500ml = 0
@@ -149,7 +147,7 @@ export async function GET(request: Request) {
       batchesToday,
       totalLitresManufactured,
       litresProducedToday,
-      batchesInQC,
+      batchesAwaitingPackaging,
       finishedGoodsStock: {
         '250ml': finishedGoodsStock250ml,
         '500ml': finishedGoodsStock500ml,
@@ -277,23 +275,6 @@ export async function GET(request: Request) {
       }
     })
 
-    // QC Pass/Fail data
-    const qcPassed = batches.filter((b: any) => 
-      b.qcStatus === 'Pass' || b.status === 'QC Passed - Ready for Packaging'
-    ).length
-    const qcFailed = batches.filter((b: any) => 
-      b.qcStatus === 'Fail' || b.status === 'QC Failed'
-    ).length
-    const qcPending = batches.filter((b: any) => 
-      b.qcStatus === 'Pending' || b.status === 'QC Pending'
-    ).length
-
-    const qcPassFailData = [
-      { name: 'Pass', value: qcPassed, color: '#10b981' },
-      { name: 'Fail', value: qcFailed, color: '#ef4444' },
-      { name: 'Pending', value: qcPending, color: '#f59e0b' },
-    ].filter(item => item.value > 0) // Only show categories with data
-
     // Weekly distribution data
     const weeklyDistributionData = Array.from({ length: 7 }, (_, i) => {
       const date = new Date(today)
@@ -332,7 +313,6 @@ export async function GET(request: Request) {
       dailyProductionData,
       weeklyProductionData,
       materialUsageTrends,
-      qcPassFailData,
       weeklyDistributionData,
     })
   } catch (error: any) {

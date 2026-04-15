@@ -19,14 +19,10 @@ interface BatchReportData {
   totalBatches: number
   completedBatches: number
   processingBatches: number
-  qcPendingBatches: number
+  awaitingPackagingBatches: number
   readyForDistributionBatches: number
   totalLitres: number
   totalBottles: number
-  qcPassed: number
-  qcFailed: number
-  qcPending: number
-  qcPassRate: string
   monthlyProduction: Array<{ month: string; batches: number; litres: number; bottles: number }>
   weeklyProduction: Array<{ date: string; batches: number; litres: number }>
   statusData: Array<{ status: string; count: number; color: string }>
@@ -42,7 +38,6 @@ interface BatchReportData {
     bottles1L: number
     bottles2L: number
     status: string
-    qcStatus: string
     supervisor: string
   }>
   recentBatches: Array<{
@@ -56,7 +51,6 @@ interface BatchReportData {
     bottles1L: number
     bottles2L: number
     status: string
-    qcStatus: string
     supervisor: string
     shift: string
   }>
@@ -103,14 +97,11 @@ export default function BatchReportsPage() {
   const totalBatches = reportData?.totalBatches || 0
   const completedBatches = reportData?.completedBatches || 0
   const processingBatches = reportData?.processingBatches || 0
-  const qcPendingBatches = reportData?.qcPendingBatches || 0
+  const awaitingPackagingBatches = reportData?.awaitingPackagingBatches || 0
   const readyForDistributionBatches = reportData?.readyForDistributionBatches || 0
   const totalLitres = reportData?.totalLitres || 0
   const totalBottles = reportData?.totalBottles || 0
-  const qcPassed = reportData?.qcPassed || 0
-  const qcFailed = reportData?.qcFailed || 0
-  const qcPending = reportData?.qcPending || 0
-  const qcPassRate = reportData?.qcPassRate || "0"
+  const avgLoss = reportData?.avgLoss ?? 0
   const monthlyProduction = reportData?.monthlyProduction || []
   const weeklyProduction = reportData?.weeklyProduction || []
   const statusData = reportData?.statusData || []
@@ -127,20 +118,11 @@ export default function BatchReportsPage() {
       'Processed': 'bg-blue-100 text-blue-800',
       'QC Pending': 'bg-amber-100 text-amber-800',
       'QC Passed - Ready for Packaging': 'bg-green-100 text-green-800',
+      'Ready for Packaging': 'bg-green-100 text-green-800',
       'QC Failed': 'bg-red-100 text-red-800',
       'Partially Packaged': 'bg-yellow-100 text-yellow-800',
     }
     return statusColors[status] || 'bg-gray-100 text-gray-800'
-  }
-
-  const getQCStatusBadge = (qcStatus: string) => {
-    const qcColors: Record<string, string> = {
-      'Pass': 'bg-green-100 text-green-800',
-      'Fail': 'bg-red-100 text-red-800',
-      'Pending': 'bg-amber-100 text-amber-800',
-      'In Progress': 'bg-blue-100 text-blue-800',
-    }
-    return qcColors[qcStatus] || 'bg-gray-100 text-gray-800'
   }
 
   return (
@@ -193,7 +175,7 @@ export default function BatchReportsPage() {
                         <SelectItem value="all">All Statuses</SelectItem>
                         <SelectItem value="Processing">Processing</SelectItem>
                         <SelectItem value="Completed">Completed</SelectItem>
-                        <SelectItem value="QC Pending">QC Pending</SelectItem>
+                        <SelectItem value="QC Pending">Awaiting packaging</SelectItem>
                         <SelectItem value="Ready for Distribution">Ready for Distribution</SelectItem>
                       </SelectContent>
                     </Select>
@@ -251,9 +233,9 @@ export default function BatchReportsPage() {
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">QC Pass Rate</p>
-                      <p className="mt-1 text-2xl font-bold text-card-foreground">{qcPassRate}%</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{qcPassed} passed, {qcFailed} failed</p>
+                      <p className="text-sm text-muted-foreground">Avg production loss</p>
+                      <p className="mt-1 text-2xl font-bold text-card-foreground">{avgLoss.toFixed(2)}L</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Across batches with variance data</p>
                     </div>
                     <div className="rounded-lg p-2.5 bg-purple-600/10">
                       <FlaskConical className="h-5 w-5 text-purple-600" />
@@ -268,7 +250,7 @@ export default function BatchReportsPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">In Processing</p>
                       <p className="mt-1 text-2xl font-bold text-card-foreground">{processingBatches}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{qcPendingBatches} QC pending</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{awaitingPackagingBatches} awaiting packaging</p>
                     </div>
                     <div className="rounded-lg p-2.5 bg-amber-600/10">
                       <Clock className="h-5 w-5 text-amber-600" />
@@ -398,7 +380,6 @@ export default function BatchReportsPage() {
                         <TableHead className="font-semibold">Total Litres</TableHead>
                         <TableHead className="font-semibold">Bottles</TableHead>
                         <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="font-semibold">QC Status</TableHead>
                         <TableHead className="font-semibold">Supervisor</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -424,17 +405,12 @@ export default function BatchReportsPage() {
                                 {batch.status}
                               </Badge>
                             </TableCell>
-                            <TableCell>
-                              <Badge className={cn(getQCStatusBadge(batch.qcStatus))}>
-                                {batch.qcStatus}
-                              </Badge>
-                            </TableCell>
                             <TableCell className="text-muted-foreground">{batch.supervisor}</TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                             No batches found
                           </TableCell>
                         </TableRow>
@@ -461,7 +437,6 @@ export default function BatchReportsPage() {
                         <TableHead className="font-semibold">Volume</TableHead>
                         <TableHead className="font-semibold">Shift</TableHead>
                         <TableHead className="font-semibold">Status</TableHead>
-                        <TableHead className="font-semibold">QC Status</TableHead>
                         <TableHead className="font-semibold">Supervisor</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -493,17 +468,12 @@ export default function BatchReportsPage() {
                                 {batch.status}
                               </Badge>
                             </TableCell>
-                            <TableCell>
-                              <Badge className={cn(getQCStatusBadge(batch.qcStatus))}>
-                                {batch.qcStatus}
-                              </Badge>
-                            </TableCell>
                             <TableCell className="text-muted-foreground">{batch.supervisor}</TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                             No batches found
                           </TableCell>
                         </TableRow>
