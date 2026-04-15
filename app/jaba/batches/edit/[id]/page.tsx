@@ -34,7 +34,6 @@ interface Batch {
   supervisor: string
   shift: "Morning" | "Afternoon" | "Night"
   status: string
-  tankNumber?: string
   locked?: boolean
   ingredients: { material: string; quantity: number; unit: string; materialId?: string }[]
 }
@@ -49,7 +48,6 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
   const [supervisor, setSupervisor] = useState("")
   const [shift, setShift] = useState<"Morning" | "Afternoon" | "Night">("Morning")
   const [expectedLitres, setExpectedLitres] = useState("")
-  const [tankNumber, setTankNumber] = useState("")
   const [status, setStatus] = useState("Processing")
   const [selectedMaterials, setSelectedMaterials] = useState<{ material: string; quantity: string; unit: string; materialId?: string }[]>([])
   const [materialSelections, setMaterialSelections] = useState<{ [key: string]: string }>({})
@@ -101,7 +99,6 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
         setSupervisor(batch.supervisor || "")
         setShift(batch.shift || "Morning")
         setExpectedLitres((batch.expectedLitres || batch.totalLitres)?.toString() || "")
-        setTankNumber(batch.tankNumber || "")
         setStatus(batch.status || "Processing")
         
         // Check if batch is locked (processed)
@@ -364,10 +361,6 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
       missingFields.push("Expected Production Volume (Litres)")
     }
 
-    if (!tankNumber || tankNumber.trim() === "") {
-      missingFields.push("Tank Number")
-    }
-
     // If there are missing fields, show specific error
     if (missingFields.length > 0) {
       const fieldsList = missingFields.join(", ")
@@ -438,7 +431,6 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
           expectedLitres: Number(expectedLitres),
           supervisor,
           shift,
-          tankNumber: tankNumber.trim(),
           status,
           ingredients,
         }),
@@ -710,32 +702,18 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
               </div>
             </div>
 
-            {/* Supervisor & Tank Number Row */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="supervisor" className="font-semibold text-foreground">
-                  Supervisor Name <span className="text-red-600 dark:text-red-400 font-bold">*</span>
-                </Label>
-                <Input
-                  id="supervisor"
-                  placeholder="Enter supervisor name"
-                  value={supervisor}
-                  onChange={(e) => setSupervisor(e.target.value)}
-                  className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tankNumber" className="font-semibold text-foreground">
-                  Tank Number <span className="text-red-600 dark:text-red-400 font-bold">*</span>
-                </Label>
-                <Input
-                  id="tankNumber"
-                  placeholder="e.g., TANK-001"
-                  value={tankNumber}
-                  onChange={(e) => setTankNumber(e.target.value)}
-                  className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
-                />
-              </div>
+            {/* Supervisor */}
+            <div className="space-y-2 max-w-xl">
+              <Label htmlFor="supervisor" className="font-semibold text-foreground">
+                Supervisor Name <span className="text-red-600 dark:text-red-400 font-bold">*</span>
+              </Label>
+              <Input
+                id="supervisor"
+                placeholder="Enter supervisor name"
+                value={supervisor}
+                onChange={(e) => setSupervisor(e.target.value)}
+                className="border-2 border-slate-300 dark:border-slate-700 focus:border-red-500 dark:focus:border-red-500"
+              />
             </div>
 
             {/* Status Row */}

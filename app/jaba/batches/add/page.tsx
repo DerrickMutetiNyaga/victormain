@@ -744,189 +744,6 @@ export default function AddBatchPage() {
           </CardContent>
         </Card>
 
-        {batchCreationStatus === "completed" && (
-          <Card className="border-2 border-violet-300 dark:border-violet-800 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
-            <CardHeader className="border-b border-violet-200 dark:border-violet-900 bg-gradient-to-r from-violet-50/90 to-fuchsia-50/50 dark:from-violet-950/50 dark:to-fuchsia-950/30">
-              <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-violet-600 dark:bg-violet-700 shadow-sm">
-                  <FlaskConical className="h-5 w-5 text-white" />
-                </div>
-                Create flavoured outputs
-              </CardTitle>
-              <p className="text-sm text-muted-foreground pt-1">
-                Split neutral volume into one or more flavour lines. Total litres cannot exceed available neutral volume.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl border-2 border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                    Available
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-violet-900 dark:text-violet-100">
-                    {availableNeutralLitres.toFixed(2)}L
-                  </p>
-                </div>
-                <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-                    Planned
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">
-                    {plannedInfuseLitres.toFixed(2)}L
-                  </p>
-                </div>
-                <div
-                  className={cn(
-                    "rounded-xl border-2 p-4",
-                    infuseOverAllocated
-                      ? "border-red-300 bg-red-50/90 dark:border-red-900 dark:bg-red-950/40"
-                      : "border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40"
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "text-xs font-semibold uppercase tracking-wide",
-                      infuseOverAllocated
-                        ? "text-red-700 dark:text-red-300"
-                        : "text-emerald-700 dark:text-emerald-300"
-                    )}
-                  >
-                    Remaining
-                  </p>
-                  <p
-                    className={cn(
-                      "mt-1 text-2xl font-bold",
-                      infuseOverAllocated
-                        ? "text-red-900 dark:text-red-100"
-                        : "text-emerald-900 dark:text-emerald-100"
-                    )}
-                  >
-                    {infuseOverAllocated
-                      ? `-${(plannedInfuseLitres - availableNeutralLitres).toFixed(2)}L`
-                      : `${remainingInfuseLitres.toFixed(2)}L`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2 max-w-md">
-                <Label htmlFor="infusionDate">Infusion date</Label>
-                <Input
-                  id="infusionDate"
-                  type="date"
-                  value={infusionDate}
-                  onChange={(e) => setInfusionDate(e.target.value)}
-                  className="border-2 border-slate-300 dark:border-slate-700"
-                />
-              </div>
-
-              {infuseFieldErrors && (
-                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
-                  {infuseFieldErrors}
-                </div>
-              )}
-              {infuseOverAllocated && (
-                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
-                  Planned volume exceeds expected production volume. Reduce litres or increase expected volume.
-                </div>
-              )}
-
-              <div className="space-y-4">
-                {flavourLines.map((row, index) => (
-                  <div
-                    key={row.key}
-                    className="rounded-xl border-2 border-violet-200 dark:border-violet-900 bg-slate-50/50 dark:bg-slate-950/30 p-4 space-y-4"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
-                          {index + 1}
-                        </div>
-                        <span className="text-sm font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300 truncate">
-                          Flavour line
-                        </span>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
-                        onClick={() => removeFlavourLine(row.key)}
-                      >
-                        <X className="h-4 w-4 mr-1" />
-                        Remove
-                      </Button>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-1">
-                      <div className="space-y-2">
-                        <Label>Flavour</Label>
-                        <Select
-                          value={row.flavorName || undefined}
-                          onValueChange={(name) => {
-                            const f = flavourSelectOptions.find((x) => x.name === name)
-                            updateFlavourLine(row.key, {
-                              flavorName: name,
-                              flavorId: f && !String(f._id).startsWith("fallback-") ? f._id : "",
-                            })
-                          }}
-                        >
-                          <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 w-full">
-                            <SelectValue placeholder="Select flavour" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {flavourSelectOptions.map((f) => (
-                              <SelectItem key={f._id} value={f.name}>
-                                {f.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Litres</Label>
-                          <div className="relative">
-                            <Input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              placeholder="0.00"
-                              value={row.quantity}
-                              onChange={(e) => updateFlavourLine(row.key, { quantity: e.target.value })}
-                              className="border-2 border-slate-300 dark:border-slate-700 pr-10"
-                            />
-                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                              L
-                            </span>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Notes (optional)</Label>
-                          <Input
-                            placeholder="Any notes for this line…"
-                            value={row.notes}
-                            onChange={(e) => updateFlavourLine(row.key, { notes: e.target.value })}
-                            className="border-2 border-slate-300 dark:border-slate-700"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-violet-300 text-violet-800 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-200"
-                onClick={addFlavourLine}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add flavour line
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Raw Materials */}
         <Card className="border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
           <CardHeader className="border-b-2 border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-50/80 to-amber-100/40 dark:from-amber-950/40 dark:to-amber-900/20">
@@ -1190,6 +1007,189 @@ export default function AddBatchPage() {
             )}
           </CardContent>
         </Card>
+
+        {batchCreationStatus === "completed" && (
+          <Card className="border-2 border-violet-300 dark:border-violet-800 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+            <CardHeader className="border-b border-violet-200 dark:border-violet-900 bg-gradient-to-r from-violet-50/90 to-fuchsia-50/50 dark:from-violet-950/50 dark:to-fuchsia-950/30">
+              <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-violet-600 dark:bg-violet-700 shadow-sm">
+                  <FlaskConical className="h-5 w-5 text-white" />
+                </div>
+                Create flavoured outputs
+              </CardTitle>
+              <p className="text-sm text-muted-foreground pt-1">
+                Split neutral volume into one or more flavour lines. Total litres cannot exceed available neutral volume.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border-2 border-violet-200 dark:border-violet-800 bg-violet-50/80 dark:bg-violet-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                    Available
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-violet-900 dark:text-violet-100">
+                    {availableNeutralLitres.toFixed(2)}L
+                  </p>
+                </div>
+                <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                    Planned
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">
+                    {plannedInfuseLitres.toFixed(2)}L
+                  </p>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-xl border-2 p-4",
+                    infuseOverAllocated
+                      ? "border-red-300 bg-red-50/90 dark:border-red-900 dark:bg-red-950/40"
+                      : "border-emerald-200 dark:border-emerald-800 bg-emerald-50/80 dark:bg-emerald-950/40"
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "text-xs font-semibold uppercase tracking-wide",
+                      infuseOverAllocated
+                        ? "text-red-700 dark:text-red-300"
+                        : "text-emerald-700 dark:text-emerald-300"
+                    )}
+                  >
+                    Remaining
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-1 text-2xl font-bold",
+                      infuseOverAllocated
+                        ? "text-red-900 dark:text-red-100"
+                        : "text-emerald-900 dark:text-emerald-100"
+                    )}
+                  >
+                    {infuseOverAllocated
+                      ? `-${(plannedInfuseLitres - availableNeutralLitres).toFixed(2)}L`
+                      : `${remainingInfuseLitres.toFixed(2)}L`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-w-md">
+                <Label htmlFor="infusionDate">Infusion date</Label>
+                <Input
+                  id="infusionDate"
+                  type="date"
+                  value={infusionDate}
+                  onChange={(e) => setInfusionDate(e.target.value)}
+                  className="border-2 border-slate-300 dark:border-slate-700"
+                />
+              </div>
+
+              {infuseFieldErrors && (
+                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+                  {infuseFieldErrors}
+                </div>
+              )}
+              {infuseOverAllocated && (
+                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-200">
+                  Planned volume exceeds expected production volume. Reduce litres or increase expected volume.
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {flavourLines.map((row, index) => (
+                  <div
+                    key={row.key}
+                    className="rounded-xl border-2 border-violet-200 dark:border-violet-900 bg-slate-50/50 dark:bg-slate-950/30 p-4 space-y-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white">
+                          {index + 1}
+                        </div>
+                        <span className="text-sm font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300 truncate">
+                          Flavour line
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
+                        onClick={() => removeFlavourLine(row.key)}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-1">
+                      <div className="space-y-2">
+                        <Label>Flavour</Label>
+                        <Select
+                          value={row.flavorName || undefined}
+                          onValueChange={(name) => {
+                            const f = flavourSelectOptions.find((x) => x.name === name)
+                            updateFlavourLine(row.key, {
+                              flavorName: name,
+                              flavorId: f && !String(f._id).startsWith("fallback-") ? f._id : "",
+                            })
+                          }}
+                        >
+                          <SelectTrigger className="border-2 border-slate-300 dark:border-slate-700 w-full">
+                            <SelectValue placeholder="Select flavour" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {flavourSelectOptions.map((f) => (
+                              <SelectItem key={f._id} value={f.name}>
+                                {f.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Litres</Label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="0.00"
+                              value={row.quantity}
+                              onChange={(e) => updateFlavourLine(row.key, { quantity: e.target.value })}
+                              className="border-2 border-slate-300 dark:border-slate-700 pr-10"
+                            />
+                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                              L
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Notes (optional)</Label>
+                          <Input
+                            placeholder="Any notes for this line…"
+                            value={row.notes}
+                            onChange={(e) => updateFlavourLine(row.key, { notes: e.target.value })}
+                            className="border-2 border-slate-300 dark:border-slate-700"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-violet-300 text-violet-800 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-200"
+                onClick={addFlavourLine}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add flavour line
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
