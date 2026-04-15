@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { MongoClient } from 'mongodb'
+import { ensureJabaBatchNumberUniqueIndex } from '../lib/jaba-batch-number-index'
 import {
   batches,
   rawMaterials,
@@ -69,6 +70,8 @@ async function seedDatabase() {
       await db.collection('jaba_batches').insertMany(batchesData)
       console.log(`✓ Inserted ${batchesData.length} batches`)
     }
+    await ensureJabaBatchNumberUniqueIndex(db)
+    console.log('✓ Ensured unique index on jaba_batches.batchNumber')
 
     // Seed raw materials
     console.log('Seeding raw materials...')

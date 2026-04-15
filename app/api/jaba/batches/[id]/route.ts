@@ -15,6 +15,11 @@ import {
 import { findPrimaryPackagingMaterials } from '@/lib/jaba-packaging-materials'
 import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 import { enrichIngredientsCosts } from '@/lib/jaba-ingredient-costs'
+import {
+  JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+  isMongoDuplicateKeyError,
+  normalizeJabaBatchNumber,
+} from '@/lib/jaba-batch-number'
 
 export const runtime = 'nodejs'
 
@@ -124,7 +129,24 @@ export async function PUT(
       }
     }
     if (batchNumber !== undefined) {
-      updateData.batchNumber = batchNumber
+      const normalizedEdit = normalizeJabaBatchNumber(batchNumber)
+      if (!normalizedEdit) {
+        return NextResponse.json({ error: 'Batch number cannot be empty' }, { status: 400 })
+      }
+      const taken = await db.collection('jaba_batches').findOne({
+        batchNumber: normalizedEdit,
+        _id: { $ne: new ObjectId(id) },
+      })
+      if (taken) {
+        return NextResponse.json(
+          {
+            error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+            code: 'DUPLICATE_BATCH_NUMBER',
+          },
+          { status: 409 }
+        )
+      }
+      updateData.batchNumber = normalizedEdit
     }
     if (date !== undefined) {
       updateData.date = new Date(date)
@@ -329,11 +351,24 @@ export async function PUT(
     }
 
     // Update batch
-    await db.collection('jaba_batches').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateData }
-    )
-    
+    try {
+      await db.collection('jaba_batches').updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      )
+    } catch (updErr: unknown) {
+      if (isMongoDuplicateKeyError(updErr)) {
+        return NextResponse.json(
+          {
+            error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+            code: 'DUPLICATE_BATCH_NUMBER',
+          },
+          { status: 409 }
+        )
+      }
+      throw updErr
+    }
+
     console.log(`[Batches API] ✅ Batch updated successfully: ${id}`)
 
     // Fetch updated batch

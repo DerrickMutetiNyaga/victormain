@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { NEUTRAL_BATCH_DISPLAY_FLAVOR } from "@/lib/jaba-batch-utils"
 import { JABA_DEFAULT_INFUSION_FLAVOUR_NAMES } from "@/lib/jaba-default-infusion-flavours"
 import { validateCompletedBatchFlavourLines } from "@/lib/jaba-batch-creation-validation"
+import { JABA_DUPLICATE_BATCH_NUMBER_MESSAGE } from "@/lib/jaba-batch-number"
 import { Textarea } from "@/components/ui/textarea"
 
 interface RawMaterial {
@@ -122,6 +123,7 @@ export default function AddBatchPage() {
   const [materialSelections, setMaterialSelections] = useState<{ [key: string]: string }>({}) // materialId -> quantity
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const submitInFlightRef = useRef(false)
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
   const [loadingMaterials, setLoadingMaterials] = useState(true)
   const [batchCreationStatus, setBatchCreationStatus] = useState<"creating" | "completed">("creating")
@@ -423,6 +425,8 @@ export default function AddBatchPage() {
       }
     }
 
+    if (submitInFlightRef.current) return
+    submitInFlightRef.current = true
     setIsSubmitting(true)
 
     try {
@@ -432,7 +436,6 @@ export default function AddBatchPage() {
         const material = rawMaterials.find(rm => rm.name === mat.material)
         if (!material) {
           toast.error(`Material ${mat.material} not found in inventory`)
-          setIsSubmitting(false)
           return
         }
         const qty = Number(mat.quantity)
@@ -450,7 +453,6 @@ export default function AddBatchPage() {
         toast.error(errorMessage, {
           duration: 6000,
         })
-        setIsSubmitting(false)
         return
       }
 
@@ -522,7 +524,16 @@ export default function AddBatchPage() {
       }
 
       if (!response.ok) {
-        throw new Error(data.details || data.error || 'Failed to create batch')
+        const isDuplicate =
+          response.status === 409 && data?.code === 'DUPLICATE_BATCH_NUMBER'
+        const message = isDuplicate
+          ? typeof data.error === 'string'
+            ? data.error
+            : JABA_DUPLICATE_BATCH_NUMBER_MESSAGE
+          : typeof data.error === 'string' && data.error.trim()
+            ? data.error
+            : 'Failed to create batch. Please try again.'
+        throw new Error(message)
       }
 
       toast.success(`Batch ${batchNumber} created successfully!`)
@@ -532,6 +543,7 @@ export default function AddBatchPage() {
       console.error('Error creating batch:', error)
       toast.error(error.message || 'Failed to create batch. Please try again.')
     } finally {
+      submitInFlightRef.current = false
       setIsSubmitting(false)
     }
   }

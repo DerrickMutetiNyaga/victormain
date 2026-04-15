@@ -16,6 +16,11 @@ import {
 import { allocateFlavourLinesToParent } from '@/lib/jaba-allocate-flavour-lines'
 import { validateCompletedBatchFlavourLines } from '@/lib/jaba-batch-creation-validation'
 import { sendJabaSmsForEvent } from '@/lib/jaba-sms'
+import {
+  JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+  isMongoDuplicateKeyError,
+  normalizeJabaBatchNumber,
+} from '@/lib/jaba-batch-number'
 
 export const runtime = 'nodejs'
 
@@ -304,8 +309,10 @@ export async function POST(request: Request) {
     const batchCreationStatus =
       body.batchCreationStatus === 'completed' ? 'completed' : 'creating'
 
+    const normalizedBatchNumber = normalizeJabaBatchNumber(batchNumber)
+
     // Validate required fields (neutral/base batch — no flavour at creation)
-    if (!batchNumber || !date || !totalLitres || !supervisor || !shift) {
+    if (!normalizedBatchNumber || !date || !totalLitres || !supervisor || !shift) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -368,7 +375,12 @@ export async function POST(request: Request) {
 
     const flavor = NEUTRAL_BATCH_DISPLAY_FLAVOR
 
-    console.log('[Batches API] Creating new batch:', batchNumber, 'batchCreationStatus:', batchCreationStatus)
+    console.log(
+      '[Batches API] Creating new batch:',
+      normalizedBatchNumber,
+      'batchCreationStatus:',
+      batchCreationStatus
+    )
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')
@@ -379,34 +391,30 @@ export async function POST(request: Request) {
         ? await enrichIngredientsCosts(db, ingredients)
         : []
 
-    // Validate and deduct materials IMMEDIATELY on batch creation
-    const inventoryMovements: any[] = []
-    
+    // First pass: validate materials exist and stock is sufficient (no writes)
     if (ingredientsForBatch.length > 0) {
-      // First pass: Validate all materials have sufficient stock
       for (const ingredient of ingredientsForBatch) {
         const materialName = ingredient.material
         const quantity = Number(ingredient.quantity)
-        
+
         if (!materialName || quantity <= 0) {
           continue
         }
 
-        // Find material by name or ID
         let material
         if (ingredient.materialId) {
           try {
-            material = await db.collection('jaba_rawMaterials').findOne({ 
-              _id: new ObjectId(ingredient.materialId) 
+            material = await db.collection('jaba_rawMaterials').findOne({
+              _id: new ObjectId(ingredient.materialId),
             })
           } catch (e) {
-            material = await db.collection('jaba_rawMaterials').findOne({ 
-              name: { $regex: new RegExp(`^${materialName}$`, 'i') }
+            material = await db.collection('jaba_rawMaterials').findOne({
+              name: { $regex: new RegExp(`^${materialName}$`, 'i') },
             })
           }
         } else {
-          material = await db.collection('jaba_rawMaterials').findOne({ 
-            name: { $regex: new RegExp(`^${materialName}$`, 'i') }
+          material = await db.collection('jaba_rawMaterials').findOne({
+            name: { $regex: new RegExp(`^${materialName}$`, 'i') },
           })
         }
 
@@ -417,77 +425,13 @@ export async function POST(request: Request) {
           )
         }
 
-        // Validate stock availability BEFORE creating batch
         if (material.currentStock < quantity) {
           return NextResponse.json(
-            { 
-              error: `Insufficient stock for "${materialName}". Available: ${material.currentStock} ${material.unit}, Required: ${quantity} ${material.unit}` 
+            {
+              error: `Insufficient stock for "${materialName}". Available: ${material.currentStock} ${material.unit}, Required: ${quantity} ${material.unit}`,
             },
             { status: 400 }
           )
-        }
-      }
-
-      // Second pass: Deduct materials from inventory (atomic operation)
-      for (const ingredient of ingredientsForBatch) {
-        const materialName = ingredient.material
-        const quantity = Number(ingredient.quantity)
-        
-        if (!materialName || quantity <= 0) {
-          continue
-        }
-
-        let material
-        if (ingredient.materialId) {
-          try {
-            material = await db.collection('jaba_rawMaterials').findOne({ 
-              _id: new ObjectId(ingredient.materialId) 
-            })
-          } catch (e) {
-            material = await db.collection('jaba_rawMaterials').findOne({ 
-              name: { $regex: new RegExp(`^${materialName}$`, 'i') }
-            })
-          }
-        } else {
-          material = await db.collection('jaba_rawMaterials').findOne({ 
-            name: { $regex: new RegExp(`^${materialName}$`, 'i') }
-          })
-        }
-
-        if (material) {
-          const beforeStock = material.currentStock
-          const afterStock = Math.max(0, beforeStock - quantity)
-          
-          // Deduct from inventory
-          await db.collection('jaba_rawMaterials').updateOne(
-            { _id: material._id },
-            { 
-              $set: { 
-                currentStock: afterStock,
-                updatedAt: new Date()
-              }
-            }
-          )
-          
-          // Create inventory movement record for audit
-          const movement = {
-            type: 'DEDUCTION',
-            reason: 'BATCH_CREATED',
-            batchId: null, // Will be set after batch is created
-            batchNumber: batchNumber,
-            materialId: material._id.toString(),
-            materialName: materialName,
-            quantity: quantity,
-            unit: material.unit,
-            beforeStock: beforeStock,
-            afterStock: afterStock,
-            userId: 'system', // TODO: Get from auth session
-            timestamp: new Date(),
-            createdAt: new Date(),
-          }
-          inventoryMovements.push(movement)
-          
-          console.log(`[Batches API] ✅ Deducted ${quantity} ${material.unit} of ${materialName}. Stock: ${beforeStock} → ${afterStock}`)
         }
       }
     }
@@ -498,9 +442,9 @@ export async function POST(request: Request) {
       ? new Date(infusionKey.length <= 10 ? `${infusionKey}T12:00:00` : infusionKey)
       : undefined
 
-    // Prepare batch document
+    // Prepare batch document (persist normalized batch number)
     const batchData: Record<string, unknown> = {
-      batchNumber,
+      batchNumber: normalizedBatchNumber,
       date: new Date(date),
       flavor,
       batchType: 'neutral' as const,
@@ -533,61 +477,163 @@ export async function POST(request: Request) {
       batchData.productionDate = productionDateDoc
     }
 
-    // Insert batch
-    const result = await db.collection('jaba_batches').insertOne(batchData as never)
-    const batchId = result.insertedId.toString()
-
-    const stockRefunds = inventoryMovements.map((m) => ({
-      materialId: m.materialId as string,
-      quantity: Number(m.quantity) || 0,
-    }))
-
-    // Update inventory movements with batchId
-    if (inventoryMovements.length > 0) {
-      for (const movement of inventoryMovements) {
-        movement.batchId = batchId
-        await db.collection('jaba_inventory_movements').insertOne(movement)
-      }
+    // Uniqueness: pre-check for clearer UX; unique index is the real guard (race-safe).
+    const existingByNumber = await db
+      .collection('jaba_batches')
+      .findOne({ batchNumber: normalizedBatchNumber })
+    if (existingByNumber) {
+      return NextResponse.json(
+        {
+          error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+          code: 'DUPLICATE_BATCH_NUMBER',
+        },
+        { status: 409 }
+      )
     }
 
-    if (isCompletedAtCreation && outputsForAllocate.length > 0) {
-      const parentFresh = (await db
-        .collection('jaba_batches')
-        .findOne({ _id: new ObjectId(batchId) })) as Record<string, unknown> | null
-      if (!parentFresh) {
-        await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
-        return NextResponse.json({ error: 'Batch insert inconsistency' }, { status: 500 })
-      }
-      try {
-        await allocateFlavourLinesToParent(
-          db,
-          batchId,
-          parentFresh as {
-            batchNumber?: string
-            totalLitres?: number
-            infusedAllocatedLitres?: number
-            status?: string
-          },
-          outputsForAllocate,
-          infusionDateForAllocate
-        )
-      } catch (allocErr: unknown) {
-        console.error('[Batches API] Flavour allocation failed after batch insert; rolling back:', allocErr)
-        await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
-        const msg = allocErr instanceof Error ? allocErr.message : String(allocErr)
+    let batchId: string
+    try {
+      const result = await db.collection('jaba_batches').insertOne(batchData as never)
+      batchId = result.insertedId.toString()
+    } catch (insertErr: unknown) {
+      if (isMongoDuplicateKeyError(insertErr)) {
         return NextResponse.json(
-          { error: 'Failed to create flavour outputs for completed batch', details: msg },
-          { status: 500 }
+          {
+            error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+            code: 'DUPLICATE_BATCH_NUMBER',
+          },
+          { status: 409 }
         )
       }
+      throw insertErr
+    }
+
+    const inventoryMovements: any[] = []
+    const stockRefunds: { materialId: string; quantity: number }[] = []
+
+    try {
+      if (ingredientsForBatch.length > 0) {
+        for (const ingredient of ingredientsForBatch) {
+          const materialName = ingredient.material
+          const quantity = Number(ingredient.quantity)
+
+          if (!materialName || quantity <= 0) {
+            continue
+          }
+
+          let material
+          if (ingredient.materialId) {
+            try {
+              material = await db.collection('jaba_rawMaterials').findOne({
+                _id: new ObjectId(ingredient.materialId),
+              })
+            } catch (e) {
+              material = await db.collection('jaba_rawMaterials').findOne({
+                name: { $regex: new RegExp(`^${materialName}$`, 'i') },
+              })
+            }
+          } else {
+            material = await db.collection('jaba_rawMaterials').findOne({
+              name: { $regex: new RegExp(`^${materialName}$`, 'i') },
+            })
+          }
+
+          if (material) {
+            const beforeStock = material.currentStock
+            const afterStock = Math.max(0, beforeStock - quantity)
+
+            await db.collection('jaba_rawMaterials').updateOne(
+              { _id: material._id },
+              {
+                $set: {
+                  currentStock: afterStock,
+                  updatedAt: new Date(),
+                },
+              }
+            )
+
+            stockRefunds.push({
+              materialId: material._id.toString(),
+              quantity,
+            })
+
+            inventoryMovements.push({
+              type: 'DEDUCTION',
+              reason: 'BATCH_CREATED',
+              batchId,
+              batchNumber: normalizedBatchNumber,
+              materialId: material._id.toString(),
+              materialName: materialName,
+              quantity: quantity,
+              unit: material.unit,
+              beforeStock: beforeStock,
+              afterStock: afterStock,
+              userId: 'system',
+              timestamp: new Date(),
+              createdAt: new Date(),
+            })
+
+            console.log(
+              `[Batches API] ✅ Deducted ${quantity} ${material.unit} of ${materialName}. Stock: ${beforeStock} → ${afterStock}`
+            )
+          }
+        }
+      }
+
+      for (const movement of inventoryMovements) {
+        await db.collection('jaba_inventory_movements').insertOne(movement)
+      }
+
+      if (isCompletedAtCreation && outputsForAllocate.length > 0) {
+        const parentFresh = (await db
+          .collection('jaba_batches')
+          .findOne({ _id: new ObjectId(batchId) })) as Record<string, unknown> | null
+        if (!parentFresh) {
+          await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
+          return NextResponse.json({ error: 'Batch insert inconsistency' }, { status: 500 })
+        }
+        try {
+          await allocateFlavourLinesToParent(
+            db,
+            batchId,
+            parentFresh as {
+              batchNumber?: string
+              totalLitres?: number
+              infusedAllocatedLitres?: number
+              status?: string
+            },
+            outputsForAllocate,
+            infusionDateForAllocate
+          )
+        } catch (allocErr: unknown) {
+          console.error(
+            '[Batches API] Flavour allocation failed after batch insert; rolling back:',
+            allocErr
+          )
+          await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
+          const msg = allocErr instanceof Error ? allocErr.message : String(allocErr)
+          return NextResponse.json(
+            { error: 'Failed to create flavour outputs for completed batch', details: msg },
+            { status: 500 }
+          )
+        }
+      }
+    } catch (afterInsertErr: unknown) {
+      console.error('[Batches API] Error after batch insert; rolling back:', afterInsertErr)
+      await rollbackJabaBatchCreationAfterAllocationFailure(db, batchId, stockRefunds)
+      const msg = afterInsertErr instanceof Error ? afterInsertErr.message : String(afterInsertErr)
+      return NextResponse.json(
+        { error: 'Failed to complete batch creation after insert', details: msg },
+        { status: 500 }
+      )
     }
 
     const batchAfter = await db.collection('jaba_batches').findOne({ _id: new ObjectId(batchId) })
 
-    console.log(`[Batches API] ✅ Batch created successfully: ${batchNumber} (ID: ${batchId})`)
+    console.log(`[Batches API] ✅ Batch created successfully: ${normalizedBatchNumber} (ID: ${batchId})`)
     await sendJabaSmsForEvent(
       'batchCreated',
-      `Jaba: Batch created. Batch ${batchNumber}, litres ${vol.toFixed(2)}, supervisor ${supervisor}.`
+      `Jaba: Batch created. Batch ${normalizedBatchNumber}, litres ${vol.toFixed(2)}, supervisor ${supervisor}.`
     )
 
     return NextResponse.json(
@@ -604,7 +650,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('[Batches API] ❌ Error creating batch:', error)
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to create batch',
         details: error.message || String(error),
       },
@@ -640,15 +686,17 @@ export async function PUT(request: Request) {
       )
     }
 
+    const normalizedPutBatchNumber = normalizeJabaBatchNumber(batchNumber)
+
     // Validate required fields
-    if (!batchNumber || !date || !totalLitres || !supervisor || !shift) {
+    if (!normalizedPutBatchNumber || !date || !totalLitres || !supervisor || !shift) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       )
     }
 
-    console.log('[Batches API] Updating batch:', batchNumber, 'ID:', id)
+    console.log('[Batches API] Updating batch:', normalizedPutBatchNumber, 'ID:', id)
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')
@@ -663,6 +711,20 @@ export async function PUT(request: Request) {
       )
     }
 
+    const duplicateOther = await db.collection('jaba_batches').findOne({
+      batchNumber: normalizedPutBatchNumber,
+      _id: { $ne: new ObjectId(id) },
+    })
+    if (duplicateOther) {
+      return NextResponse.json(
+        {
+          error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+          code: 'DUPLICATE_BATCH_NUMBER',
+        },
+        { status: 409 }
+      )
+    }
+
     const resolvedFlavor =
       flavor !== undefined && String(flavor).trim()
         ? String(flavor).trim()
@@ -673,7 +735,7 @@ export async function PUT(request: Request) {
 
     // Prepare update data
     const updateData: any = {
-      batchNumber,
+      batchNumber: normalizedPutBatchNumber,
       date: new Date(date),
       flavor: resolvedFlavor,
       productCategory: 'Infusion Jaba',
@@ -700,12 +762,25 @@ export async function PUT(request: Request) {
     // If expectedLitres exists and wasn't provided, don't overwrite it
 
     // Update batch
-    await db.collection('jaba_batches').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateData }
-    )
-    
-    console.log(`[Batches API] ✅ Batch updated successfully: ${batchNumber}`)
+    try {
+      await db.collection('jaba_batches').updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      )
+    } catch (updateErr: unknown) {
+      if (isMongoDuplicateKeyError(updateErr)) {
+        return NextResponse.json(
+          {
+            error: JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
+            code: 'DUPLICATE_BATCH_NUMBER',
+          },
+          { status: 409 }
+        )
+      }
+      throw updateErr
+    }
+
+    console.log(`[Batches API] ✅ Batch updated successfully: ${normalizedPutBatchNumber}`)
 
     return NextResponse.json(
       { 

@@ -13,6 +13,7 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { NEUTRAL_BATCH_DISPLAY_FLAVOR } from "@/lib/jaba-batch-utils"
+import { JABA_DUPLICATE_BATCH_NUMBER_MESSAGE } from "@/lib/jaba-batch-number"
 
 interface RawMaterial {
   _id: string
@@ -445,7 +446,17 @@ export default function EditBatchPage({ params }: { params: Promise<{ id: string
           router.push('/jaba/batches')
           return
         }
-        throw new Error(data.details || data.error || 'Failed to update batch')
+        if (response.status === 409 && data?.code === 'DUPLICATE_BATCH_NUMBER') {
+          toast.error(
+            typeof data.error === 'string' ? data.error : JABA_DUPLICATE_BATCH_NUMBER_MESSAGE
+          )
+          return
+        }
+        throw new Error(
+          typeof data.error === 'string' && data.error.trim()
+            ? data.error
+            : 'Failed to update batch. Please try again.'
+        )
       }
 
       toast.success(`Batch ${batchNumber} updated successfully!`)
