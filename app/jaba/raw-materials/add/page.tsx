@@ -290,9 +290,14 @@ export default function AddRawMaterialPage() {
         if (total > 0) {
           setFormData(prev => ({ ...prev, totalCost: total.toFixed(2), pricePerUnit: pricePerUnit.toFixed(2) }))
         }
-      } else if (formData.buyingPrice && (!formData.currentStock && !formData.quantityAdded)) {
-        // Clear total cost if quantity is cleared
-        setFormData(prev => ({ ...prev, totalCost: "", pricePerUnit: formData.buyingPrice }))
+      } else if (
+        supplyType === "new" &&
+        formData.buyingPrice &&
+        !formData.currentStock &&
+        !formData.quantityAdded
+      ) {
+        // Clear total cost if quantity is cleared (new supply only — resupply uses quantityAdded for pricing)
+        setFormData((prev) => ({ ...prev, totalCost: "", pricePerUnit: prev.buyingPrice }))
       }
     } else {
       // User enters total amount - calculate price per unit
@@ -310,9 +315,14 @@ export default function AddRawMaterialPage() {
           const perUnit = total / quantity
           setFormData(prev => ({ ...prev, buyingPrice: perUnit.toFixed(2), pricePerUnit: perUnit.toFixed(2) }))
         }
-      } else if (formData.totalCost && (!formData.currentStock && !formData.quantityAdded)) {
-        // Clear price per unit if quantity is cleared
-        setFormData(prev => ({ ...prev, buyingPrice: "", pricePerUnit: "" }))
+      } else if (
+        supplyType === "new" &&
+        formData.totalCost &&
+        !formData.currentStock &&
+        !formData.quantityAdded
+      ) {
+        // Clear price per unit if quantity is cleared (new supply only)
+        setFormData((prev) => ({ ...prev, buyingPrice: "", pricePerUnit: "" }))
       }
     }
   }, [formData.buyingPrice, formData.totalCost, formData.currentStock, formData.quantityAdded, supplyType, priceInputMode])
@@ -355,7 +365,7 @@ export default function AddRawMaterialPage() {
       setNewCategoryName("")
       setShowAddCategory(false)
       await fetchCategories()
-      setFormData({ ...formData, category: newCategoryName.trim() })
+      setFormData((prev) => ({ ...prev, category: newCategoryName.trim() }))
     } catch (error: any) {
       toast.error(error.message || 'Failed to add category')
     } finally {
@@ -655,7 +665,13 @@ export default function AddRawMaterialPage() {
                         Add Category
                       </Button>
                     </div>
-                    <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })} required>
+                    <Select
+                      value={formData.category}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, category: value }))
+                      }
+                      required
+                    >
                       <SelectTrigger id="category" className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-amber-500 dark:focus:border-amber-500">
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
@@ -763,7 +779,9 @@ export default function AddRawMaterialPage() {
                     <Input
                       id="materialName"
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, name: e.target.value }))
+                      }
                         placeholder="Enter new material name"
                         disabled={formData.category === "Packaging" && packagingTemplate !== "custom"}
                       required
@@ -815,7 +833,9 @@ export default function AddRawMaterialPage() {
                       type="number"
                       step="any"
                       value={formData.currentStock}
-                      onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, currentStock: e.target.value }))
+                      }
                       placeholder="0"
                       required
                       min="0"
@@ -828,7 +848,9 @@ export default function AddRawMaterialPage() {
                     </Label>
                     <Select
                       value={formData.category === "Packaging" && packagingTemplate !== "custom" ? "pcs" : formData.unit}
-                      onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, unit: value }))
+                      }
                       required
                       disabled={formData.category === "Packaging" && packagingTemplate !== "custom"}
                     >
@@ -851,7 +873,9 @@ export default function AddRawMaterialPage() {
                       type="number"
                       step="any"
                       value={formData.minStock}
-                      onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, minStock: e.target.value }))
+                      }
                       placeholder="0"
                       required
                       min="0"
@@ -869,7 +893,9 @@ export default function AddRawMaterialPage() {
                     type="number"
                     step="any"
                     value={formData.reorderLevel}
-                    onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, reorderLevel: e.target.value }))
+                    }
                     placeholder="0"
                     required
                     min="0"
@@ -984,7 +1010,9 @@ export default function AddRawMaterialPage() {
                       id="supplyDate"
                       type="date"
                       value={formData.supplyDate}
-                      onChange={(e) => setFormData({ ...formData, supplyDate: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, supplyDate: e.target.value }))
+                      }
                       required
                       className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500"
                     />
@@ -1038,7 +1066,9 @@ export default function AddRawMaterialPage() {
                           type="number"
                           step="0.01"
                           value={formData.buyingPrice}
-                          onChange={(e) => setFormData({ ...formData, buyingPrice: e.target.value })}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, buyingPrice: e.target.value }))
+                          }
                           placeholder="0.00"
                           min="0"
                           className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500 tabular-nums"
@@ -1071,7 +1101,9 @@ export default function AddRawMaterialPage() {
                           type="number"
                           step="0.01"
                           value={formData.totalCost}
-                          onChange={(e) => setFormData({ ...formData, totalCost: e.target.value })}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, totalCost: e.target.value }))
+                          }
                           placeholder="0.00"
                           min="0"
                           className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500 tabular-nums"
@@ -1101,7 +1133,9 @@ export default function AddRawMaterialPage() {
                     <Input
                       id="batchNumber"
                       value={formData.batchNumber}
-                      onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, batchNumber: e.target.value }))
+                      }
                       placeholder="Enter batch number (optional)"
                       className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500"
                     />
@@ -1114,7 +1148,9 @@ export default function AddRawMaterialPage() {
                     <Input
                       id="lotNumber"
                       value={formData.lotNumber}
-                      onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, lotNumber: e.target.value }))
+                      }
                       placeholder="Enter lot number (optional)"
                       className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-500"
                     />
@@ -1135,7 +1171,9 @@ export default function AddRawMaterialPage() {
                     </Label>
                     <Select 
                       value={formData.supplier}
-                      onValueChange={(value) => setFormData({ ...formData, supplier: value })} 
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, supplier: value }))
+                      }
                       required
                       disabled={loadingSuppliers}
                     >
@@ -1164,7 +1202,9 @@ export default function AddRawMaterialPage() {
                     <Input
                       id="preferredSupplier"
                       value={formData.preferredSupplier}
-                      onChange={(e) => setFormData({ ...formData, preferredSupplier: e.target.value })}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, preferredSupplier: e.target.value }))
+                      }
                       placeholder="Preferred supplier (optional)"
                       className="h-11 border-2 border-slate-300 dark:border-slate-700 focus:border-purple-500 dark:focus:border-purple-500"
                     />
