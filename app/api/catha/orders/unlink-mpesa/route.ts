@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
-import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { canManageOrderMpesaPayments, normalizePermissions } from '@/lib/catha-permissions-model'
 import {
   baseLinkedListFromOrder,
   recalculateOrderPaymentsAfterLinks,
@@ -15,9 +15,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const role = ((session.user as any).role ?? '').toUpperCase()
+    const role = (session.user as any).role as string | undefined
     const perms = normalizePermissions((session.user as any).permissions)
-    if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'orders', 'edit')) {
+    if (!canManageOrderMpesaPayments(perms, role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 

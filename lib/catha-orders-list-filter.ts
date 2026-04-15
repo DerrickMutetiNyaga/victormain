@@ -53,7 +53,7 @@ export function buildOrdersListMongoFilter(query: OrdersListQuery): Filter<Recor
     } else if (query.paymentStatus === 'PAID') {
       parts.push({
         $or: [
-          { paymentStatus: { $in: ['PAID', 'COMPLETED'] } },
+          { paymentStatus: { $in: ['PAID', 'COMPLETED', 'OVERPAID'] } },
           {
             $and: [{ status: 'completed' }, { paymentStatus: { $ne: 'PARTIALLY_PAID' } }],
           },
@@ -64,6 +64,7 @@ export function buildOrdersListMongoFilter(query: OrdersListQuery): Filter<Recor
         $nor: [
           { paymentStatus: 'PARTIALLY_PAID' },
           { paymentStatus: 'PAID' },
+          { paymentStatus: 'OVERPAID' },
           { paymentStatus: 'COMPLETED' },
           { status: 'completed' },
         ],

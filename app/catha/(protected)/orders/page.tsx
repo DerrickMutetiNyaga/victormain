@@ -1,6 +1,6 @@
  "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 
 import { Header } from "@/components/layout/header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -34,6 +34,7 @@ import { UserChip } from "@/components/orders/user-chip"
 import { getStatusLabel } from "@/lib/order-utils"
 import { ReceiptModal, type ReceiptOrder } from "@/components/receipt"
 import { summarizeCathaOrderPayments } from "@/lib/catha-order-payments"
+import { canManageOrderMpesaPayments, normalizePermissions } from "@/lib/catha-permissions-model"
 import type { OrdersDashboardSummary } from "@/lib/catha-orders-dashboard-summary"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -42,13 +43,21 @@ const ORDERS_PAGE_SIZE = 72
 function patchOrderFromMpesaLinkResponse(data: any) {
   if (!data?.summary) return {}
   const ps = data.summary.paymentStatus as string
+  const settled = ps === "PAID" || ps === "OVERPAID"
   const patch: Record<string, unknown> = {
     linkedPayments: data.linkedPayments ?? [],
     totalLinkedPayments: data.summary.totalLinkedPayments,
     balanceDue: data.summary.balanceDue,
     overpaymentAmount: data.summary.overpaymentAmount,
-    paymentStatus: ps === "PAID" ? "PAID" : ps === "PARTIALLY_PAID" ? "PARTIALLY_PAID" : "NOT_PAID",
-    status: ps === "PAID" ? "completed" : "pending",
+    paymentStatus:
+      ps === "PAID"
+        ? "PAID"
+        : ps === "OVERPAID"
+          ? "OVERPAID"
+          : ps === "PARTIALLY_PAID"
+            ? "PARTIALLY_PAID"
+            : "NOT_PAID",
+    status: settled ? "completed" : "pending",
     mpesaReceiptNumber: data.mpesaReceiptNumber ?? null,
     mpesaTransactionId: data.transactionId ?? null,
     paymentMethod: "mpesa",
@@ -182,6 +191,14 @@ export default function OrdersPage() {
   const router = useRouter()
   const { data: session } = useSession()
   const { canEdit, canDelete } = useCathaPermissions("orders")
+  const canManageMpesa = useMemo(
+    () =>
+      canManageOrderMpesaPayments(
+        normalizePermissions((session?.user as { permissions?: unknown })?.permissions),
+        (session?.user as { role?: string })?.role
+      ),
+    [session?.user]
+  )
   const [mounted, setMounted] = useState(false)
   const [view, setView] = useState<"table" | "cards">("cards")
   const [searchQuery, setSearchQuery] = useState("")
@@ -292,7 +309,12 @@ export default function OrdersPage() {
     ...o,
     timestamp: o.timestamp instanceof Date ? o.timestamp : new Date(o.timestamp),
     paymentStatus: (() => {
-      if (o.paymentStatus === "PAID" || o.paymentStatus === "PARTIALLY_PAID") return o.paymentStatus
+      if (
+        o.paymentStatus === "PAID" ||
+        o.paymentStatus === "PARTIALLY_PAID" ||
+        o.paymentStatus === "OVERPAID"
+      )
+        return o.paymentStatus
       if (o.status === "completed") return "PAID"
       const received = o.cashAmount ?? o.amountReceived ?? 0
       const total = o.total ?? 0
@@ -816,7 +838,8 @@ export default function OrdersPage() {
           o.id === processingPayment.id ? ({ ...o, ...patch } as Transaction) : o
         )
       )
-      const paidFull = data?.summary?.paymentStatus === "PAID"
+      const paidFull =
+        data?.summary?.paymentStatus === "PAID" || data?.summary?.paymentStatus === "OVERPAID"
       if (paidFull) {
         toast.success(`Order ${processingPayment.id} fully paid via M-Pesa`)
         setProcessingPayment(null)
@@ -933,23 +956,49 @@ export default function OrdersPage() {
               setOrders((prev) =>
                 prev.map((o) => (o.id === currentOrderId ? ({ ...o, ...patch } as Transaction) : o))
               )
+              const ps = linkData?.summary?.paymentStatus as string | undefined
+              const done = ps === "PAID" || ps === "OVERPAID"
               toast.success(
-                linkData?.summary?.paymentStatus === "PAID"
-                  ? "M-Pesa payment confirmed — order fully paid"
-                  : "M-Pesa payment received — balance may remain; link more payments if needed."
+                done
+                  ? ps === "OVERPAID"
+                    ? "M-Pesa payment confirmed — order settled (overpayment recorded)"
+                    : "M-Pesa payment confirmed — order fully paid"
+                  : "M-Pesa payment received — balance may remain; link or send another payment."
               )
+              if (done) {
+                setShowMpesaDialog(false)
+                setMpesaPhoneNumber("")
+                setPaymentCustomerPhone("")
+                setMpesaError(null)
+                setPendingMpesaOrderId(null)
+                setMpesaCheckoutRequestId(null)
+                setMpesaProcessing(false)
+                setProcessingPayment(null)
+                setSelectedPaymentMethod("")
+              } else {
+                setShowMpesaDialog(false)
+                setMpesaPhoneNumber("")
+                setMpesaError(null)
+                setPendingMpesaOrderId(null)
+                setMpesaCheckoutRequestId(null)
+                setMpesaProcessing(false)
+                setProcessingPayment((prev) =>
+                  prev && prev.id === currentOrderId ? ({ ...prev, ...patch } as Transaction) : prev
+                )
+                setMpesaFlowTab("link")
+              }
             } else {
               toast.error(linkData?.error || "Payment received but linking failed — use Link Transaction.")
+              setShowMpesaDialog(false)
+              setMpesaPhoneNumber("")
+              setPaymentCustomerPhone("")
+              setMpesaError(null)
+              setPendingMpesaOrderId(null)
+              setMpesaCheckoutRequestId(null)
+              setMpesaProcessing(false)
+              setProcessingPayment(null)
+              setSelectedPaymentMethod("")
             }
-            setShowMpesaDialog(false)
-            setMpesaPhoneNumber("")
-            setPaymentCustomerPhone("")
-            setMpesaError(null)
-            setPendingMpesaOrderId(null)
-            setMpesaCheckoutRequestId(null)
-            setMpesaProcessing(false)
-            setProcessingPayment(null)
-            setSelectedPaymentMethod("")
           } else if (status === 'CANCELLED' || status === 'FAILED') {
             setMpesaRequestStatus("failed")
             const errMsg = transaction.resultDesc ||
@@ -1025,13 +1074,21 @@ export default function OrdersPage() {
       setOrders((prev) =>
         prev.map((o) => (o.id === processingPayment.id ? { ...o, customerPhone: phoneNorm } as Transaction : o))
       )
+      const paySnapshot = summarizeCathaOrderPayments({
+        ...processingPayment,
+        customerPhone: phoneNorm,
+      } as any)
+      const stkAmount = Math.max(
+        0.01,
+        paySnapshot.balanceDue > 0.005 ? paySnapshot.balanceDue : Number(processingPayment.total) || 0
+      )
       const stkResponse = await fetch('/api/mpesa/stk-push', {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phoneNumber: phoneNorm,
-          amount: processingPayment.total,
+          amount: stkAmount,
           accountReference: processingPayment.id,
           transactionDesc: `Payment for order ${processingPayment.id}`,
         }),
@@ -1093,6 +1150,19 @@ export default function OrdersPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || "Unlink failed")
       toast.success("M-Pesa link removed")
+      try {
+        const freshRes = await fetch(`/api/catha/orders?id=${encodeURIComponent(orderId)}`, {
+          cache: "no-store",
+        })
+        if (freshRes.ok) {
+          const j = await freshRes.json()
+          setProcessingPayment((prev) =>
+            prev && prev.id === orderId ? (mapOrderRow(j) as Transaction) : prev
+          )
+        }
+      } catch {
+        /* ignore */
+      }
       await fetchOrders()
     } catch (e: any) {
       toast.error(e?.message || "Failed to unlink")
@@ -2653,9 +2723,11 @@ export default function OrdersPage() {
                       <Badge className="text-[10px]">
                         {vsum.paymentStatus === "PAID"
                           ? "Paid"
-                          : vsum.paymentStatus === "PARTIALLY_PAID"
-                            ? "Partially paid"
-                            : "Unpaid"}
+                          : vsum.paymentStatus === "OVERPAID"
+                            ? "Overpaid"
+                            : vsum.paymentStatus === "PARTIALLY_PAID"
+                              ? "Partially paid"
+                              : "Unpaid"}
                       </Badge>
                     </div>
                     {vsum.overpaymentAmount > 0 && (
@@ -2668,7 +2740,7 @@ export default function OrdersPage() {
                             {new Date((viewingOrder as any).changeGivenAt).toLocaleString()} by {(viewingOrder as any).changeGivenBy || "—"}
                           </p>
                         )}
-                        {canEdit && !(viewingOrder as any).changeGiven && (
+                        {canManageMpesa && !(viewingOrder as any).changeGiven && (
                           <>
                             <Textarea
                               placeholder="Optional notes (e.g. handed 500 cash)"
@@ -2700,12 +2772,21 @@ export default function OrdersPage() {
                             >
                               <div className="space-y-0.5 min-w-0">
                                 <p className="font-mono font-medium truncate">{p.receiptNumber || p.transactionId}</p>
-                                <p>KSh {Number(p.amount || 0).toFixed(2)} · {p.phone || "—"}</p>
+                                <p>
+                                  KSh {Number(p.amount || 0).toFixed(2)} · {p.phone || "—"}
+                                  {p.payerName ? ` · ${p.payerName}` : ""}
+                                </p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  {p.linkedAt ? new Date(p.linkedAt).toLocaleString() : "—"} · {p.linkedBy || "—"}
+                                  {p.mpesaStatus ? `${p.mpesaStatus} · ` : ""}
+                                  {p.transactionDate
+                                    ? new Date(p.transactionDate).toLocaleString()
+                                    : p.linkedAt
+                                      ? new Date(p.linkedAt).toLocaleString()
+                                      : "—"}{" "}
+                                  · {p.linkedBy || "—"}
                                 </p>
                               </div>
-                              {canEdit && viewingOrder.status !== "cancelled" && (
+                              {canManageMpesa && viewingOrder.status !== "cancelled" && (
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -2999,7 +3080,13 @@ export default function OrdersPage() {
           const po = printingOrder as any
           const s = summarizeCathaOrderPayments(po)
           const psLabel =
-            s.paymentStatus === "PAID" ? "Paid" : s.paymentStatus === "PARTIALLY_PAID" ? "Partially paid" : "Unpaid"
+            s.paymentStatus === "PAID"
+              ? "Paid"
+              : s.paymentStatus === "OVERPAID"
+                ? "Overpaid"
+                : s.paymentStatus === "PARTIALLY_PAID"
+                  ? "Partially paid"
+                  : "Unpaid"
           return {
             id: printingOrder.id,
             timestamp: printingOrder.timestamp,
@@ -3174,6 +3261,16 @@ export default function OrdersPage() {
 
                   {mpesaFlowTab === "link" && (() => {
                     const live = summarizeCathaOrderPayments(processingPayment as any)
+                    const linkedRows = ((processingPayment as any).linkedPayments as any[]) || []
+                    const linkedIds = new Set(
+                      linkedRows.map((p) => (p?.transactionId != null ? String(p.transactionId) : "")).filter(Boolean)
+                    )
+                    const candidateTxs = mpesaLinkCandidates.filter(
+                      (tx) =>
+                        tx.status === "COMPLETED" &&
+                        tx.id &&
+                        !linkedIds.has(String(tx.id))
+                    )
                     return (
                     <div className="space-y-3 rounded-md bg-white p-3 border border-green-200">
                       <div className="rounded-md bg-slate-50 border border-slate-200 p-2.5 space-y-1 text-xs">
@@ -3199,10 +3296,58 @@ export default function OrdersPage() {
                         <div className="flex justify-between gap-2 pt-1 border-t border-slate-200">
                           <span className="text-slate-700 font-semibold">Status</span>
                           <span className="font-semibold">
-                            {live.paymentStatus === "PAID" ? "Paid" : live.paymentStatus === "PARTIALLY_PAID" ? "Partially paid" : "Unpaid"}
+                            {live.paymentStatus === "PAID"
+                              ? "Paid"
+                              : live.paymentStatus === "OVERPAID"
+                                ? "Overpaid"
+                                : live.paymentStatus === "PARTIALLY_PAID"
+                                  ? "Partially paid"
+                                  : "Unpaid"}
                           </span>
                         </div>
                       </div>
+                      {linkedRows.length > 0 && (
+                        <div className="rounded-md border border-slate-200 bg-slate-50/80 p-2 space-y-2">
+                          <p className="text-xs font-semibold text-slate-800">Attached to this order ({linkedRows.length})</p>
+                          <div className="max-h-36 overflow-y-auto space-y-1.5">
+                            {linkedRows.map((p: any) => (
+                              <div
+                                key={String(p.transactionId)}
+                                className="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5 text-[11px]"
+                              >
+                                <div className="min-w-0 space-y-0.5">
+                                  <p className="font-mono font-medium truncate">
+                                    {p.receiptNumber || p.transactionId}
+                                  </p>
+                                  <p className="text-muted-foreground">
+                                    KSh {Number(p.amount || 0).toFixed(2)}
+                                    {p.phone ? ` · ${p.phone}` : ""}
+                                    {p.payerName ? ` · ${p.payerName}` : ""}
+                                  </p>
+                                </div>
+                                {canManageMpesa && processingPayment.status !== "cancelled" && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-[10px] shrink-0"
+                                    disabled={unlinkingTxId === p.transactionId}
+                                    onClick={() =>
+                                      handleUnlinkMpesaFromOrder(processingPayment.id, String(p.transactionId))
+                                    }
+                                  >
+                                    {unlinkingTxId === p.transactionId ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      "Remove"
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-xs font-semibold text-slate-700">Available to link (unlinked only)</p>
                         <Button
@@ -3238,14 +3383,14 @@ export default function OrdersPage() {
                         </div>
                       </div>
                       <div className="max-h-52 overflow-y-auto space-y-2">
-                        {!loadingMpesaCandidates && mpesaLinkCandidates.filter((tx) => tx.status === "COMPLETED").length === 0 && (
+                        {!loadingMpesaCandidates && candidateTxs.length === 0 && (
                           <p className="text-xs text-slate-600">
                             {mpesaCandidatesLoadModeRef.current === "exact"
                               ? `No completed M-Pesa transactions found for this amount (KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)}). Matching payments may already be linked to other orders, or none exist yet.`
                               : "No completed M-Pesa transactions right now. Tap Refresh or search by exact amount."}
                           </p>
                         )}
-                        {mpesaLinkCandidates.filter((tx) => tx.status === "COMPLETED").map((tx) => (
+                        {candidateTxs.map((tx) => (
                             <label
                               key={tx.id}
                               className="block rounded-md border p-2 text-xs bg-white border-slate-200 cursor-pointer hover:border-green-300"
@@ -3400,13 +3545,33 @@ export default function OrdersPage() {
                 <p className="text-xs text-muted-foreground">Format: 07…, 01… (e.g. 0113794000), or +254…</p>
               </div>
 
-              <div className="bg-muted/50 rounded-lg p-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Amount:</span>
-                  <span className="font-bold text-primary">
-                    Ksh {(processingPayment?.total ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                {(() => {
+                  const s = summarizeCathaOrderPayments(processingPayment as any)
+                  const due = s.balanceDue > 0.005 ? s.balanceDue : Number(processingPayment?.total) || 0
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Order total:</span>
+                        <span className="font-semibold">
+                          Ksh {(processingPayment?.total ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      {s.totalLinkedPayments > 0 && (
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Paid so far</span>
+                          <span className="font-mono">KSh {s.totalLinkedPayments.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm pt-1 border-t border-border/60">
+                        <span className="text-muted-foreground">STK amount (remaining):</span>
+                        <span className="font-bold text-primary">
+                          Ksh {due.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-1 pb-1">

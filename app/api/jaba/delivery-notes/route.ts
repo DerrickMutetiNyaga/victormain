@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
+import { generateUniquePublicShortToken } from '@/lib/jaba-delivery-note-public-token'
 import { requireJabaAction } from '@/lib/api-jaba-permissions'
 import { auth } from '@/lib/auth-jaba'
 import { getJabaPublicBaseUrl } from '@/lib/jaba-app-url'
@@ -36,10 +37,10 @@ class ApiError extends Error {
   }
 }
 
-/** Never expose secret link token to authenticated list/detail JSON. */
-function stripDeliveryNoteViewToken<T extends Record<string, unknown>>(note: T): Omit<T, 'viewToken'> {
-  const { viewToken: _drop, ...rest } = note
-  return rest as Omit<T, 'viewToken'>
+/** Never expose link tokens to authenticated list/detail JSON. */
+function stripDeliveryNoteSecrets<T extends Record<string, unknown>>(note: T): Omit<T, 'viewToken' | 'publicShortToken'> {
+  const { viewToken: _v, publicShortToken: _p, ...rest } = note
+  return rest as Omit<T, 'viewToken' | 'publicShortToken'>
 }
 
 type DeliveredSmsPayload = {
@@ -152,10 +153,12 @@ export async function POST(request: Request) {
         }, 0)
 
         const viewToken = randomBytes(24).toString('hex')
+        const publicShortToken = await generateUniquePublicShortToken(db, 16, mongoSession)
 
         const deliveryNoteData = {
           noteId: noteId.trim(),
           viewToken,
+          publicShortToken,
           distributorId: distributorId.trim(),
           distributorName: distributorName.trim(),
           items: itemsWithQuantities.map((item: any) => ({
@@ -205,10 +208,10 @@ export async function POST(request: Request) {
       })
       await sendJabaSmsForEvent('distributionCreated', distributionSms)
 
-      const tokenForLink = createdNote?.viewToken as string | undefined
-      if (tokenForLink) {
+      const shortForLink = createdNote?.publicShortToken as string | undefined
+      if (shortForLink) {
         const baseUrl = getJabaPublicBaseUrl()
-        const viewUrl = `${baseUrl}/delivery-note/${tokenForLink}`
+        const viewUrl = `${baseUrl}/dn/${shortForLink}`
         const clientSms = buildClientDeliveryNoteSms({
           noteId: noteId.trim(),
           distributorName: distributorName.trim(),
@@ -240,7 +243,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json(
-        { success: true, deliveryNote: stripDeliveryNoteViewToken(createdNote as Record<string, unknown>) },
+        { success: true, deliveryNote: stripDeliveryNoteSecrets(createdNote as Record<string, unknown>) },
         { status: 201 }
       )
     } finally {
@@ -293,7 +296,7 @@ export async function GET(request: Request) {
       .toArray()
 
     const formattedNotes = deliveryNotes.map((note) =>
-      stripDeliveryNoteViewToken({
+      stripDeliveryNoteSecrets({
         ...note,
         _id: note._id.toString(),
         id: note._id.toString(),
@@ -473,6 +476,10 @@ export async function PUT(request: Request) {
 
         if (status !== undefined) updateData.status = status
 
+        if (!existing.publicShortToken) {
+          updateData.publicShortToken = await generateUniquePublicShortToken(db, 16, mongoSession)
+        }
+
         await db.collection('jaba_deliveryNotes').updateOne(
           { _id: new ObjectId(id) },
           { $set: updateData },
@@ -518,7 +525,7 @@ export async function PUT(request: Request) {
       console.log(`[Delivery Notes API] ✅ Delivery note updated: ${id}`)
       return NextResponse.json({
         success: true,
-        deliveryNote: stripDeliveryNoteViewToken(updatedNote as Record<string, unknown>),
+        deliveryNote: stripDeliveryNoteSecrets(updatedNote as Record<string, unknown>),
       })
     } finally {
       await mongoSession.endSession()

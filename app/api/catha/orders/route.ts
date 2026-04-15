@@ -467,9 +467,9 @@ export async function PUT(request: Request) {
       )
     }
 
+    const psUpper = String(existingOrder.paymentStatus || '').toUpperCase()
     const paidCompleted =
-      existingOrder.status === 'completed' &&
-      String(existingOrder.paymentStatus || '').toUpperCase() === 'PAID'
+      existingOrder.status === 'completed' && (psUpper === 'PAID' || psUpper === 'OVERPAID')
 
     if (paidCompleted) {
       if (Object.prototype.hasOwnProperty.call(updateData, 'items')) {
@@ -480,12 +480,12 @@ export async function PUT(request: Request) {
         console.warn('[Orders API] UPDATE blocked: status downgrade on paid order', id, updateData.status)
         delete updateData.status
       }
-      if (
-        updateData.paymentStatus != null &&
-        String(updateData.paymentStatus).toUpperCase() !== 'PAID'
-      ) {
-        console.warn('[Orders API] UPDATE blocked: paymentStatus downgrade on paid order', id)
-        delete updateData.paymentStatus
+      if (updateData.paymentStatus != null) {
+        const nextPs = String(updateData.paymentStatus).toUpperCase()
+        if (nextPs !== 'PAID' && nextPs !== 'OVERPAID') {
+          console.warn('[Orders API] UPDATE blocked: paymentStatus downgrade on paid order', id)
+          delete updateData.paymentStatus
+        }
       }
       delete updateData.mpesaLastPromptStatus
       delete updateData.mpesaLastPromptMessage

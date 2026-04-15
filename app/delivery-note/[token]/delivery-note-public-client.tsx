@@ -53,7 +53,12 @@ function itemLabel(row: PublicItem) {
 
 export function DeliveryNotePublicClient() {
   const params = useParams()
-  const token = typeof params?.token === "string" ? params.token : ""
+  const token =
+    typeof params?.token === "string"
+      ? params.token
+      : typeof params?.slug === "string"
+        ? params.slug
+        : ""
   const [data, setData] = useState<PublicNote | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

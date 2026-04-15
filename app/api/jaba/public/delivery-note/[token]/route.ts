@@ -42,13 +42,15 @@ export async function GET(
   try {
     const { token } = await context.params
     const t = String(token || '').trim()
-    if (t.length < 32) {
+    if (t.length < 6 || t.length > 128) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')
-    const note = await db.collection('jaba_deliveryNotes').findOne({ viewToken: t })
+    const note = await db.collection('jaba_deliveryNotes').findOne({
+      $or: [{ viewToken: t }, { publicShortToken: t }],
+    })
     if (!note) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }

@@ -42,6 +42,7 @@ export async function computeOrdersDashboardSummary(db: Db): Promise<OrdersDashb
                 {
                   $or: [
                     { $eq: ['$paymentStatus', 'PAID'] },
+                    { $eq: ['$paymentStatus', 'OVERPAID'] },
                     { $eq: ['$paymentStatus', 'COMPLETED'] },
                     {
                       $and: [

@@ -198,6 +198,327 @@ const DELIVERY_NOTE_SIGNOFF_HTML = `
           </div>
 `
 
+/** Print/PDF: A4 margins, row integrity, repeating thead, protected tail sections */
+const DELIVERY_NOTE_PRINT_ONLY_STYLES = `
+    @page {
+      size: A4;
+      margin: 12mm 14mm 14mm 14mm;
+    }
+    @media print {
+      html {
+        height: auto;
+      }
+      body.dn-print-body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .dn-top-section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      table.dn-products-table {
+        width: 100%;
+        page-break-inside: auto;
+        break-inside: auto;
+      }
+      table.dn-products-table thead {
+        display: table-header-group;
+      }
+      table.dn-products-table thead tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      table.dn-products-table tbody tr.dn-item-row {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      table.dn-products-table th,
+      table.dn-products-table td {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .dn-notes-box {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .dn-tail {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .payment-details {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .delivery-signoff {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .dn-print-footer {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
+`
+
+function buildDeliveryNoteDocumentStyles(statusColor: string): string {
+  return `
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            body.dn-print-body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: white;
+              padding: 30px;
+              color: #1f2937;
+            }
+            .header {
+              border-bottom: 3px solid #10b981;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .header-top {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 20px;
+            }
+            .company-info h1 {
+              font-size: 28px;
+              color: #10b981;
+              font-weight: 800;
+              margin-bottom: 5px;
+            }
+            .company-info p {
+              font-size: 12px;
+              color: #6b7280;
+            }
+            .note-info {
+              text-align: right;
+            }
+            .note-id {
+              font-size: 24px;
+              font-weight: 700;
+              color: #1f2937;
+              margin-bottom: 5px;
+            }
+            .status-badge {
+              display: inline-block;
+              padding: 6px 12px;
+              border-radius: 20px;
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              background: ${statusColor}15;
+              color: ${statusColor};
+              border: 1px solid ${statusColor}40;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+              margin-bottom: 30px;
+            }
+            .info-box {
+              background: #f9fafb;
+              padding: 15px;
+              border-radius: 8px;
+              border-left: 4px solid #10b981;
+            }
+            .info-label {
+              font-size: 10px;
+              color: #6b7280;
+              text-transform: uppercase;
+              font-weight: 700;
+              margin-bottom: 5px;
+            }
+            .info-value {
+              font-size: 14px;
+              font-weight: 600;
+              color: #1f2937;
+            }
+            table.dn-products-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 30px;
+            }
+            table.dn-products-table th {
+              background: #10b981;
+              color: white;
+              padding: 12px 10px;
+              text-align: left;
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+            }
+            table.dn-products-table th.dn-cell-center {
+              text-align: center;
+            }
+            table.dn-products-table th.dn-cell-right {
+              text-align: right;
+            }
+            table.dn-products-table td {
+              padding: 10px;
+              border-bottom: 1px solid #e5e7eb;
+              vertical-align: top;
+            }
+            table.dn-products-table td.dn-cell-center {
+              text-align: center;
+            }
+            table.dn-products-table td.dn-cell-right {
+              text-align: right;
+            }
+            .dn-notes-box {
+              margin-top: 30px;
+              padding: 15px;
+              background: #f9fafb;
+              border-radius: 8px;
+              border-left: 4px solid #10b981;
+            }
+            .dn-notes-label {
+              font-size: 11px;
+              color: #6b7280;
+              text-transform: uppercase;
+              font-weight: 700;
+              margin-bottom: 5px;
+            }
+            .dn-notes-body {
+              font-size: 13px;
+              color: #1f2937;
+            }
+            .footer {
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #e5e7eb;
+              font-size: 11px;
+              color: #6b7280;
+              text-align: center;
+            }
+            ${DELIVERY_NOTE_PRINT_ONLY_STYLES}
+${DELIVERY_NOTE_PAYMENT_DETAILS_STYLES}
+  `
+}
+
+function buildDeliveryNotePrintHtml(
+  note: DeliveryNote,
+  formatDate: (date: string | Date) => string
+): string {
+  const paymentStatus = note.paymentStatus || "Unpaid"
+  const statusColor =
+    note.status === "Delivered" ? "#10b981" : note.status === "In Transit" ? "#3b82f6" : "#f59e0b"
+
+  const itemsHtml = note.items
+    .map((item) => {
+      const displayName =
+        item.productName ||
+        (item.productType && item.flavor
+          ? `${item.productType} of ${item.flavor}`
+          : item.flavor
+            ? item.flavor
+            : "Product")
+      return `
+        <tr class="dn-item-row">
+          <td>${displayName}</td>
+          <td class="dn-cell-center">${item.size}</td>
+          <td class="dn-cell-right">${item.quantity.toLocaleString()}</td>
+        </tr>
+      `
+    })
+    .join("")
+
+  const notesSection = note.notes
+    ? `
+          <div class="dn-notes-box">
+            <div class="dn-notes-label">Notes</div>
+            <div class="dn-notes-body">${note.notes}</div>
+          </div>
+`
+    : ""
+
+  return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Delivery Note ${note.noteId}</title>
+          <meta charset="UTF-8">
+          <style>
+${buildDeliveryNoteDocumentStyles(statusColor)}
+          </style>
+        </head>
+        <body class="dn-print-body">
+          <div class="dn-top-section">
+          <div class="header">
+            <div class="header-top">
+              <div class="company-info">
+                <h1>Infusion Jaba</h1>
+                <p>Delivery Note</p>
+              </div>
+              <div class="note-info">
+                <div class="note-id">${note.noteId}</div>
+                <div class="status-badge">${note.status}</div>
+                <p style="margin-top: 10px; font-size: 11px; color: #6b7280;">Date: ${formatDate(note.date)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-box">
+              <div class="info-label">Distributor</div>
+              <div class="info-value">${note.distributorName}</div>
+            </div>
+            <div class="info-box">
+              <div class="info-label">Payment Status</div>
+              <div class="info-value">${paymentStatus}</div>
+            </div>
+            ${note.vehicle ? `
+            <div class="info-box">
+              <div class="info-label">Vehicle</div>
+              <div class="info-value">${note.vehicle}</div>
+            </div>
+            ` : ""}
+            ${note.driver ? `
+            <div class="info-box">
+              <div class="info-label">Driver</div>
+              <div class="info-value">${note.driver}${note.driverPhone ? ` (${note.driverPhone})` : ""}</div>
+            </div>
+            ` : ""}
+          </div>
+          </div>
+
+          <table class="dn-products-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="dn-cell-center">Size</th>
+                <th class="dn-cell-right">Quantity</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          ${notesSection}
+
+          <div class="dn-tail">
+          ${DELIVERY_NOTE_PAYMENT_DETAILS_HTML}
+
+          ${DELIVERY_NOTE_SIGNOFF_HTML}
+
+          <div class="footer dn-print-footer">
+            <p>Printed delivery note — complete amount and signatures in ink where indicated.</p>
+            <p style="margin-top: 5px;">Generated on ${new Date().toLocaleString()}</p>
+          </div>
+          </div>
+        </body>
+      </html>
+    `
+}
+
 export default function DistributionPage() {
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>([])
   const [loading, setLoading] = useState(true)
@@ -389,240 +710,13 @@ export default function DistributionPage() {
   }
 
   const handlePrintDeliveryNote = (note: DeliveryNote) => {
-    const paymentStatus = note.paymentStatus || "Unpaid"
-    const statusColor = note.status === "Delivered" ? "#10b981" : note.status === "In Transit" ? "#3b82f6" : "#f59e0b"
-
-    const printWindow = window.open('', '_blank')
+    const printWindow = window.open("", "_blank")
     if (!printWindow) {
-      toast.error('Please allow popups to print delivery notes')
+      toast.error("Please allow popups to print delivery notes")
       return
     }
 
-    const itemsHtml = note.items.map((item) => {
-      const displayName = item.productName || 
-        (item.productType && item.flavor ? `${item.productType} of ${item.flavor}` : 
-        (item.flavor ? item.flavor : 'Product'))
-      return `
-        <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${displayName}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.size}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: right;">${item.quantity.toLocaleString()}</td>
-        </tr>
-      `
-    }).join('')
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Delivery Note ${note.noteId}</title>
-          <meta charset="UTF-8">
-          <style>
-            @media print {
-              @page {
-                size: A4;
-                margin: 15mm;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-              }
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-              background: white;
-              padding: 30px;
-              color: #1f2937;
-            }
-            .header {
-              border-bottom: 3px solid #10b981;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
-            }
-            .header-top {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              margin-bottom: 20px;
-            }
-            .company-info h1 {
-              font-size: 28px;
-              color: #10b981;
-              font-weight: 800;
-              margin-bottom: 5px;
-            }
-            .company-info p {
-              font-size: 12px;
-              color: #6b7280;
-            }
-            .note-info {
-              text-align: right;
-            }
-            .note-id {
-              font-size: 24px;
-              font-weight: 700;
-              color: #1f2937;
-              margin-bottom: 5px;
-            }
-            .status-badge {
-              display: inline-block;
-              padding: 6px 12px;
-              border-radius: 20px;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-              background: ${statusColor}15;
-              color: ${statusColor};
-              border: 1px solid ${statusColor}40;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 20px;
-              margin-bottom: 30px;
-            }
-            .info-box {
-              background: #f9fafb;
-              padding: 15px;
-              border-radius: 8px;
-              border-left: 4px solid #10b981;
-            }
-            .info-label {
-              font-size: 10px;
-              color: #6b7280;
-              text-transform: uppercase;
-              font-weight: 700;
-              margin-bottom: 5px;
-            }
-            .info-value {
-              font-size: 14px;
-              font-weight: 600;
-              color: #1f2937;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 30px;
-            }
-            th {
-              background: #10b981;
-              color: white;
-              padding: 12px 10px;
-              text-align: left;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-            }
-            th:last-child {
-              text-align: right;
-            }
-            td {
-              padding: 10px;
-              border-bottom: 1px solid #e5e7eb;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #e5e7eb;
-              font-size: 11px;
-              color: #6b7280;
-              text-align: center;
-            }
-            @media print {
-              .delivery-note-page-1 {
-                page-break-after: always;
-                break-after: page;
-              }
-            }
-            @media screen {
-              .delivery-note-page-1 {
-                margin-bottom: 28px;
-                padding-bottom: 28px;
-                border-bottom: 1px dashed #cbd5e1;
-              }
-            }
-${DELIVERY_NOTE_PAYMENT_DETAILS_STYLES}
-          </style>
-        </head>
-        <body>
-          <div class="delivery-note-page-1">
-          <div class="header">
-            <div class="header-top">
-              <div class="company-info">
-                <h1>Infusion Jaba</h1>
-                <p>Delivery Note</p>
-              </div>
-              <div class="note-info">
-                <div class="note-id">${note.noteId}</div>
-                <div class="status-badge">${note.status}</div>
-                <p style="margin-top: 10px; font-size: 11px; color: #6b7280;">Date: ${formatDate(note.date)}</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-grid">
-            <div class="info-box">
-              <div class="info-label">Distributor</div>
-              <div class="info-value">${note.distributorName}</div>
-            </div>
-            <div class="info-box">
-              <div class="info-label">Payment Status</div>
-              <div class="info-value">${paymentStatus}</div>
-            </div>
-            ${note.vehicle ? `
-            <div class="info-box">
-              <div class="info-label">Vehicle</div>
-              <div class="info-value">${note.vehicle}</div>
-            </div>
-            ` : ''}
-            ${note.driver ? `
-            <div class="info-box">
-              <div class="info-label">Driver</div>
-              <div class="info-value">${note.driver}${note.driverPhone ? ` (${note.driverPhone})` : ''}</div>
-            </div>
-            ` : ''}
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th style="text-align: center;">Size</th>
-                <th style="text-align: right;">Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          ${note.notes ? `
-          <div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #10b981;">
-            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 700; margin-bottom: 5px;">Notes</div>
-            <div style="font-size: 13px; color: #1f2937;">${note.notes}</div>
-          </div>
-          ` : ''}
-
-          </div>
-
-          <div class="delivery-note-page-2">
-          ${DELIVERY_NOTE_PAYMENT_DETAILS_HTML}
-
-          ${DELIVERY_NOTE_SIGNOFF_HTML}
-
-          <div class="footer">
-            <p>Printed delivery note — complete amount and signatures in ink where indicated.</p>
-            <p style="margin-top: 5px;">Generated on ${new Date().toLocaleString()}</p>
-          </div>
-          </div>
-        </body>
-      </html>
-    `)
+    printWindow.document.write(buildDeliveryNotePrintHtml(note, formatDate))
 
     printWindow.document.close()
     setTimeout(() => {
@@ -631,230 +725,7 @@ ${DELIVERY_NOTE_PAYMENT_DETAILS_STYLES}
   }
 
   const handleDownloadDeliveryNote = (note: DeliveryNote) => {
-    const paymentStatus = note.paymentStatus || "Unpaid"
-    const statusColor = note.status === "Delivered" ? "#10b981" : note.status === "In Transit" ? "#3b82f6" : "#f59e0b"
-
-    const itemsHtml = note.items.map((item) => {
-      const displayName = item.productName || 
-        (item.productType && item.flavor ? `${item.productType} of ${item.flavor}` : 
-        (item.flavor ? item.flavor : 'Product'))
-      return `
-        <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${displayName}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.size}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: right;">${item.quantity.toLocaleString()}</td>
-        </tr>
-      `
-    }).join('')
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Delivery Note ${note.noteId}</title>
-          <meta charset="UTF-8">
-          <style>
-            @media print {
-              @page {
-                size: A4;
-                margin: 15mm;
-              }
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-              background: white;
-              padding: 30px;
-              color: #1f2937;
-            }
-            .header {
-              border-bottom: 3px solid #10b981;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
-            }
-            .header-top {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              margin-bottom: 20px;
-            }
-            .company-info h1 {
-              font-size: 28px;
-              color: #10b981;
-              font-weight: 800;
-              margin-bottom: 5px;
-            }
-            .company-info p {
-              font-size: 12px;
-              color: #6b7280;
-            }
-            .note-info {
-              text-align: right;
-            }
-            .note-id {
-              font-size: 24px;
-              font-weight: 700;
-              color: #1f2937;
-              margin-bottom: 5px;
-            }
-            .status-badge {
-              display: inline-block;
-              padding: 6px 12px;
-              border-radius: 20px;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-              background: ${statusColor}15;
-              color: ${statusColor};
-              border: 1px solid ${statusColor}40;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 20px;
-              margin-bottom: 30px;
-            }
-            .info-box {
-              background: #f9fafb;
-              padding: 15px;
-              border-radius: 8px;
-              border-left: 4px solid #10b981;
-            }
-            .info-label {
-              font-size: 10px;
-              color: #6b7280;
-              text-transform: uppercase;
-              font-weight: 700;
-              margin-bottom: 5px;
-            }
-            .info-value {
-              font-size: 14px;
-              font-weight: 600;
-              color: #1f2937;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 30px;
-            }
-            th {
-              background: #10b981;
-              color: white;
-              padding: 12px 10px;
-              text-align: left;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-            }
-            th:last-child {
-              text-align: right;
-            }
-            td {
-              padding: 10px;
-              border-bottom: 1px solid #e5e7eb;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #e5e7eb;
-              font-size: 11px;
-              color: #6b7280;
-              text-align: center;
-            }
-            @media print {
-              .delivery-note-page-1 {
-                page-break-after: always;
-                break-after: page;
-              }
-            }
-            @media screen {
-              .delivery-note-page-1 {
-                margin-bottom: 28px;
-                padding-bottom: 28px;
-                border-bottom: 1px dashed #cbd5e1;
-              }
-            }
-${DELIVERY_NOTE_PAYMENT_DETAILS_STYLES}
-          </style>
-        </head>
-        <body>
-          <div class="delivery-note-page-1">
-          <div class="header">
-            <div class="header-top">
-              <div class="company-info">
-                <h1>Infusion Jaba</h1>
-                <p>Delivery Note</p>
-              </div>
-              <div class="note-info">
-                <div class="note-id">${note.noteId}</div>
-                <div class="status-badge">${note.status}</div>
-                <p style="margin-top: 10px; font-size: 11px; color: #6b7280;">Date: ${formatDate(note.date)}</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-grid">
-            <div class="info-box">
-              <div class="info-label">Distributor</div>
-              <div class="info-value">${note.distributorName}</div>
-            </div>
-            <div class="info-box">
-              <div class="info-label">Payment Status</div>
-              <div class="info-value">${paymentStatus}</div>
-            </div>
-            ${note.vehicle ? `
-            <div class="info-box">
-              <div class="info-label">Vehicle</div>
-              <div class="info-value">${note.vehicle}</div>
-            </div>
-            ` : ''}
-            ${note.driver ? `
-            <div class="info-box">
-              <div class="info-label">Driver</div>
-              <div class="info-value">${note.driver}${note.driverPhone ? ` (${note.driverPhone})` : ''}</div>
-            </div>
-            ` : ''}
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th style="text-align: center;">Size</th>
-                <th style="text-align: right;">Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          ${note.notes ? `
-          <div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #10b981;">
-            <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 700; margin-bottom: 5px;">Notes</div>
-            <div style="font-size: 13px; color: #1f2937;">${note.notes}</div>
-          </div>
-          ` : ''}
-
-          </div>
-
-          <div class="delivery-note-page-2">
-          ${DELIVERY_NOTE_PAYMENT_DETAILS_HTML}
-
-          ${DELIVERY_NOTE_SIGNOFF_HTML}
-
-          <div class="footer">
-            <p>Printed delivery note — complete amount and signatures in ink where indicated.</p>
-            <p style="margin-top: 5px;">Generated on ${new Date().toLocaleString()}</p>
-          </div>
-          </div>
-        </body>
-      </html>
-    `
+    const htmlContent = buildDeliveryNotePrintHtml(note, formatDate)
 
     const blob = new Blob([htmlContent], { type: 'text/html' })
     const url = window.URL.createObjectURL(blob)

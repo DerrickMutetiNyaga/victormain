@@ -107,6 +107,7 @@ export function OrderCard<T = any>({
       <div className="group relative bg-white border border-[#e5e7eb] rounded-xl sm:rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all duration-200 hover:-translate-y-0.5 overflow-hidden">
         {/* Status indicator bar (left side) */}
         {status === "PAID" && <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#16a34a]" />}
+        {status === "OVERPAID" && <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#7c3aed]" />}
         {status === "PARTIALLY_PAID" && <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#f59e0b]" />}
         {status === "NOT_PAID" && <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#ef4444]" />}
 
@@ -239,7 +240,7 @@ export function OrderCard<T = any>({
                 Pay
               </ActionButton>
             )}
-            {status === "PAID" && (
+            {(status === "PAID" || status === "OVERPAID") && (
               <ActionButton
                 variant="primary"
                 icon={Eye}
@@ -257,7 +258,7 @@ export function OrderCard<T = any>({
             >
               <span className="hidden sm:inline">Print</span>
             </ActionButton>
-            {status === "PAID" && (
+            {(status === "PAID" || status === "OVERPAID") && (
               <ActionButton
                 variant="secondary"
                 icon={Eye}

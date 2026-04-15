@@ -444,7 +444,7 @@ export function buildClientDeliveryNoteSms(opts: {
   const name = opts.distributorName.trim() || 'there'
   const id = opts.noteId.trim()
   const url = opts.viewUrl.trim()
-  const line = `Infusion Jaba: Hi ${name}, delivery note ${id} is ready. View: ${url}`
+  const line = `Hi ${name}, your delivery note ${id} is ready. Open here: ${url}`
   return clipSms(line)
 }
 

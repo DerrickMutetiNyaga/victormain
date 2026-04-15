@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
-import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { canManageOrderMpesaPayments, normalizePermissions } from '@/lib/catha-permissions-model'
 import { appendMpesaPaymentToOrder } from '@/lib/catha-append-mpesa-payment'
 
 export async function POST() {
@@ -11,10 +11,10 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const role = ((session.user as any).role ?? '').toUpperCase()
+    const role = (session.user as any).role as string | undefined
     const perms = normalizePermissions((session.user as any).permissions)
 
-    if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'orders', 'edit')) {
+    if (!canManageOrderMpesaPayments(perms, role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 
@@ -52,7 +52,8 @@ export async function POST() {
         continue
       }
 
-      if (order.paymentStatus === 'PAID' && order.status === 'completed') {
+      const ps = String(order.paymentStatus || '').toUpperCase()
+      if ((ps === 'PAID' || ps === 'OVERPAID') && order.status === 'completed') {
         alreadyPaid++
         continue
       }

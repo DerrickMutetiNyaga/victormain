@@ -65,11 +65,19 @@ function PaymentChip({ method }: { method: string | null }) {
 function StatusPill({ status }: { status: string }) {
   const config: Record<string, { bg: string; text: string }> = {
     PAID: { bg: "bg-emerald-50", text: "text-emerald-700" },
+    OVERPAID: { bg: "bg-violet-50", text: "text-violet-800" },
     PARTIALLY_PAID: { bg: "bg-amber-50", text: "text-amber-700" },
     NOT_PAID: { bg: "bg-red-50", text: "text-red-700" },
   }
   const cfg = config[status] || { bg: "bg-slate-100", text: "text-slate-600" }
-  const label = status === "NOT_PAID" ? "Not paid" : status === "PARTIALLY_PAID" ? "Partially paid" : "Paid"
+  const label =
+    status === "NOT_PAID"
+      ? "Not paid"
+      : status === "PARTIALLY_PAID"
+        ? "Partially paid"
+        : status === "OVERPAID"
+          ? "Overpaid"
+          : "Paid"
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}>
       {label}
@@ -173,7 +181,7 @@ export function OrderCardMobile<T = any>({
               Pay
             </Button>
           )}
-          {status === "PAID" && (
+          {(status === "PAID" || status === "OVERPAID") && (
             <Button
               size="sm"
               variant="default"

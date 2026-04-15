@@ -63,7 +63,7 @@ export const cathaStaffOrderUpdateSchema = z
     orderType: z.enum(['INHOUSE', 'TAKEOUT']).optional(),
     orderSource: z.enum(['pos', 'menu', 'glovo', 'kiosk']).optional(),
     paymentMethod: z.string().max(40).optional(),
-    paymentStatus: z.enum(['PENDING', 'PAID', 'PARTIALLY_PAID', 'NOT_PAID']).optional(),
+    paymentStatus: z.enum(['PENDING', 'PAID', 'PARTIALLY_PAID', 'NOT_PAID', 'OVERPAID']).optional(),
     status: z.enum(['pending', 'completed', 'cancelled', 'voided', 'deleted']).optional(),
     glovoOrderNumber: z.union([z.string().max(120), z.null()]).optional(),
     cashAmount: z.union([z.number(), z.null()]).optional(),

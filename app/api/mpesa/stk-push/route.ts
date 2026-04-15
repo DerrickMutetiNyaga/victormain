@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { initiateSTKPush, type MpesaConfig } from '@/lib/mpesa'
 import { ensureMpesaTransactionIndexes } from '@/lib/catha-mpesa-transaction-indexes'
+import { summarizeCathaOrderPayments } from '@/lib/catha-order-payments'
 
 export async function POST(request: Request) {
   try {
@@ -31,6 +32,27 @@ export async function POST(request: Request) {
         console.warn('[M-Pesa STK] Amount mismatch vs order', { accountReference, clientAmount: amountNum, orderTotal: expected })
         return NextResponse.json(
           { success: false, error: 'Amount does not match order total. Refresh checkout and try again.' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Catha / bar orders: STK amount must not exceed remaining balance (split / group pay).
+    if (orderForRef && orderForRef.type !== 'ecommerce') {
+      const pay = summarizeCathaOrderPayments(orderForRef as any)
+      if (pay.balanceDue <= 0.02 && pay.totalLinkedPayments > 0) {
+        return NextResponse.json(
+          { success: false, error: 'This order is already fully paid. No further M-Pesa amount is due.' },
+          { status: 400 }
+        )
+      }
+      const remaining = Math.max(0, pay.balanceDue)
+      if (remaining > 0.02 && amountNum > remaining + 0.02) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Amount exceeds remaining balance (KSh ${remaining.toFixed(2)}). Adjust the amount or link an existing payment.`,
+          },
           { status: 400 }
         )
       }

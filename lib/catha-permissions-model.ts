@@ -176,5 +176,22 @@ export function hasCathaPermission(
   return false
 }
 
+/**
+ * Link/unlink M-Pesa payments on orders, mark change given, reconcile — same staff who take payment.
+ * Cashiers often have `orders.add` but not `orders.edit` in custom permission sets; bar managers are ADMIN.
+ */
+export function canManageOrderMpesaPayments(
+  permissions: CathaPermissions | null | undefined,
+  role: string | null | undefined
+): boolean {
+  const r = (role ?? '').toUpperCase()
+  if (r === 'SUPER_ADMIN') return true
+  const perms = normalizePermissions(permissions)
+  if (hasCathaPermission(perms, 'orders', 'edit')) return true
+  if (hasCathaPermission(perms, 'orders', 'add')) return true
+  if (r === 'CASHIER' || r === 'ADMIN') return true
+  return false
+}
+
 /** Browser event: dispatch after User Management saves so nav/hooks refetch DB-backed `/api/catha/auth/me`. */
 export const CATHA_AUTH_ME_REFRESH_EVENT = 'catha-auth-me-refresh'

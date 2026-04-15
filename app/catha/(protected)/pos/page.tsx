@@ -16,6 +16,7 @@ import { InfoChip } from "@/components/pos/info-chip"
 import { CustomerFields } from "@/components/pos/customer-fields"
 import { normalizeKenyaPhone, isValidKenyaPhone, getPhoneValidationError } from "@/lib/phone-utils"
 import { normalizeMpesaStatus } from "@/lib/mpesa-status"
+import { summarizeCathaOrderPayments } from "@/lib/catha-order-payments"
 import { Home, UtensilsCrossed } from "lucide-react"
 import { categories, staff, type Product, type Transaction, type Staff } from "@/lib/dummy-data"
 import { Input } from "@/components/ui/input"
@@ -1167,6 +1168,21 @@ export default function POSPage() {
         setMpesaSessionOrderId(persistedId)
       }
 
+      let stkAmount = total
+      try {
+        const cur = await fetch(`/api/catha/orders?id=${encodeURIComponent(orderId)}`, { cache: "no-store" })
+        if (cur.ok) {
+          const odoc = await cur.json()
+          const sum = summarizeCathaOrderPayments(odoc)
+          stkAmount = Math.max(
+            0.01,
+            sum.balanceDue > 0.005 ? sum.balanceDue : Number(odoc.total) || total
+          )
+        }
+      } catch {
+        stkAmount = total
+      }
+
       toast.loading("Initiating M-Pesa payment...", { id: "mpesa-push" })
       const stkResponse = await fetch("/api/mpesa/stk-push", {
         method: "POST",
@@ -1174,7 +1190,7 @@ export default function POSPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phoneNumber: promptNorm,
-          amount: total,
+          amount: stkAmount,
           accountReference: orderId,
           transactionDesc: `Payment for order ${orderId}`,
         }),

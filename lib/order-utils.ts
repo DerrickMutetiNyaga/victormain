@@ -16,11 +16,14 @@ export function formatTime(date: Date | string | null | undefined): string {
 }
 
 /**
- * Get payment status label: paid | partially paid | not paid
+ * Get payment status label: paid | partially paid | not paid | overpaid
  */
-export function getStatusLabel(status: string | null | undefined): "PAID" | "PARTIALLY_PAID" | "NOT_PAID" {
+export function getStatusLabel(
+  status: string | null | undefined
+): "PAID" | "PARTIALLY_PAID" | "NOT_PAID" | "OVERPAID" {
   if (!status) return "NOT_PAID"
   const s = status.toUpperCase()
+  if (s === "OVERPAID") return "OVERPAID"
   if (s === "PAID" || s === "COMPLETED") return "PAID"
   if (s === "PARTIALLY_PAID" || s === "PARTIAL") return "PARTIALLY_PAID"
   if (s === "NOT_PAID" || s === "FAILED") return "NOT_PAID"

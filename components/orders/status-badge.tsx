@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-type Status = "PAID" | "PARTIALLY_PAID" | "NOT_PAID"
+type Status = "PAID" | "PARTIALLY_PAID" | "NOT_PAID" | "OVERPAID"
 
 interface StatusBadgeProps {
   status: Status
@@ -25,6 +25,12 @@ const statusConfig: Record<Status, { bg: string; text: string; dot: string; labe
     text: "text-[#991b1b]",
     dot: "bg-[#ef4444]",
     label: "Not Paid",
+  },
+  OVERPAID: {
+    bg: "bg-[#ede9fe]",
+    text: "text-[#5b21b6]",
+    dot: "bg-[#7c3aed]",
+    label: "Overpaid",
   },
 }
 

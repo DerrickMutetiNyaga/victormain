@@ -1,6 +1,8 @@
 import { ObjectId, type Db } from 'mongodb'
 import { normalizeMpesaStatus } from '@/lib/mpesa-status'
 import { summarizeCathaOrderPayments, type LinkedMpesaPayment } from '@/lib/catha-order-payments'
+import { normalizeMpesaReceiptCode } from '@/lib/mpesa-receipt-normalize'
+import { escapeRegex } from '@/lib/catha-orders-list-filter'
 
 export type AppendMpesaResult =
   | {
@@ -31,6 +33,9 @@ export function baseLinkedListFromOrder(order: any): LinkedMpesaPayment[] {
         receiptNumber: p.receiptNumber != null ? String(p.receiptNumber) : null,
         amount: Number(p.amount) || 0,
         phone: p.phone != null ? String(p.phone) : null,
+        payerName: p.payerName != null ? String(p.payerName) : null,
+        mpesaStatus: p.mpesaStatus != null ? String(p.mpesaStatus) : null,
+        transactionDate: p.transactionDate ?? null,
         linkedAt: p.linkedAt ?? new Date(),
         linkedBy: String(p.linkedBy || 'System'),
       }))
@@ -44,6 +49,9 @@ export function baseLinkedListFromOrder(order: any): LinkedMpesaPayment[] {
       receiptNumber: order.mpesaReceiptNumber != null ? String(order.mpesaReceiptNumber) : null,
       amount: Number(order.total) || 0,
       phone: null,
+      payerName: null,
+      mpesaStatus: null,
+      transactionDate: null,
       linkedAt: order.linkedAt ?? new Date(),
       linkedBy: String(order.linkedBy || 'System'),
     },
@@ -76,6 +84,9 @@ export async function appendMpesaPaymentToOrder(
     tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null
 
   const linkedAt = new Date()
+  const receiptNorm = normalizeMpesaReceiptCode(
+    mpesaReceiptNumber != null ? String(mpesaReceiptNumber) : tx.transaction_id != null ? String(tx.transaction_id) : ''
+  )
 
   // —— Global duplicate: transaction already tied to another order ——
   const otherOrder = await db.collection('orders').findOne({
@@ -100,10 +111,63 @@ export async function appendMpesaPaymentToOrder(
     }
   }
 
+  // —— Same M-Pesa receipt / code cannot be used on two orders ——
+  if (receiptNorm.length >= 3) {
+    const rx = new RegExp(`^${escapeRegex(receiptNorm)}$`, 'i')
+    const orderReceiptDup = await db.collection('orders').findOne({
+      id: { $ne: orderId },
+      $or: [{ mpesaReceiptNumber: rx }, { linkedPayments: { $elemMatch: { receiptNumber: rx } } }],
+    })
+    if (orderReceiptDup) {
+      return {
+        ok: false,
+        error: `This M-Pesa receipt/code is already attached to order ${orderReceiptDup.id}.`,
+        status: 409,
+      }
+    }
+    const txReceiptDup = await db.collection('mpesa_transactions').findOne({
+      _id: { $ne: new ObjectId(transactionId) },
+      linked_order_id: { $exists: true, $nin: [null, ''] },
+      $or: [{ mpesa_receipt_number: rx }, { transaction_id: rx }],
+    })
+    if (txReceiptDup && String(txReceiptDup.linked_order_id) !== orderId) {
+      return {
+        ok: false,
+        error: `This M-Pesa receipt/code is already linked to order ${String(txReceiptDup.linked_order_id)}.`,
+        status: 409,
+      }
+    }
+  }
+
   let list = baseLinkedListFromOrder(order)
   if (list.some((p) => p.transactionId === transactionId)) {
     return { ok: false, error: 'This transaction is already linked to this order', status: 409 }
   }
+
+  if (receiptNorm.length >= 3) {
+    const dupReceiptOnOrder = list.some((p) => {
+      const pr = normalizeMpesaReceiptCode(p.receiptNumber || '')
+      return pr === receiptNorm && p.transactionId !== transactionId
+    })
+    if (dupReceiptOnOrder) {
+      return {
+        ok: false,
+        error: 'This M-Pesa receipt/code is already attached to this order.',
+        status: 409,
+      }
+    }
+  }
+
+  let payerName: string | null = null
+  if (tx.customer_name != null && String(tx.customer_name).trim()) {
+    payerName = String(tx.customer_name).trim()
+  } else {
+    const parts = [tx.customer_first_name, tx.customer_middle_name, tx.customer_last_name].filter(
+      (x: unknown) => x != null && String(x).trim() !== ''
+    )
+    payerName = parts.length ? parts.map((x: unknown) => String(x).trim()).join(' ') : null
+  }
+  const transactionDateRaw = tx.transaction_date ?? tx.createdAt ?? linkedAt
 
   list.push({
     method: 'mpesa',
@@ -111,6 +175,9 @@ export async function appendMpesaPaymentToOrder(
     receiptNumber: mpesaReceiptNumber != null ? String(mpesaReceiptNumber) : null,
     amount: txAmt,
     phone,
+    payerName,
+    mpesaStatus: txStatus,
+    transactionDate: transactionDateRaw,
     linkedAt,
     linkedBy,
   })
@@ -124,11 +191,13 @@ export async function appendMpesaPaymentToOrder(
   const paymentStatus =
     summary.paymentStatus === 'PAID'
       ? 'PAID'
-      : summary.paymentStatus === 'PARTIALLY_PAID'
-        ? 'PARTIALLY_PAID'
-        : 'NOT_PAID'
+      : summary.paymentStatus === 'OVERPAID'
+        ? 'OVERPAID'
+        : summary.paymentStatus === 'PARTIALLY_PAID'
+          ? 'PARTIALLY_PAID'
+          : 'NOT_PAID'
 
-  const orderCompleted = summary.paymentStatus === 'PAID'
+  const orderCompleted = summary.paymentStatus === 'PAID' || summary.paymentStatus === 'OVERPAID'
 
   const overpaymentAmount = summary.overpaymentAmount
   const changePatch: Record<string, unknown> =
@@ -196,7 +265,7 @@ export async function appendMpesaPaymentToOrder(
       { orderId },
       {
         $set: {
-          paymentStatus: 'UNPAID',
+          paymentStatus: summary.paymentStatus === 'PARTIALLY_PAID' ? 'PARTIALLY_PAID' : 'UNPAID',
           updatedAt: linkedAt,
         },
       }
@@ -232,11 +301,13 @@ export async function recalculateOrderPaymentsAfterLinks(db: Db, orderId: string
   const paymentStatus =
     summary.paymentStatus === 'PAID'
       ? 'PAID'
-      : summary.paymentStatus === 'PARTIALLY_PAID'
-        ? 'PARTIALLY_PAID'
-        : 'NOT_PAID'
+      : summary.paymentStatus === 'OVERPAID'
+        ? 'OVERPAID'
+        : summary.paymentStatus === 'PARTIALLY_PAID'
+          ? 'PARTIALLY_PAID'
+          : 'NOT_PAID'
 
-  const orderCompleted = summary.paymentStatus === 'PAID'
+  const orderCompleted = summary.paymentStatus === 'PAID' || summary.paymentStatus === 'OVERPAID'
   const now = new Date()
 
   const overpaymentAmount = summary.overpaymentAmount
@@ -316,7 +387,7 @@ export async function recalculateOrderPaymentsAfterLinks(db: Db, orderId: string
       { orderId },
       {
         $set: {
-          paymentStatus: 'UNPAID',
+          paymentStatus: summary.paymentStatus === 'PARTIALLY_PAID' ? 'PARTIALLY_PAID' : 'UNPAID',
           updatedAt: now,
         },
       }
