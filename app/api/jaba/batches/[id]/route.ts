@@ -8,10 +8,8 @@ import {
   getInfusedAllocated,
   getNeutralRemainingLitres,
 } from '@/lib/jaba-batch-utils'
-import {
-  JABA_FLAVOUR_LINES_COLLECTION,
-  loadMergedFlavourRowsForParent,
-} from '@/lib/jaba-flavour-lines'
+import { JABA_FLAVOUR_LINES_COLLECTION } from '@/lib/jaba-flavour-lines'
+import { loadMergedFlavourRowsForParent } from '@/lib/jaba-flavour-lines-server'
 import { findPrimaryPackagingMaterials } from '@/lib/jaba-packaging-materials'
 import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
 import { enrichIngredientsCosts } from '@/lib/jaba-ingredient-costs'

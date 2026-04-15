@@ -2,11 +2,10 @@ import type { Db } from "mongodb"
 import { ObjectId } from "mongodb"
 import {
   JABA_FLAVOUR_LINES_COLLECTION,
-  findExistingFlavourLineForParent,
-  nextFlavourLineCode,
   normalizeFlavourNameForMatch,
   parentStatusAfterFlavourAllocation,
 } from "@/lib/jaba-flavour-lines"
+import { findExistingFlavourLineForParent, nextFlavourLineCode } from "@/lib/jaba-flavour-lines-server"
 
 export type FlavourAllocationInput = {
   flavorId?: string | null

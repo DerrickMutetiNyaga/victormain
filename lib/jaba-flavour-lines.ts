@@ -1,13 +1,17 @@
 /**
  * Flavour lines: sub-rows under one parent jaba batch (not separate batch documents).
  * Legacy child batches in jaba_batches are still merged in API responses for old data.
+ *
+ * IMPORTANT: Do not import `mongodb` here — this module is used by Client Components
+ * (e.g. batches page). DB helpers live in `jaba-flavour-lines-server.ts`.
  */
 
-import type { Db, Document, WithId } from "mongodb"
-import { ObjectId } from "mongodb"
 import { rowLitresFromContainer } from "@/lib/jaba-packaging-calculations"
 
 export const JABA_FLAVOUR_LINES_COLLECTION = "jaba_batch_flavour_lines"
+
+/** Loose document shape from API/Mongo (no mongodb driver — safe for client bundles). */
+export type JabaLooseDoc = Record<string, unknown>
 
 /** Stable comparison for matching an existing flavour line on re-infusion (same batch + flavour). */
 export function normalizeFlavourNameForMatch(name: string): string {
@@ -17,56 +21,11 @@ export function normalizeFlavourNameForMatch(name: string): string {
     .replace(/\s+/g, " ")
 }
 
-function flavourIdsEqual(a: unknown, b: string): boolean {
-  if (a == null || b == null) return false
-  const sa = String(a)
-  const sb = String(b)
-  if (sa === sb) return true
-  if (ObjectId.isValid(sa) && ObjectId.isValid(sb)) {
-    try {
-      return new ObjectId(sa).equals(new ObjectId(sb))
-    } catch {
-      return false
-    }
+function mongoIdString(x: unknown): string {
+  if (x != null && typeof (x as { toString?: () => string }).toString === "function") {
+    return String((x as { toString: () => string }).toString())
   }
-  return false
-}
-
-/**
- * Find an existing flavour line document when allocating more volume to the same flavour.
- * Prefers flavourId (catalog id) when provided; otherwise matches normalized flavour name.
- * When flavourId is set on the request, does not merge into a line that already has a different catalogue id.
- */
-export async function findExistingFlavourLineForParent(
-  db: Db,
-  parentId: string,
-  flavorId: string | null | undefined,
-  flavorName: string
-): Promise<WithId<Document> | null> {
-  const coll = db.collection(JABA_FLAVOUR_LINES_COLLECTION)
-  const nameNorm = normalizeFlavourNameForMatch(flavorName)
-  const lines = await coll.find({ parentBatchId: parentId }).toArray()
-
-  const fid = flavorId && String(flavorId).trim() ? String(flavorId).trim() : ""
-
-  if (fid) {
-    for (const line of lines) {
-      if (flavourIdsEqual(line.flavourId, fid)) return line as WithId<Document>
-    }
-    for (const line of lines) {
-      const n = normalizeFlavourNameForMatch(String(line.flavourName || ""))
-      if (n !== nameNorm) continue
-      const lineHasId = line.flavourId != null && String(line.flavourId).trim() !== ""
-      if (!lineHasId) return line as WithId<Document>
-    }
-    return null
-  }
-
-  for (const line of lines) {
-    const n = normalizeFlavourNameForMatch(String(line.flavourName || ""))
-    if (n === nameNorm) return line as WithId<Document>
-  }
-  return null
+  return ""
 }
 
 export type JabaFlavourLineWorkflowStatus =
@@ -88,7 +47,7 @@ export function bottleRowToLitres(qty: number, size: string): number {
 
 /** Packaging tied to a flavour line (new model) or to a legacy child batch id. */
 export function sumPackagedLitresForFlavourLine(
-  packagingOutputs: Document[],
+  packagingOutputs: JabaLooseDoc[],
   opts: { flavourLineId: string; legacyChildBatchId?: string }
 ): number {
   let sum = 0
@@ -112,7 +71,7 @@ export function sumPackagedLitresForFlavourLine(
 }
 
 export function sumDistributedLitresForFlavourLine(
-  deliveryNotes: Document[],
+  deliveryNotes: JabaLooseDoc[],
   opts: { flavourLineId: string; legacyBatchNumber?: string }
 ): number {
   let sum = 0
@@ -121,7 +80,7 @@ export function sumDistributedLitresForFlavourLine(
   for (const note of deliveryNotes) {
     const items = note.items
     if (!items || !Array.isArray(items)) continue
-    for (const item of items) {
+    for (const item of items as JabaLooseDoc[]) {
       const itemF = item.flavourLineId != null ? String(item.flavourLineId) : ""
       const matchNew = itemF === fid
       const matchLegacy =
@@ -129,7 +88,7 @@ export function sumDistributedLitresForFlavourLine(
         !itemF &&
         String(item.batchNumber || "") === legacyBn
       if (!matchNew && !matchLegacy) continue
-      sum += bottleRowToLitres(parseFloat(item.quantity) || 0, item.size || "500ml")
+      sum += bottleRowToLitres(parseFloat(String(item.quantity)) || 0, String(item.size || "500ml"))
     }
   }
   return sum
@@ -192,18 +151,6 @@ export function mapLegacyParentStatusToDisplay(status: string): string {
   }
 }
 
-export async function nextFlavourLineCode(db: Db, parentBatchNumber: string, parentBatchId: string): Promise<string> {
-  const n =
-    (await db.collection(JABA_FLAVOUR_LINES_COLLECTION).countDocuments({
-      parentBatchId,
-    })) +
-    (await db.collection("jaba_batches").countDocuments({
-      parentBatchId,
-      batchType: "flavoured",
-    }))
-  return `${parentBatchNumber}-F${String(n + 1).padStart(2, "0")}`
-}
-
 export interface EnrichedFlavourRow {
   _id: string
   id: string
@@ -240,8 +187,8 @@ export function buildEnrichedFlavourRow(
     manualInfusing?: boolean | null
     createdAt?: Date
   },
-  packagingOutputs: Document[],
-  deliveryNotes: Document[]
+  packagingOutputs: JabaLooseDoc[],
+  deliveryNotes: JabaLooseDoc[]
 ): EnrichedFlavourRow {
   const id = base._id
   const packagedLitres = sumPackagedLitresForFlavourLine(packagingOutputs, {
@@ -284,7 +231,7 @@ export function buildEnrichedFlavourRow(
     legacyChildBatchId: base.legacyChildBatchId,
   }
   if (base.createdAt instanceof Date) {
-    ;(row as any).createdAt = base.createdAt.toISOString()
+    ;(row as JabaLooseDoc).createdAt = base.createdAt.toISOString()
   }
   return row as EnrichedFlavourRow
 }
@@ -292,8 +239,8 @@ export function buildEnrichedFlavourRow(
 /** Bottle units available to distribute for one flavour row (packaged − distributed). */
 export function countAvailableBottlesForFlavourRow(
   row: EnrichedFlavourRow,
-  packagingOutputs: Document[],
-  deliveryNotes: Document[]
+  packagingOutputs: JabaLooseDoc[],
+  deliveryNotes: JabaLooseDoc[]
 ): number {
   let p500 = 0
   let p1 = 0
@@ -308,10 +255,11 @@ export function countAvailableBottlesForFlavourRow(
     const containers = po.containers
     if (!containers || !Array.isArray(containers)) continue
     for (const c of containers) {
-      const qty = parseFloat(c.quantity) || 0
-      if (c.size === "500ml") p500 += qty
-      else if (c.size === "1L") p1 += qty
-      else if (c.size === "2L") p2 += qty
+      const cc = c as JabaLooseDoc
+      const qty = parseFloat(String(cc.quantity)) || 0
+      if (cc.size === "500ml") p500 += qty
+      else if (cc.size === "1L") p1 += qty
+      else if (cc.size === "2L") p2 += qty
     }
   }
 
@@ -322,7 +270,7 @@ export function countAvailableBottlesForFlavourRow(
   for (const note of deliveryNotes) {
     const items = note.items
     if (!items || !Array.isArray(items)) continue
-    for (const item of items) {
+    for (const item of items as JabaLooseDoc[]) {
       const itemF = item.flavourLineId != null ? String(item.flavourLineId) : ""
       const matchNew = !row.isLegacyChildBatch && itemF === row._id
       const matchLegacy =
@@ -331,7 +279,7 @@ export function countAvailableBottlesForFlavourRow(
         legacyBn &&
         String(item.batchNumber || "") === legacyBn
       if (!matchNew && !matchLegacy) continue
-      const qty = parseFloat(item.quantity) || 0
+      const qty = parseFloat(String(item.quantity)) || 0
       if (item.size === "500ml") d500 += qty
       else if (item.size === "1L") d1 += qty
       else if (item.size === "2L") d2 += qty
@@ -345,12 +293,12 @@ export function countAvailableBottlesForFlavourRow(
 
 export function mergeFlavourRowsFromCaches(
   parentId: string,
-  lineDocs: Document[],
-  legacyChildDocs: Document[],
-  packagingOutputs: Document[],
-  deliveryNotes: Document[]
+  lineDocs: JabaLooseDoc[],
+  legacyChildDocs: JabaLooseDoc[],
+  packagingOutputs: JabaLooseDoc[],
+  deliveryNotes: JabaLooseDoc[]
 ): EnrichedFlavourRow[] {
-  const byCreated = (a: Document, b: Document) => {
+  const byCreated = (a: JabaLooseDoc, b: JabaLooseDoc) => {
     const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
     const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : 0
     return ta - tb
@@ -361,7 +309,7 @@ export function mergeFlavourRowsFromCaches(
   const out: (EnrichedFlavourRow & { sortAt: number })[] = []
 
   for (const doc of sortedLines) {
-    const id = doc._id.toString()
+    const id = mongoIdString(doc._id)
     const t = doc.createdAt instanceof Date ? doc.createdAt.getTime() : 0
     const manualInfusing = doc.status === "Infusing"
     out.push(
@@ -373,8 +321,8 @@ export function mergeFlavourRowsFromCaches(
             lineCode: String(doc.lineCode || ""),
             flavourName: String(doc.flavourName || ""),
             allocatedLitres: Number(doc.allocatedLitres) || 0,
-            infusionDate: doc.infusionDate,
-            notes: doc.notes,
+            infusionDate: doc.infusionDate as Date | string | undefined,
+            notes: doc.notes as string | null | undefined,
             isLegacyChildBatch: false,
             manualInfusing,
             createdAt: doc.createdAt instanceof Date ? doc.createdAt : undefined,
@@ -388,7 +336,7 @@ export function mergeFlavourRowsFromCaches(
   }
 
   for (const child of sortedLegacy) {
-    const id = child._id.toString()
+    const id = mongoIdString(child._id)
     const bn = String(child.batchNumber || "")
     const alloc = Number(child.infusedQuantityLitres ?? child.totalLitres) || 0
     const t = child.createdAt instanceof Date ? child.createdAt.getTime() : 0
@@ -401,8 +349,8 @@ export function mergeFlavourRowsFromCaches(
             lineCode: bn,
             flavourName: String(child.flavor || "Unknown"),
             allocatedLitres: alloc,
-            infusionDate: child.infusionDate,
-            notes: child.notes,
+            infusionDate: child.infusionDate as Date | string | undefined,
+            notes: child.notes as string | null | undefined,
             isLegacyChildBatch: true,
             legacyChildBatchId: id,
             legacyBatchNumber: bn,
@@ -419,25 +367,4 @@ export function mergeFlavourRowsFromCaches(
 
   out.sort((a, b) => a.sortAt - b.sortAt)
   return out.map(({ sortAt: _s, ...row }) => row) as EnrichedFlavourRow[]
-}
-
-export async function loadMergedFlavourRowsForParent(
-  db: Db,
-  parentId: string,
-  packagingOutputs: Document[],
-  deliveryNotes: Document[]
-): Promise<EnrichedFlavourRow[]> {
-  const lines = await db
-    .collection(JABA_FLAVOUR_LINES_COLLECTION)
-    .find({ parentBatchId: parentId })
-    .sort({ createdAt: 1 })
-    .toArray()
-
-  const legacyKids = await db
-    .collection("jaba_batches")
-    .find({ parentBatchId: parentId, batchType: "flavoured" })
-    .sort({ createdAt: 1 })
-    .toArray()
-
-  return mergeFlavourRowsFromCaches(parentId, lines, legacyKids, packagingOutputs, deliveryNotes)
 }
