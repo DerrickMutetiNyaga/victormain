@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, X, Save, Hash, Package, Loader2, Check, AlertTriangle, Info, AlertCircle, RefreshCw } from "lucide-react"
+import { Plus, X, Save, Hash, Package, Loader2, Check, AlertTriangle, RefreshCw } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import Link from "next/link"
@@ -29,11 +29,6 @@ interface RawMaterial {
   lowStockThreshold?: number
   reorderThreshold?: number
   supplier: string
-}
-
-type StockAlert = {
-  material: RawMaterial
-  type: 'out' | 'low' | 'reorder'
 }
 
 export default function AddBatchPage() {
@@ -122,37 +117,6 @@ export default function AddBatchPage() {
     }
     return { low: 10, reorder: 25 } // Default fallback
   }
-
-  // Calculate stock alerts
-  const getStockAlerts = (): StockAlert[] => {
-    const alerts: StockAlert[] = []
-    
-    rawMaterials.forEach(material => {
-      const stock = material.currentStock
-      const thresholds = getDefaultThresholds(material.unit)
-      const lowThreshold = material.lowStockThreshold ?? thresholds.low
-      const reorderThreshold = material.reorderThreshold ?? thresholds.reorder
-      
-      if (stock === 0) {
-        alerts.push({ material, type: 'out' })
-      } else if (stock <= lowThreshold) {
-        alerts.push({ material, type: 'low' })
-      } else if (stock <= reorderThreshold) {
-        alerts.push({ material, type: 'reorder' })
-      }
-    })
-    
-    return alerts.sort((a, b) => {
-      // Sort: out of stock first, then low stock, then reorder
-      const order = { out: 0, low: 1, reorder: 2 }
-      return order[a.type] - order[b.type]
-    })
-  }
-
-  const stockAlerts = getStockAlerts()
-  const outOfStockAlerts = stockAlerts.filter(a => a.type === 'out')
-  const lowStockAlerts = stockAlerts.filter(a => a.type === 'low')
-  const reorderAlerts = stockAlerts.filter(a => a.type === 'reorder')
 
   const toggleMaterialSelection = (materialId: string) => {
     const newSelected = new Set(selectedMaterialIds)
@@ -641,135 +605,6 @@ export default function AddBatchPage() {
                 ⚠️ <strong>Important:</strong> Raw materials are deducted immediately from inventory when the batch is created.
               </p>
             </div>
-
-            {/* Notes & Updates Panel */}
-            <Card className="border-2 border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-900 dark:to-slate-950/50 shadow-sm rounded-2xl md:sticky md:top-4 z-10">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    Notes & Updates
-                  </CardTitle>
-                  {stockAlerts.length > 0 && (
-                    <Badge variant="outline" className="text-xs">
-                      {stockAlerts.length} alert{stockAlerts.length !== 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  These alerts update automatically based on current inventory.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-0">
-                {/* Out of Stock Alerts */}
-                {outOfStockAlerts.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                      <span className="text-xs font-semibold text-red-700 dark:text-red-300">Out of Stock (Critical)</span>
-                    </div>
-                    <div className="space-y-1.5 pl-6">
-                      {outOfStockAlerts.map((alert) => (
-                        <div key={alert.material._id || alert.material.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900">
-                          <span className="font-medium text-red-900 dark:text-red-100">{alert.material.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-red-700 dark:text-red-300">
-                              {alert.material.currentStock} {alert.material.unit}
-                            </span>
-                            <Badge variant="destructive" className="text-xs px-2 py-0.5">Out of stock</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Low Stock Alerts */}
-                {lowStockAlerts.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Low Stock (Warning)</span>
-                    </div>
-                    <div className="space-y-1.5 pl-6">
-                      {lowStockAlerts.map((alert) => {
-                        const thresholds = getDefaultThresholds(alert.material.unit)
-                        const lowThreshold = alert.material.lowStockThreshold ?? thresholds.low
-                        return (
-                          <div key={alert.material._id || alert.material.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
-                            <span className="font-medium text-amber-900 dark:text-amber-100">{alert.material.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-amber-700 dark:text-amber-300">
-                                {alert.material.currentStock} {alert.material.unit}
-                              </span>
-                              <Badge variant="outline" className="text-xs px-2 py-0.5 border-amber-400 text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/50">
-                                Low stock
-                              </Badge>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Near Reorder Alerts */}
-                {reorderAlerts.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">Near Reorder (Info)</span>
-                    </div>
-                    <div className="space-y-1.5 pl-6">
-                      {reorderAlerts.map((alert) => (
-                        <div key={alert.material._id || alert.material.id} className="flex items-center justify-between text-sm py-1.5 px-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
-                          <span className="font-medium text-blue-900 dark:text-blue-100">{alert.material.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-blue-700 dark:text-blue-300">
-                              {alert.material.currentStock} {alert.material.unit}
-                            </span>
-                            <Badge variant="outline" className="text-xs px-2 py-0.5 border-blue-400 text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/50">
-                              Reorder soon
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* No Alerts */}
-                {stockAlerts.length === 0 && (
-                  <div className="text-center py-4">
-                    <Check className="h-5 w-5 text-green-600 dark:text-green-400 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">All materials are well stocked</p>
-                  </div>
-                )}
-
-                {/* View All Low Stock Link */}
-                {(lowStockAlerts.length > 0 || outOfStockAlerts.length > 0) && (
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const firstLowStock = document.querySelector('[data-low-stock="true"]')
-                        if (firstLowStock) {
-                          firstLowStock.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          firstLowStock.classList.add('ring-2', 'ring-amber-500', 'ring-offset-2')
-                          setTimeout(() => {
-                            firstLowStock.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2')
-                          }, 2000)
-                        }
-                      }}
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1"
-                    >
-                      <AlertTriangle className="h-3 w-3" />
-                      View all low stock items
-                    </button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
