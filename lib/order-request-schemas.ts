@@ -106,10 +106,14 @@ export const ecommerceOrderCreateSchema = z
   })
   .strict()
 
-export const ecommerceOrderCancelSchema = z
+/**
+ * PUT /api/ecommerce/orders — staff-only (Catha `sales.orders` edit).
+ * Customers must not use this route; `status` is a closed enum (never trust arbitrary client strings).
+ */
+export const ecommerceStaffOrderPutSchema = z
   .object({
     id: z.string().min(1).max(64),
-    status: z.literal('cancelled'),
+    status: z.enum(['cancelled', 'completed']),
   })
   .strict()
 

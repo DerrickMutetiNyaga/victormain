@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { validateStockForItems, deductStockAtomic, restoreStockAtomic } from '@/lib/inventory-ops'
 import { filterInventoryStockLineItems } from '@/lib/catha-order-inventory-lines'
+import { ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION } from '@/lib/ecommerce-checkout-session-constants'
+import {
+  createPaidEcommerceOrderFromCheckoutSession,
+  ensureEcommerceCheckoutOrderIndexes,
+  type EcommerceCheckoutSessionDoc,
+} from '@/lib/ecommerce-order-from-session'
+import { logEcommerceRecoveryCritical, releaseHoldAndUpdateSessionStatus } from '@/lib/ecommerce-stock-reservation'
 /**
  * STK Push Callback Handler
  * Called by M-Pesa when customer completes or cancels payment
@@ -100,107 +107,165 @@ export async function POST(request: Request) {
           )
 
           if (txnFinalize.matchedCount === 0) {
-            console.log('[M-Pesa Callback] Duplicate success callback ignored (transaction already COMPLETED):', checkoutRequestID)
-            return NextResponse.json({ ResultCode: 0, ResultDesc: 'Accepted' })
+            console.log(
+              '[M-Pesa Callback] Duplicate success callback — txn already COMPLETED; running fulfillment idempotently:',
+              checkoutRequestID
+            )
           }
 
-          // Update order/invoice if account reference matches
+          // Fulfill existing POS/ecommerce order OR create ecommerce order from checkout session (server snapshot).
           if (transaction.account_reference) {
             const orderId = transaction.account_reference
             const order = await db.collection('orders').findOne({ id: orderId })
-            const txnAmount = Number(transaction.amount ?? 0)
-            const orderTotal = order ? Number(order.total ?? 0) : NaN
-            const ecommerceAmountMismatch =
-              Boolean(order) &&
-              order!.type === 'ecommerce' &&
-              Number.isFinite(txnAmount) &&
-              Number.isFinite(orderTotal) &&
-              Math.abs(txnAmount - orderTotal) > 0.02
-            if (ecommerceAmountMismatch) {
-              console.error('[M-Pesa Callback] Amount mismatch — refusing to mark order paid', {
-                orderId,
-                txnAmount,
-                orderTotal,
-              })
-            }
-            // Do not set customerPhone from M-Pesa / STK transaction — keep the number saved at checkout (prompt field).
-            // Only deduct stock if it has NOT been deducted yet (guard against duplicate callback / POS-already-deducted)
-            const items =
-              order && !ecommerceAmountMismatch && !order.stockDeducted
-                ? filterInventoryStockLineItems(order.items)
-                : []
 
-            if (!ecommerceAmountMismatch && order && items.length > 0) {
-              const validation = await validateStockForItems(db, items)
-              if (!validation.ok) {
-                console.error('[M-Pesa Callback] Stock validation failed - order not completed:', validation.error)
-              } else {
-                const userId = order?.cashier || 'System'
-                const deducted: Array<{ productId: string; quantity: number; name?: string }> = []
-                let deductOk = true
-                for (const item of items) {
-                  const qty = Number(item.quantity)
-                  const res = await deductStockAtomic(db, item.productId, qty, orderId, userId, item.name)
-                  if (!res.success) {
-                    console.error('[M-Pesa Callback] Stock deduction failed - rolling back:', res.error)
-                    for (const d of deducted) {
-                      await restoreStockAtomic(db, d.productId, d.quantity, orderId, userId, d.name || 'Unknown', 'order_cancelled')
+            if (order) {
+              const txnAmount = Number(transaction.amount ?? 0)
+              const orderTotal = Number(order.total ?? 0)
+              const ecommerceAmountMismatch =
+                Boolean(order) &&
+                order.type === 'ecommerce' &&
+                Number.isFinite(txnAmount) &&
+                Number.isFinite(orderTotal) &&
+                Math.abs(txnAmount - orderTotal) > 0.02
+              if (ecommerceAmountMismatch) {
+                console.error('[M-Pesa Callback] Amount mismatch — refusing to mark order paid', {
+                  orderId,
+                  txnAmount,
+                  orderTotal,
+                })
+              }
+              const items =
+                order && !ecommerceAmountMismatch && !order.stockDeducted
+                  ? filterInventoryStockLineItems(order.items)
+                  : []
+
+              if (!ecommerceAmountMismatch && order && items.length > 0) {
+                const validation = await validateStockForItems(db, items)
+                if (!validation.ok) {
+                  console.error('[M-Pesa Callback] Stock validation failed - order not completed:', validation.error)
+                } else {
+                  const userId = order?.cashier || 'System'
+                  const deducted: Array<{ productId: string; quantity: number; name?: string }> = []
+                  let deductOk = true
+                  for (const item of items) {
+                    const qty = Number(item.quantity)
+                    const res = await deductStockAtomic(db, item.productId, qty, orderId, userId, item.name)
+                    if (!res.success) {
+                      console.error('[M-Pesa Callback] Stock deduction failed - rolling back:', res.error)
+                      for (const d of deducted) {
+                        await restoreStockAtomic(db, d.productId, d.quantity, orderId, userId, d.name || 'Unknown', 'order_cancelled')
+                      }
+                      deductOk = false
+                      break
                     }
-                    deductOk = false
-                    break
+                    deducted.push({ productId: item.productId, quantity: qty, name: item.name })
                   }
-                  deducted.push({ productId: item.productId, quantity: qty, name: item.name })
+                  if (deductOk) {
+                    const ordRes = await db.collection('orders').updateOne(
+                      { id: orderId, status: { $ne: 'completed' } },
+                      {
+                        $set: {
+                          paymentStatus: 'PAID',
+                          paymentMethod: 'mpesa',
+                          mpesaReceiptNumber: mpesaReceiptNumber || transaction.transaction_id || null,
+                          status: 'completed',
+                          stockDeducted: true,
+                          stockDeductedAt: new Date(),
+                          updatedAt: new Date(),
+                        },
+                      }
+                    )
+                    if (ordRes.matchedCount === 0) {
+                      console.log('[M-Pesa Callback] Duplicate callback ignored — order already finalized:', orderId)
+                    } else {
+                      console.log('[M-Pesa Callback] Payment finalized on existing order only', {
+                        orderId,
+                        checkoutRequestID,
+                        mpesaReceiptNumber,
+                      })
+                    }
+                  }
                 }
-                if (deductOk) {
-                  const ordRes = await db.collection('orders').updateOne(
-                    { id: orderId, status: { $ne: 'completed' } },
+              } else if (!ecommerceAmountMismatch && order) {
+                if (order.stockDeducted) {
+                  console.log(`[M-Pesa Callback] Stock already deducted for order ${orderId} — skipping deduction`)
+                }
+                const ordRes = await db.collection('orders').updateOne(
+                  { id: orderId, status: { $ne: 'completed' } },
+                  {
+                    $set: {
+                      paymentStatus: 'PAID',
+                      paymentMethod: 'mpesa',
+                      mpesaReceiptNumber: mpesaReceiptNumber || transaction.transaction_id || null,
+                      status: 'completed',
+                      updatedAt: new Date(),
+                    },
+                  }
+                )
+                if (ordRes.matchedCount === 0) {
+                  console.log('[M-Pesa Callback] Duplicate callback ignored — order already finalized:', orderId)
+                } else {
+                  console.log('[M-Pesa Callback] Payment finalized on existing order only', {
+                    orderId,
+                    checkoutRequestID,
+                    mpesaReceiptNumber,
+                  })
+                }
+              }
+            } else {
+              const checkoutSession = await db
+                .collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION)
+                .findOne({ id: orderId })
+              if (checkoutSession) {
+                await ensureEcommerceCheckoutOrderIndexes(db)
+                const checkoutSessionFresh = (await db
+                  .collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION)
+                  .findOne({ id: orderId })) as EcommerceCheckoutSessionDoc | null
+                const created = await createPaidEcommerceOrderFromCheckoutSession(
+                  db,
+                  (checkoutSessionFresh ?? checkoutSession) as EcommerceCheckoutSessionDoc,
+                  {
+                    mpesaReceiptNumber,
+                    checkoutRequestId: checkoutRequestID!,
+                    txnAmount: Number(transaction.amount ?? 0),
+                  }
+                )
+                if (!created.ok) {
+                  console.error('[M-Pesa Callback] Ecommerce checkout session fulfillment failed', {
+                    sessionId: checkoutSession.id,
+                    reason: created.reason,
+                    detail: created.detail,
+                  })
+                  if (
+                    created.reason === 'missing_reservation' ||
+                    created.reason === 'order_insert_failed' ||
+                    created.reason === 'amount_mismatch'
+                  ) {
+                    logEcommerceRecoveryCritical({
+                      event: 'checkout_fulfillment_failed_after_mpesa_success',
+                      sessionId: checkoutSession.id,
+                      reason: created.reason,
+                      detail: created.detail,
+                      checkoutRequestId,
+                    })
+                  }
+                  await db.collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION).updateOne(
+                    { id: checkoutSession.id },
                     {
                       $set: {
-                        paymentStatus: 'PAID',
-                        paymentMethod: 'mpesa',
-                        mpesaReceiptNumber: mpesaReceiptNumber || transaction.transaction_id || null,
-                        status: 'completed',
-                        stockDeducted: true,
-                        stockDeductedAt: new Date(),
+                        fulfillmentError: created.reason,
+                        fulfillmentDetail: created.detail ?? null,
                         updatedAt: new Date(),
                       },
                     }
                   )
-                  if (ordRes.matchedCount === 0) {
-                    console.log('[M-Pesa Callback] Duplicate callback ignored — order already finalized:', orderId)
-                  } else {
-                    console.log('[M-Pesa Callback] Payment finalized on existing order only', {
-                      orderId,
-                      checkoutRequestID,
-                      mpesaReceiptNumber,
-                    })
-                  }
+                } else {
+                  console.log('[M-Pesa Callback] Ecommerce order created from checkout session', {
+                    sessionId: checkoutSession.id,
+                    orderId: created.orderId,
+                    duplicate: created.duplicate,
+                  })
                 }
-              }
-            } else if (!ecommerceAmountMismatch && order) {
-              if (order.stockDeducted) {
-                console.log(`[M-Pesa Callback] Stock already deducted for order ${orderId} — skipping deduction`)
-              }
-              const ordRes = await db.collection('orders').updateOne(
-                { id: orderId, status: { $ne: 'completed' } },
-                {
-                  $set: {
-                    paymentStatus: 'PAID',
-                    paymentMethod: 'mpesa',
-                    mpesaReceiptNumber: mpesaReceiptNumber || transaction.transaction_id || null,
-                    status: 'completed',
-                    updatedAt: new Date(),
-                  },
-                }
-              )
-              if (ordRes.matchedCount === 0) {
-                console.log('[M-Pesa Callback] Duplicate callback ignored — order already finalized:', orderId)
-              } else {
-                console.log('[M-Pesa Callback] Payment finalized on existing order only', {
-                  orderId,
-                  checkoutRequestID,
-                  mpesaReceiptNumber,
-                })
               }
             }
           }
@@ -221,6 +286,22 @@ export async function POST(request: Request) {
           )
           if (failUpdate.matchedCount === 0) {
             console.log('[M-Pesa Callback] Duplicate fail/cancel callback ignored:', checkoutRequestID)
+          }
+          const ar = transaction.account_reference
+          if (typeof ar === 'string' && ar.startsWith('ECS')) {
+            const sessDoc = await db.collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION).findOne({ id: ar })
+            if (sessDoc && sessDoc.status === 'pending_payment') {
+              const nextStatus = resultCode === 1032 ? 'abandoned' : 'failed'
+              await releaseHoldAndUpdateSessionStatus(db, sessDoc as any, nextStatus)
+              await db.collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION).updateOne(
+                { id: ar },
+                { $set: { mpesaFailureCode: resultCode, updatedAt: new Date() } }
+              )
+              console.log('[ecommerce-checkout] session_marked_failed_or_abandoned', {
+                sessionId: ar,
+                resultCode,
+              })
+            }
           }
         }
       }

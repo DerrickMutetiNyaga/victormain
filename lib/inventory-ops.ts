@@ -83,7 +83,9 @@ export async function deductStockAtomic(
   quantity: number,
   orderId: string,
   userId: string,
-  productName?: string
+  productName?: string,
+  /** Log / dedupe reason (default sale). Use `ecommerce_checkout_reserve` for checkout holds. */
+  inventoryReason: string = 'sale'
 ): Promise<{ success: true; product: any } | { success: false; error: string }> {
   if (quantity <= 0) return { success: true, product: null }
 
@@ -120,7 +122,7 @@ export async function deductStockAtomic(
     userId,
     previousStock: prevStock,
     newStock: Number(result.stock ?? 0),
-    reason: 'sale',
+    reason: inventoryReason,
   })
 
   return { success: true, product: result }
@@ -136,7 +138,15 @@ export async function restoreStockAtomic(
   orderId: string,
   userId: string,
   productName: string,
-  reason: 'order_cancelled' | 'order_deleted' | 'order_voided' | 'item_removed' | 'quantity_reduced' | 'customer_return'
+  reason:
+    | 'order_cancelled'
+    | 'order_deleted'
+    | 'order_voided'
+    | 'item_removed'
+    | 'quantity_reduced'
+    | 'customer_return'
+    | 'ecommerce_reserve_release'
+    | 'ecommerce_reserve_rollback'
 ): Promise<void> {
   if (quantity <= 0) return
 

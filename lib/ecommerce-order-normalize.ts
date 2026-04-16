@@ -24,7 +24,7 @@ function pickMinimalLine(raw: unknown): Record<string, unknown> | null {
   return out
 }
 
-/** POST /api/ecommerce/orders — aligns fat client bodies with ecommerceOrderCreateSchema */
+/** Checkout session + legacy DTOs — aligns fat client bodies with ecommerceOrderCreateSchema */
 export function normalizeEcommerceOrderCreateBody(body: unknown): unknown {
   if (!body || typeof body !== 'object') return body
   const b = body as Record<string, unknown>

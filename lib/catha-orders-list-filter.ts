@@ -12,6 +12,34 @@ export type OrdersListQuery = {
 }
 
 /**
+ * Unpaid ecommerce rows in `orders` are legacy orphans (checkout now uses `ecommerce_checkout_sessions`).
+ * They must not appear on the main Catha orders list — only real paid / in-flight venue orders belong there.
+ */
+export const CATHA_ORDERS_MAIN_LIST_EXCLUSION: Filter<Record<string, unknown>> = {
+  $nor: [
+    {
+      type: 'ecommerce',
+      $or: [
+        { paymentStatus: 'NOT_PAID' },
+        { paymentStatus: { $exists: false } },
+        { paymentStatus: null },
+        { paymentStatus: '' },
+      ],
+    },
+  ],
+}
+
+/** AND-merge toolbar filters with the global main-list exclusion. */
+export function mergeCathaOrdersMainListFilter(
+  toolbarFilter: Filter<Record<string, unknown>>
+): Filter<Record<string, unknown>> {
+  if (!toolbarFilter || Object.keys(toolbarFilter).length === 0) {
+    return CATHA_ORDERS_MAIN_LIST_EXCLUSION
+  }
+  return { $and: [CATHA_ORDERS_MAIN_LIST_EXCLUSION, toolbarFilter] }
+}
+
+/**
  * Mongo filter for Catha orders list (search + toolbar filters). Used with count + find + sort + skip/limit.
  */
 export function buildOrdersListMongoFilter(query: OrdersListQuery): Filter<Record<string, unknown>> {

@@ -2,65 +2,16 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { normalizeKenyaPhone } from '@/lib/phone-utils'
 import { getShopSessionFromCookie } from '@/lib/shop-auth'
-import { restoreStockAtomic } from '@/lib/inventory-ops'
+import { auth, requireCathaPermission } from '@/lib/auth-catha'
+import { assertPaidForStaffEcommerceCompletion } from '@/lib/ecommerce-staff-order-completion'
+import { deductStockAtomic, restoreStockAtomic, validateStockForItems } from '@/lib/inventory-ops'
 import { filterInventoryStockLineItems } from '@/lib/catha-order-inventory-lines'
-import { resolveBarOrderLines } from '@/lib/secure-bar-order-lines'
-import { checkRateLimit, getClientIp } from '@/lib/rate-limit-simple'
+import { getClientIp } from '@/lib/rate-limit-simple'
 import { logOrderSecurityEvent } from '@/lib/order-security-audit'
-import {
-  ecommerceOrderCreateSchema,
-  ecommerceOrderCancelSchema,
-  formatZodError,
-} from '@/lib/order-request-schemas'
-import { normalizeEcommerceOrderCreateBody } from '@/lib/ecommerce-order-normalize'
+import { ecommerceStaffOrderPutSchema, formatZodError } from '@/lib/order-request-schemas'
+import { resolveEcommerceOrdersPutDenialWhenNotStaff } from '@/lib/ecommerce-orders-put-gate'
 
-async function getSessionPhone(): Promise<string | null> {
-  const session = await getShopSessionFromCookie()
-  return session?.phone ?? null
-}
-
-function phonesMatch(orderPhone: string | undefined, sessionPhone: string): boolean {
-  const a = normalizeKenyaPhone(orderPhone || '') || orderPhone?.trim()
-  const b = normalizeKenyaPhone(sessionPhone) || sessionPhone.trim()
-  if (a && b && a === b) return true
-  const variants = new Set<string>()
-  if (orderPhone) {
-    variants.add(orderPhone.trim())
-    const n = normalizeKenyaPhone(orderPhone)
-    if (n) {
-      variants.add(n)
-      if (n.startsWith('+')) variants.add(n.slice(1))
-      if (n.startsWith('+254')) variants.add(`0${n.slice(4)}`)
-    }
-  }
-  if (variants.has(sessionPhone.trim())) return true
-  const nb = normalizeKenyaPhone(sessionPhone)
-  if (nb && variants.has(nb)) return true
-  return false
-}
-
-async function resolveDeliveryFeeKes(
-  db: Awaited<ReturnType<typeof getDatabase>>,
-  body: { deliveryOption?: string; deliveryFee?: number }
-): Promise<number> {
-  const settings = await db.collection('catha_settings').findOne({})
-  const options = (settings as any)?.delivery?.options
-  const deliveryOpt = typeof body.deliveryOption === 'string' ? body.deliveryOption.trim() : ''
-  if (deliveryOpt && Array.isArray(options)) {
-    const opt = options.find(
-      (o: any) => o && o.value === deliveryOpt && o.enabled !== false
-    )
-    if (opt && typeof opt.fee === 'number' && Number.isFinite(opt.fee) && opt.fee >= 0 && opt.fee <= 50_000) {
-      return opt.fee
-    }
-  }
-  const clientFee = Number(body.deliveryFee)
-  if (Number.isFinite(clientFee) && clientFee >= 0 && clientFee <= 50_000) {
-    return Math.round(clientFee * 100) / 100
-  }
-  return 0
-}
-
+/** PUT is not a customer API — only Catha staff with `sales.orders` edit may mutate. */
 export async function GET(request: Request) {
   try {
     const session = await getShopSessionFromCookie()
@@ -85,7 +36,12 @@ export async function GET(request: Request) {
     }
     const customerFilter = { $or: [...new Set(phones)].map(p => ({ customerPhone: p })) }
 
-    const query = { $and: [typeFilter, customerFilter] }
+    /** Shop history: only paid ecommerce orders in `orders` (unpaid flow lives in checkout sessions only). */
+    const paidEcommerceFilter = {
+      paymentStatus: { $in: ['PAID', 'OVERPAID', 'PARTIALLY_PAID', 'COMPLETED'] },
+    }
+
+    const query = { $and: [typeFilter, customerFilter, paidEcommerceFilter] }
 
     const orders = await db.collection('orders').find(query).sort({ timestamp: -1 }).toArray()
 
@@ -136,230 +92,208 @@ export async function GET(request: Request) {
   }
 }
 
+/** Unpaid ecommerce rows are never inserted from the shop; use POST /api/ecommerce/checkout-sessions + M-Pesa. */
 export async function POST(request: Request) {
+  void request
+  console.warn('[ecommerce-orders] POST blocked — unpaid ecommerce order creation removed')
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        'Creating unpaid ecommerce orders is disabled. Complete checkout via a payment session and M-Pesa STK.',
+    },
+    { status: 403 }
+  )
+}
+
+export async function PUT(request: Request) {
   try {
-    const session = await getShopSessionFromCookie()
-    if (!session?.phone) {
-      return NextResponse.json({ message: 'Not signed in' }, { status: 401 })
-    }
-
     const ip = getClientIp(request)
-    const rl = checkRateLimit(`ecommerce-orders-post:${ip}`, 25, 60_000)
-    if (!rl.ok) {
-      logOrderSecurityEvent({
-        route: '/api/ecommerce/orders',
-        action: 'POST',
-        userId: session.phone,
-        ip,
-        userAgent: request.headers.get('user-agent'),
-        rejected: true,
-        reason: 'rate_limit',
+    const userAgent = request.headers.get('user-agent')
+    const shopSession = await getShopSessionFromCookie()
+    const staffGate = await requireCathaPermission('sales.orders', 'edit')
+
+    if (!staffGate.allowed) {
+      const cathaEmail = (await auth())?.user?.email ?? null
+      const denialKind = resolveEcommerceOrdersPutDenialWhenNotStaff({
+        hasCathaUserEmail: Boolean(cathaEmail),
+        hasShopPhone: Boolean(shopSession?.phone),
       })
-      return NextResponse.json(
-        { success: false, error: 'Too many requests', retryAfterMs: rl.retryAfterMs },
-        { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } }
-      )
+      if (denialKind === 'catha_denied') {
+        if (staffGate.response?.status === 403) {
+          logOrderSecurityEvent({
+            route: '/api/ecommerce/orders',
+            action: 'PUT',
+            userId: cathaEmail ?? undefined,
+            ip,
+            userAgent,
+            rejected: true,
+            reason: 'catha_insufficient_permission_ecommerce_put',
+            requestSummary: { message: 'Catha session cannot mutate ecommerce orders without sales.orders edit' },
+          })
+        }
+        return staffGate.response ?? NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
+      }
+      if (denialKind === 'shop_denied') {
+        const shopPhone = shopSession?.phone ?? ''
+        logOrderSecurityEvent({
+          route: '/api/ecommerce/orders',
+          action: 'PUT',
+          userId: shopPhone || undefined,
+          ip,
+          userAgent,
+          rejected: true,
+          reason: 'shop_session_order_put_forbidden',
+          requestSummary: { message: 'Customer sessions cannot mutate ecommerce orders via PUT' },
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Order updates are not available for shop sessions. Contact support if you need help.',
+          },
+          { status: 403 }
+        )
+      }
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const raw = await request.json()
-    const normalized = normalizeEcommerceOrderCreateBody(raw)
-    const parsed = ecommerceOrderCreateSchema.safeParse(normalized)
+    const staffSession = await auth()
+    const staffEmail = (staffSession?.user as { email?: string } | undefined)?.email ?? null
+
+    let raw: unknown
+    try {
+      raw = await request.json()
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const parsed = ecommerceStaffOrderPutSchema.safeParse(raw)
     if (!parsed.success) {
       logOrderSecurityEvent({
         route: '/api/ecommerce/orders',
-        action: 'POST',
-        userId: session.phone,
+        action: 'PUT',
+        userId: staffEmail,
         ip,
-        userAgent: request.headers.get('user-agent'),
+        userAgent,
         rejected: true,
         reason: 'schema_validation',
         requestSummary: { details: parsed.error.flatten() },
       })
       return NextResponse.json({ success: false, ...formatZodError(parsed.error) }, { status: 400 })
     }
-    const body = parsed.data
+
+    const { id, status: nextStatus } = parsed.data
     const db = await getDatabase('infusion_jaba')
-
-    const rawLines = body.items.map((i) => ({
-      productId: i.productId ?? i.id,
-      quantity: i.quantity,
-      size: i.size,
-      selectedSize: i.selectedSize,
-    }))
-
-    const priced = await resolveBarOrderLines(db, rawLines as unknown[], {
-      allowCustomLines: false,
-      rejectCustomLines: true,
-    })
-    if (!priced.ok) {
-      logOrderSecurityEvent({
-        route: '/api/ecommerce/orders',
-        action: 'POST',
-        userId: session.phone,
-        ip,
-        userAgent: request.headers.get('user-agent'),
-        rejected: true,
-        reason: priced.code,
-        requestSummary: { itemCount: body.items.length },
-      })
-      return NextResponse.json({ success: false, error: priced.error, code: priced.code }, { status: 400 })
-    }
-
-    const deliveryFee = await resolveDeliveryFeeKes(db, body)
-    const serverSubtotal = priced.subtotal
-    const serverVat = 0
-    const serverTotal = serverSubtotal + deliveryFee
-
-    const order = {
-      id: body.id || `ECO${Date.now().toString().slice(-8)}`,
-      type: 'ecommerce' as const,
-      customerName: (body.customerName ?? '').trim(),
-      customerPhone: session.phone,
-      customerEmail: (body.customerEmail ?? '').trim(),
-      deliveryAddress: (body.deliveryAddress ?? '').trim(),
-      city: (body.city ?? '').trim(),
-      postalCode: (body.postalCode ?? '').trim(),
-      deliveryNotes: (body.deliveryNotes ?? '').trim(),
-      deliveryOption: body.deliveryOption?.trim() || null,
-      items: priced.items,
-      subtotal: serverSubtotal,
-      vat: serverVat,
-      deliveryFee,
-      total: serverTotal,
-      paymentMethod: 'mpesa',
-      paymentStatus: 'PENDING' as const,
-      mpesaReceiptNumber: null as string | null,
-      status: 'pending',
-      timestamp: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      stockDeducted: false,
-      stockDeductedAt: null as Date | null,
-    }
-
-    logOrderSecurityEvent({
-      route: '/api/ecommerce/orders',
-      action: 'POST',
-      userId: session.phone,
-      ip,
-      userAgent: request.headers.get('user-agent'),
-      resolvedDbPrices: priced.dbPricesBySku,
-      computedTotals: { subtotal: serverSubtotal, vat: serverVat, total: serverTotal },
-      requestSummary: { orderId: order.id, deliveryFee },
-    })
-
-    // Duplicate detection: Check for similar ecommerce orders created within the last 5 seconds
-    const fiveSecondsAgo = new Date(Date.now() - 5000)
-
-    const itemsFingerprint = JSON.stringify(
-      order.items
-        .map((item: any) => ({ productId: item.productId, quantity: item.quantity }))
-        .sort((a: any, b: any) => (a.productId || '').localeCompare(b.productId || ''))
-    )
-
-    const recentOrders = await db.collection('orders').find({
-      type: 'ecommerce',
-      customerPhone: order.customerPhone,
-      total: order.total,
-      timestamp: { $gte: fiveSecondsAgo },
-    }).toArray()
-
-    for (const recentOrder of recentOrders) {
-      const recentItemsFingerprint = JSON.stringify(
-        (recentOrder.items || [])
-          .map((item: any) => ({ productId: item.productId, quantity: item.quantity }))
-          .sort((a: any, b: any) => (a.productId || '').localeCompare(b.productId || ''))
-      )
-
-      if (recentItemsFingerprint === itemsFingerprint) {
-        console.log('[Ecommerce Orders API] Duplicate order detected:', {
-          existingId: recentOrder.id,
-          newId: order.id,
-          customerPhone: order.customerPhone,
-          total: order.total,
-        })
-        return NextResponse.json({ success: true, order: recentOrder }, { status: 200 })
-      }
-    }
-
-    await db.collection('orders').insertOne(order)
-
-    return NextResponse.json({ success: true, order }, { status: 201 })
-  } catch (error: any) {
-    console.error('Error creating e-commerce order:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create order', message: error.message },
-      { status: 500 }
-    )
-  }
-}
-
-export async function PUT(request: Request) {
-  try {
-    const session = await getShopSessionFromCookie()
-    if (!session?.phone) {
-      return NextResponse.json({ success: false, error: 'Not signed in' }, { status: 401 })
-    }
-
-    const raw = await request.json()
-    const parsed = ecommerceOrderCancelSchema.safeParse(raw)
-    if (!parsed.success) {
-      return NextResponse.json({ success: false, ...formatZodError(parsed.error) }, { status: 400 })
-    }
-    const { id } = parsed.data
-    const db = await getDatabase('infusion_jaba')
-
     const existingOrder = await db.collection('orders').findOne({ id, type: 'ecommerce' })
+
     if (!existingOrder) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    if (!phonesMatch(existingOrder.customerPhone, session.phone)) {
-      logOrderSecurityEvent({
-        route: '/api/ecommerce/orders',
-        action: 'PUT',
-        userId: session.phone,
-        rejected: true,
-        reason: 'forbidden_not_owner',
-        requestSummary: { id },
-      })
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 })
-    }
+    const stockActor = staffEmail || 'System'
 
-    const updateData: Record<string, unknown> = {
-      status: 'cancelled',
-      updatedAt: new Date(),
-    }
-
-    const oldStatus = existingOrder.status
-    const wasStockDeducted = existingOrder.stockDeducted === true
-    const userId = existingOrder.customerPhone || existingOrder.customerEmail || 'System'
-
+    const updateData: Record<string, unknown> = { updatedAt: new Date() }
     const inventoryItems = filterInventoryStockLineItems(existingOrder.items)
+    const oldStatus = existingOrder.status
 
-    if (wasStockDeducted && inventoryItems.length > 0) {
-      for (const item of inventoryItems) {
-        await restoreStockAtomic(
-          db, item.productId, Number(item.quantity), id, userId, item.name || 'Unknown', 'order_cancelled'
-        )
+    if (nextStatus === 'cancelled') {
+      if (oldStatus === 'cancelled') {
+        return NextResponse.json({ success: true })
       }
-      updateData.stockDeducted = false
-      updateData.stockReleasedAt = new Date()
+      updateData.status = 'cancelled'
+      const wasStockDeducted = existingOrder.stockDeducted === true
+      if (wasStockDeducted && inventoryItems.length > 0) {
+        for (const item of inventoryItems) {
+          await restoreStockAtomic(
+            db,
+            item.productId,
+            Number(item.quantity),
+            id,
+            stockActor,
+            item.name || 'Unknown',
+            'order_cancelled'
+          )
+        }
+        updateData.stockDeducted = false
+        updateData.stockReleasedAt = new Date()
+      }
+    } else {
+      if (oldStatus === 'completed') {
+        return NextResponse.json({ success: true })
+      }
+      const paidOk = assertPaidForStaffEcommerceCompletion(
+        existingOrder as { paymentStatus?: unknown }
+      )
+      if (!paidOk.ok) {
+        logOrderSecurityEvent({
+          route: '/api/ecommerce/orders',
+          action: 'PUT',
+          userId: staffEmail,
+          ip,
+          userAgent,
+          rejected: true,
+          reason: 'ecommerce_complete_requires_paid',
+          requestSummary: { id },
+        })
+        return NextResponse.json({ success: false, error: paidOk.message }, { status: 400 })
+      }
+      updateData.status = 'completed'
+      if (!existingOrder.stockDeducted && inventoryItems.length > 0) {
+        const validation = await validateStockForItems(db, inventoryItems)
+        if (!validation.ok) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: validation.error,
+              productId: validation.productId,
+              productName: validation.productName,
+              available: validation.available,
+            },
+            { status: 400 }
+          )
+        }
+        const deducted: Array<{ productId: string; quantity: number; name?: string }> = []
+        for (const item of inventoryItems) {
+          const qty = Number(item.quantity)
+          const res = await deductStockAtomic(db, item.productId, qty, id, stockActor, item.name)
+          if (!res.success) {
+            for (const d of deducted) {
+              await restoreStockAtomic(
+                db,
+                d.productId,
+                d.quantity,
+                id,
+                stockActor,
+                d.name || 'Unknown',
+                'order_cancelled'
+              )
+            }
+            return NextResponse.json({ success: false, error: res.error }, { status: 400 })
+          }
+          deducted.push({ productId: item.productId, quantity: qty, name: item.name })
+        }
+        updateData.stockDeducted = true
+        updateData.stockDeductedAt = new Date()
+        updateData.stockReleasedAt = null
+      }
     }
 
-    const result = await db.collection('orders').updateOne({ id }, { $set: updateData })
+    const result = await db.collection('orders').updateOne(
+      { id, type: 'ecommerce' },
+      { $set: updateData }
+    )
     if (result.matchedCount === 0) {
       return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
     }
 
-    if (oldStatus !== 'cancelled') {
-      logOrderSecurityEvent({
-        route: '/api/ecommerce/orders',
-        action: 'PUT_cancel',
-        userId: session.phone,
-        requestSummary: { id },
-      })
-    }
+    logOrderSecurityEvent({
+      route: '/api/ecommerce/orders',
+      action: nextStatus === 'cancelled' ? 'PUT_staff_cancel' : 'PUT_staff_complete',
+      userId: staffEmail ?? undefined,
+      ip,
+      userAgent,
+      requestSummary: { id, fromStatus: oldStatus, toStatus: nextStatus },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {

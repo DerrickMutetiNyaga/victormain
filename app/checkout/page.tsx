@@ -77,7 +77,7 @@ export default function CheckoutPage() {
   /* ── Payment state ── */
   const [mpesaEnabled, setMpesaEnabled] = useState(false)
   const [processing, setProcessing] = useState(false)
-  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null)
+  const [pendingCheckoutSessionId, setPendingCheckoutSessionId] = useState<string | null>(null)
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null)
   const [showMpesaDialog, setShowMpesaDialog] = useState(false)
 
@@ -134,37 +134,78 @@ export default function CheckoutPage() {
     load()
   }, [])
 
-  /* ── Payment status polling ── */
+  /* ── Payment status polling (M-Pesa txn → checkout session → real order id) ── */
   useEffect(() => {
-    if (!pendingOrderId) return
+    if (!pendingCheckoutSessionId) return
     let stopped = false
     let tid: ReturnType<typeof setTimeout> | null = null
     const start = Date.now()
     const CAP = 180_000, FAST_END = 30_000, FAST = 2000, SLOW = 5000
 
     const stop = () => { stopped = true; if (tid) clearTimeout(tid) }
+
+    const resolveOrderIdAfterPayment = async (): Promise<string | null> => {
+      const deadline = Date.now() + 90_000
+      while (Date.now() < deadline) {
+        try {
+          const sRes = await fetch(`/api/ecommerce/checkout-sessions/${encodeURIComponent(pendingCheckoutSessionId)}`, {
+            credentials: "include",
+            cache: "no-store",
+          })
+          const sData = await sRes.json().catch(() => ({}))
+          if (sRes.ok && sData.success && typeof sData.orderId === "string" && sData.orderId) {
+            return sData.orderId
+          }
+        } catch { /* retry */ }
+        await new Promise((r) => setTimeout(r, 2000))
+      }
+      return null
+    }
+
     const poll = async () => {
       if (stopped) return
       try {
-        const q = checkoutRequestId || pendingOrderId
-        const res = await fetch(`/api/mpesa/transactions?search=${q}`, { cache: "no-store" })
+        const q = checkoutRequestId || pendingCheckoutSessionId
+        const res = await fetch(`/api/mpesa/transactions?search=${encodeURIComponent(q)}`, { cache: "no-store" })
         const data = await res.json()
         if (data.success && data.transactions?.length > 0) {
           const tx = data.transactions.find((t: any) =>
-            t.accountReference === pendingOrderId ||
+            t.accountReference === pendingCheckoutSessionId ||
             (checkoutRequestId && t.checkoutRequestId === checkoutRequestId)
           ) || data.transactions[0]
           const status = normalizeMpesaStatus(tx.status)
-          if (status !== "PENDING") stop()
           if (status === "COMPLETED") {
+            stop()
             toast.dismiss("mpesa-push")
-            clearCart()
-            toast.success("Payment confirmed! Your order is being processed.", { id: "mpesa-status" })
-            router.push(`/account?order=${pendingOrderId}`)
-          } else if (status === "FAILED" || status === "CANCELLED") {
+            toast.loading("Confirming your order…", { id: "mpesa-status" })
+            const orderId = await resolveOrderIdAfterPayment()
+            toast.dismiss("mpesa-status")
+            if (orderId) {
+              clearCart()
+              toast.success("Payment confirmed! Your order is being processed.", { id: "mpesa-done" })
+              router.push(`/account?order=${encodeURIComponent(orderId)}`)
+            } else {
+              setPaymentError({
+                message: "Payment received but order confirmation is delayed. Check Order history in a moment or contact support with your M-Pesa confirmation.",
+                status: "ORDER_PENDING",
+              })
+            }
+            setPendingCheckoutSessionId(null)
+            setProcessing(false)
+            return
+          }
+          if (status === "FAILED" || status === "CANCELLED") {
+            stop()
             toast.dismiss("mpesa-push")
             setPaymentError({ message: status === "CANCELLED" ? "Payment was cancelled. Try again." : "Payment failed. Check your M-Pesa and retry.", status })
-            setPendingOrderId(null); setProcessing(false)
+            fetch(`/api/ecommerce/checkout-sessions/${encodeURIComponent(pendingCheckoutSessionId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ action: "abandon" }),
+            }).catch(() => {})
+            setPendingCheckoutSessionId(null); setProcessing(false)
+            return
           }
         }
       } catch {}
@@ -174,7 +215,7 @@ export default function CheckoutPage() {
           stop()
           toast.dismiss("mpesa-push")
           setPaymentError({ message: "Confirmation timeout (3 min). Please check your phone.", status: "TIMEOUT" })
-          setPendingOrderId(null); setProcessing(false)
+          setPendingCheckoutSessionId(null); setProcessing(false)
           return
         }
         tid = setTimeout(poll, elapsed < FAST_END ? FAST : SLOW)
@@ -182,7 +223,7 @@ export default function CheckoutPage() {
     }
     poll()
     return stop
-  }, [pendingOrderId, checkoutRequestId, router, clearCart])
+  }, [pendingCheckoutSessionId, checkoutRequestId, router, clearCart])
 
   /* ── Form validation & submit ── */
   const handleSubmit = async (e: React.FormEvent) => {
@@ -202,7 +243,6 @@ export default function CheckoutPage() {
     if (!isMpesaValid) { toast.error("Enter a valid 9-digit M-Pesa number after +254"); return }
     setPaymentError(null); setProcessing(true)
     try {
-      const orderId = `ECO${Date.now().toString().slice(-8)}`
       const deliveryAddress =
         selectedDelivery === "collect_at_catha_lodge"
           ? `Collect at Catha Lounge – ${pickupAddress}`
@@ -210,9 +250,8 @@ export default function CheckoutPage() {
           ? `Deliver to: ${locationNote || "My location"}`
           : deliveryItem?.label ?? ""
 
-      /** Strict allowlist for POST /api/ecommerce/orders — totals & payment state are server-derived */
-      const orderData = {
-        id: orderId,
+      /** Server builds priced snapshot — no order row until M-Pesa succeeds. */
+      const checkoutPayload = {
         customerName: fullName.trim(),
         customerEmail: "",
         deliveryAddress,
@@ -227,16 +266,16 @@ export default function CheckoutPage() {
         })),
       }
 
-      const orderRes = await fetch("/api/ecommerce/orders", {
+      const sessionRes = await fetch("/api/ecommerce/checkout-sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderData),
+        body: JSON.stringify(checkoutPayload),
         credentials: "include",
       })
-      if (!orderRes.ok) {
-        let detail = "Failed to create order"
+      if (!sessionRes.ok) {
+        let detail = "Failed to start checkout"
         try {
-          const errBody = await orderRes.json()
+          const errBody = await sessionRes.json()
           if (typeof errBody?.error === "string" && errBody.error) detail = errBody.error
           else if (typeof errBody?.message === "string" && errBody.message) detail = errBody.message
         } catch {
@@ -245,14 +284,16 @@ export default function CheckoutPage() {
         throw new Error(detail)
       }
 
-      const orderPayload = await orderRes.json().catch(() => ({} as { order?: { id?: string; total?: number } }))
-      const persistedOrderId = orderPayload?.order?.id ?? orderId
+      const sessionPayload = await sessionRes.json().catch(() => ({} as { checkoutSession?: { id?: string; total?: number } }))
+      const checkoutSessionId = sessionPayload?.checkoutSession?.id
       const stkAmount =
-        typeof orderPayload?.order?.total === "number" && Number.isFinite(orderPayload.order.total)
-          ? orderPayload.order.total
+        typeof sessionPayload?.checkoutSession?.total === "number" && Number.isFinite(sessionPayload.checkoutSession.total)
+          ? sessionPayload.checkoutSession.total
           : total
+      if (!checkoutSessionId || typeof checkoutSessionId !== "string") {
+        throw new Error("Invalid checkout session response")
+      }
 
-      // update profile silently
       fetch("/api/ecommerce/profile", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullName: fullName.trim(), phone: fullPhone }),
@@ -264,20 +305,24 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           phoneNumber: mpesaFullPhone,
           amount: stkAmount,
-          accountReference: persistedOrderId,
-          transactionDesc: `Catha Lounge order ${persistedOrderId}`,
+          accountReference: checkoutSessionId,
+          transactionDesc: `Catha Lounge checkout ${checkoutSessionId}`,
         }),
       })
       const stkData = await stkRes.json()
 
       if (stkData.success) {
         toast.loading("Payment request sent! Enter your M-Pesa PIN when prompted.", { id: "mpesa-push" })
-        setPendingOrderId(persistedOrderId)
+        setPendingCheckoutSessionId(checkoutSessionId)
         setCheckoutRequestId(stkData.data?.checkoutRequestID || null)
       } else {
         setPaymentError({ message: stkData.error || "Failed to initiate payment. Check M-Pesa settings.", status: "INITIATION_FAILED" })
-        // cancel the order
-        fetch("/api/ecommerce/orders", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: persistedOrderId, status: "cancelled" }) }).catch(() => {})
+        fetch(`/api/ecommerce/checkout-sessions/${encodeURIComponent(checkoutSessionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ action: "abandon" }),
+        }).catch(() => {})
         setProcessing(false)
       }
     } catch (err: any) {
@@ -287,10 +332,15 @@ export default function CheckoutPage() {
   }
 
   const handleCancelPayment = () => {
-    if (pendingOrderId) {
-      fetch("/api/ecommerce/orders", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pendingOrderId, status: "cancelled" }) }).catch(() => {})
+    if (pendingCheckoutSessionId) {
+      fetch(`/api/ecommerce/checkout-sessions/${encodeURIComponent(pendingCheckoutSessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "abandon" }),
+      }).catch(() => {})
     }
-    setPaymentError(null); setPendingOrderId(null); setCheckoutRequestId(null)
+    setPaymentError(null); setPendingCheckoutSessionId(null); setCheckoutRequestId(null)
     setShowMpesaDialog(false); setProcessing(false)
   }
 
@@ -544,7 +594,7 @@ export default function CheckoutPage() {
       {showMpesaDialog && (
         <Dialog
           open={showMpesaDialog}
-          onOpenChange={open => { if (!open && (pendingOrderId || paymentError)) return; if (!open) handleCancelPayment() }}
+          onOpenChange={open => { if (!open && (pendingCheckoutSessionId || paymentError)) return; if (!open) handleCancelPayment() }}
         >
           <DialogContent className="max-w-md rounded-3xl border border-[#d8c7ab] bg-[#fffaf3] shadow-[0_26px_56px_rgba(32,20,12,0.24)] p-0 overflow-hidden">
             <div className="h-1.5 bg-gradient-to-r from-[#8f6a2f] via-[#b68845] to-[#6e4f25]" />
@@ -588,8 +638,8 @@ export default function CheckoutPage() {
                     value={displayDigits(mpesaDigits)}
                     onChange={e => setMpesaDigits(localDigits(e.target.value))}
                     onPaste={e => { e.preventDefault(); setMpesaDigits(localDigits(e.clipboardData.getData("text"))) }}
-                    onKeyDown={e => { if (e.key === "Enter" && isMpesaValid && !processing && !pendingOrderId) handleMpesaPayment() }}
-                    disabled={processing || !!pendingOrderId}
+                    onKeyDown={e => { if (e.key === "Enter" && isMpesaValid && !processing && !pendingCheckoutSessionId) handleMpesaPayment() }}
+                    disabled={processing || !!pendingCheckoutSessionId}
                     autoFocus={!paymentError}
                     className="flex-1 bg-transparent py-3.5 pl-3 pr-3 text-base font-medium text-[#2a201b] placeholder:text-[#8d877f] outline-none disabled:opacity-60"
                   />
@@ -621,7 +671,7 @@ export default function CheckoutPage() {
               </div>
 
               {/* Pending state */}
-              {pendingOrderId && !paymentError && (
+              {pendingCheckoutSessionId && !paymentError && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin text-amber-600 shrink-0" />
                   <p className="text-sm text-amber-800 font-medium">Waiting for confirmation… Enter your M-Pesa PIN on your phone.</p>
@@ -641,15 +691,15 @@ export default function CheckoutPage() {
                   <>
                     <Button
                       onClick={handleMpesaPayment}
-                      disabled={!isMpesaValid || processing || !!pendingOrderId}
+                      disabled={!isMpesaValid || processing || !!pendingCheckoutSessionId}
                       className="flex-1 h-13 rounded-xl font-bold bg-gradient-to-r from-[#2f241e] via-[#3a2d24] to-[#281e18] text-[#f8ecd6] border border-[#7d5f37]/55 shadow-lg disabled:opacity-40"
                     >
                       {processing
-                        ? <span className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />{pendingOrderId ? "Waiting…" : "Processing…"}</span>
+                        ? <span className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />{pendingCheckoutSessionId ? "Waiting…" : "Processing…"}</span>
                         : <><Smartphone className="h-5 w-5 mr-2" />Send Payment Request</>
                       }
                     </Button>
-                    <Button onClick={handleCancelPayment} variant="outline" disabled={processing && !pendingOrderId} className="h-13 rounded-xl">
+                    <Button onClick={handleCancelPayment} variant="outline" disabled={processing && !pendingCheckoutSessionId} className="h-13 rounded-xl">
                       Cancel
                     </Button>
                   </>

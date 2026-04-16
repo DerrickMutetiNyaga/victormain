@@ -1,4 +1,5 @@
 import type { Db } from 'mongodb'
+import { CATHA_ORDERS_MAIN_LIST_EXCLUSION } from '@/lib/catha-orders-list-filter'
 
 export type OrdersDashboardSummary = {
   totalOrders: number
@@ -15,6 +16,7 @@ export async function computeOrdersDashboardSummary(db: Db): Promise<OrdersDashb
   const agg = await db
     .collection('orders')
     .aggregate([
+      { $match: CATHA_ORDERS_MAIN_LIST_EXCLUSION },
       {
         $project: {
           paymentStatus: 1,

@@ -3,6 +3,9 @@ import { getDatabase } from '@/lib/mongodb'
 import { initiateSTKPush, type MpesaConfig } from '@/lib/mpesa'
 import { ensureMpesaTransactionIndexes } from '@/lib/catha-mpesa-transaction-indexes'
 import { summarizeCathaOrderPayments } from '@/lib/catha-order-payments'
+import { ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION } from '@/lib/ecommerce-checkout-session-constants'
+import { filterInventoryStockLineItems } from '@/lib/catha-order-inventory-lines'
+import { expireCheckoutSessionIfNeeded } from '@/lib/ecommerce-stock-reservation'
 
 export async function POST(request: Request) {
   try {
@@ -24,14 +27,61 @@ export async function POST(request: Request) {
     // Get M-Pesa settings
     const db = await getDatabase('infusion_jaba')
 
-    // Never trust client-supplied amount for shop orders — use persisted order total.
-    const orderForRef = await db.collection('orders').findOne({ id: String(accountReference) })
+    // Never trust client-supplied amount — use persisted order total or checkout session snapshot.
+    const ref = String(accountReference)
+    const orderForRef = await db.collection('orders').findOne({ id: ref })
+    let checkoutSession = orderForRef
+      ? null
+      : await db.collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION).findOne({ id: ref })
+
+    if (checkoutSession) {
+      await expireCheckoutSessionIfNeeded(db, ref)
+      checkoutSession = await db.collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION).findOne({ id: ref })
+    }
+
     if (orderForRef && orderForRef.type === 'ecommerce') {
       const expected = Number(orderForRef.total ?? 0)
       if (Number.isFinite(expected) && Math.abs(expected - amountNum) > 0.02) {
         console.warn('[M-Pesa STK] Amount mismatch vs order', { accountReference, clientAmount: amountNum, orderTotal: expected })
         return NextResponse.json(
           { success: false, error: 'Amount does not match order total. Refresh checkout and try again.' },
+          { status: 400 }
+        )
+      }
+    } else if (checkoutSession) {
+      if (['converted', 'abandoned', 'expired'].includes(String(checkoutSession.status))) {
+        console.warn('[M-Pesa STK] Checkout session not payable', { accountReference, status: checkoutSession.status })
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              checkoutSession.status === 'abandoned'
+                ? 'This checkout was closed. Please start checkout again.'
+                : 'This checkout session is no longer valid. Refresh and try again.',
+          },
+          { status: 400 }
+        )
+      }
+      const inv = filterInventoryStockLineItems(checkoutSession.snapshot?.items ?? [])
+      if (inv.length > 0 && checkoutSession.reservationHoldActive !== true) {
+        console.error('[M-Pesa STK] Checkout session missing stock reservation', { accountReference })
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Checkout is not ready for payment (stock not reserved). Start checkout again.',
+          },
+          { status: 400 }
+        )
+      }
+      const expected = Number(checkoutSession.amountExpected ?? checkoutSession.snapshot?.total ?? 0)
+      if (Number.isFinite(expected) && Math.abs(expected - amountNum) > 0.02) {
+        console.warn('[M-Pesa STK] Amount mismatch vs checkout session', {
+          accountReference,
+          clientAmount: amountNum,
+          sessionTotal: expected,
+        })
+        return NextResponse.json(
+          { success: false, error: 'Amount does not match checkout total. Refresh checkout and try again.' },
           { status: 400 }
         )
       }
@@ -102,7 +152,11 @@ export async function POST(request: Request) {
 
     // Initiate STK Push
     const finalAmount =
-      orderForRef && orderForRef.type === 'ecommerce' ? Number(orderForRef.total ?? amountNum) : amountNum
+      orderForRef && orderForRef.type === 'ecommerce'
+        ? Number(orderForRef.total ?? amountNum)
+        : checkoutSession
+          ? Number(checkoutSession.amountExpected ?? checkoutSession.snapshot?.total ?? amountNum)
+          : amountNum
 
     const stkResponse = await initiateSTKPush(mpesaConfig, {
       phoneNumber,

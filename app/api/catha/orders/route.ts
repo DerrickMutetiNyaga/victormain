@@ -19,7 +19,7 @@ import {
 import { formatCathaOrderForApi } from '@/lib/catha-order-payments'
 import { baseLinkedListFromOrder } from '@/lib/catha-append-mpesa-payment'
 import { filterInventoryStockLineItems, orderLineFingerprintParts } from '@/lib/catha-order-inventory-lines'
-import { buildOrdersListMongoFilter } from '@/lib/catha-orders-list-filter'
+import { buildOrdersListMongoFilter, mergeCathaOrdersMainListFilter } from '@/lib/catha-orders-list-filter'
 import { computeOrdersDashboardSummary } from '@/lib/catha-orders-dashboard-summary'
 import {
   resolveBarOrderLines,
@@ -104,7 +104,9 @@ export async function GET(request: Request) {
         ? paymentStatusRaw
         : 'all') as 'all' | 'PAID' | 'PARTIALLY_PAID' | 'NOT_PAID'
 
-      const filter = buildOrdersListMongoFilter({ q, paymentMethod, paymentStatus, lifecycle })
+      const filter = mergeCathaOrdersMainListFilter(
+        buildOrdersListMongoFilter({ q, paymentMethod, paymentStatus, lifecycle })
+      )
       const coll = db.collection('orders')
       const [total, rawList] = await Promise.all([
         coll.countDocuments(filter),
@@ -134,7 +136,7 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '200'), 500)
     const skip = parseInt(searchParams.get('skip') || '0')
     const orders = await db.collection('orders')
-      .find({})
+      .find(mergeCathaOrdersMainListFilter({}))
       .sort({ timestamp: -1 })
       .skip(skip)
       .limit(limit)
