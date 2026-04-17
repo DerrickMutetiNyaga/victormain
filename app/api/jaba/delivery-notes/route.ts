@@ -16,8 +16,25 @@ import {
 } from '@/lib/jaba-sms'
 import { getUserByEmail } from '@/lib/models/user'
 import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
+import {
+  deriveFifoDeliveryNotePayload,
+  JabaFifoAllocationError,
+  roundMoneyKes,
+} from '@/lib/jaba-delivery-note-fifo-allocation'
 
 export const runtime = 'nodejs'
+
+/**
+ * Multi-document transaction defaults: snapshot reads + majority journal write.
+ * Note: two concurrent creates only `insertOne` delivery notes — MongoDB will not
+ * write-conflict on existing packaging / note docs, so extreme double-submit can still
+ * over-allocate until slot-level reservations exist. Retries on TransientTransactionError
+ * are still recommended for callers.
+ */
+const JABA_DN_TXN_OPTIONS = {
+  readConcern: { level: 'snapshot' as const },
+  writeConcern: { w: 'majority' as const, j: true },
+}
 
 async function jabaActorDisplayName(): Promise<string> {
   const session = await auth()
@@ -98,59 +115,38 @@ export async function POST(request: Request) {
 
         const packagingOutputs = await db.collection('jaba_packagingOutput').find({}, { session: mongoSession }).toArray()
         const allBatches = await db.collection('jaba_batches').find({}, { session: mongoSession }).toArray()
-        const batchIdToBatchNumber = new Map<string, string>()
-        allBatches.forEach((batch: any) => {
-          batchIdToBatchNumber.set(batch._id.toString(), batch.batchNumber)
-        })
         const existingDeliveryNotes = await db.collection('jaba_deliveryNotes').find({}, { session: mongoSession }).toArray()
 
-        for (const item of itemsWithQuantities) {
-          const requestedQty = Number(item.quantity) || 0
-          if (requestedQty <= 0) continue
-          const itemFlavourLineId = item.flavourLineId ? String(item.flavourLineId) : ''
+        const staffLines = itemsWithQuantities.map((item: any) => ({
+          flavor: String(item.flavor || '').trim(),
+          productType: item.productType != null ? String(item.productType) : undefined,
+          productName: item.productName != null ? String(item.productName) : undefined,
+          size: String(item.size || '').trim(),
+          flavourLineId: item.flavourLineId != null ? String(item.flavourLineId) : undefined,
+          quantity: Number(item.quantity) || 0,
+          pricePerUnit: Number(item.pricePerUnit) || 0,
+        }))
 
-          let totalPackaged = 0
-          packagingOutputs.forEach((output: any) => {
-            const outputBatchNumber =
-              batchIdToBatchNumber.get(output.batchId?.toString() || '') ||
-              output.batchNumber ||
-              (output.batch && output.batch.batchNumber)
-            const outputFl = output.flavourLineId != null ? String(output.flavourLineId) : ''
-            const matchFlavour = itemFlavourLineId ? outputFl === itemFlavourLineId : !outputFl
-            if (!matchFlavour || outputBatchNumber !== item.batchNumber || !Array.isArray(output.containers)) return
-            output.containers.forEach((container: any) => {
-              if (container.size === item.size) totalPackaged += Number(container.quantity) || 0
-            })
+        let derived: ReturnType<typeof deriveFifoDeliveryNotePayload>
+        try {
+          derived = deriveFifoDeliveryNotePayload({
+            staffLines,
+            packagingOutputs,
+            batches: allBatches,
+            deliveryNotes: existingDeliveryNotes,
+            excludeNoteId: null,
           })
-
-          let alreadyDistributed = 0
-          existingDeliveryNotes.forEach((note: any) => {
-            if (!Array.isArray(note.items)) return
-            note.items.forEach((noteItem: any) => {
-              const noteFl = noteItem.flavourLineId != null ? String(noteItem.flavourLineId) : ''
-              const matchFlavour = itemFlavourLineId ? noteFl === itemFlavourLineId : !noteFl
-              if (noteItem.batchNumber === item.batchNumber && noteItem.size === item.size && matchFlavour) {
-                alreadyDistributed += Number(noteItem.quantity) || 0
-              }
-            })
-          })
-
-          const availableQuantity = Math.max(0, totalPackaged - alreadyDistributed)
-          if (requestedQty > availableQuantity) {
-            throw new ApiError(
-              `Insufficient stock for ${item.productName || item.size} (Batch: ${item.batchNumber}). Available: ${availableQuantity.toLocaleString()}, Requested: ${requestedQty.toLocaleString()}`,
-              400
-            )
+        } catch (e: unknown) {
+          if (e instanceof JabaFifoAllocationError) {
+            throw new ApiError(e.message, e.status)
           }
+          throw e
         }
 
         const existing = await db.collection('jaba_deliveryNotes').findOne({ noteId: noteId.trim() }, { session: mongoSession })
         if (existing) throw new ApiError('Delivery note with this ID already exists', 400)
 
-        const totalCost = itemsWithQuantities.reduce((sum: number, item: any) => {
-          const itemCost = (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0)
-          return sum + itemCost
-        }, 0)
+        const totalCost = derived.totalCost
 
         const viewToken = randomBytes(24).toString('hex')
         const publicShortToken = await generateUniquePublicShortToken(db, 16, mongoSession)
@@ -161,20 +157,24 @@ export async function POST(request: Request) {
           publicShortToken,
           distributorId: distributorId.trim(),
           distributorName: distributorName.trim(),
-          items: itemsWithQuantities.map((item: any) => ({
+          items: derived.items.map((item) => ({
             finishedGoodId: item.finishedGoodId,
             productName: item.productName || '',
             flavor: item.flavor || '',
             productType: item.productType || '',
             size: item.size,
             batchNumber: item.batchNumber || '',
+            batchId: item.batchId || undefined,
             packageNumber: item.packageNumber || '',
+            packagingOutputId: item.packagingOutputId,
             flavourLineId: item.flavourLineId ? String(item.flavourLineId) : undefined,
             quantity: Number(item.quantity),
-            pricePerUnit: Number(item.pricePerUnit) || 0,
-            totalCost: (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0),
+            pricePerUnit: roundMoneyKes(Number(item.pricePerUnit) || 0),
+            totalCost: roundMoneyKes(item.totalCost),
           })),
-          totalCost: totalCost,
+          fifoAllocationVersion: 1,
+          fifoAllocationTrace: derived.allocationTrace,
+          totalCost: roundMoneyKes(totalCost),
           vehicle: vehicle?.trim() || undefined,
           driver: driver?.trim() || undefined,
           driverPhone: driverPhone?.trim() || undefined,
@@ -193,14 +193,14 @@ export async function POST(request: Request) {
           _id: result.insertedId.toString(),
           id: result.insertedId.toString(),
         }
-      })
+      }, JABA_DN_TXN_OPTIONS)
 
       console.log(`[Delivery Notes API] ✅ Delivery note created successfully: ${noteId}`)
       const dispatchedBy = await jabaActorDisplayName()
       const distributionSms = buildDistributionCreatedSmsBody({
         noteId: noteId.trim(),
         distributorName: distributorName.trim(),
-        items: itemsWithQuantities,
+        items: createdNote?.items || itemsWithQuantities,
         dispatchedBy,
         driver: typeof driver === 'string' ? driver : undefined,
         driverPhone: typeof driverPhone === 'string' ? driverPhone : undefined,
@@ -251,6 +251,9 @@ export async function POST(request: Request) {
     }
   } catch (error: any) {
     if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    if (error instanceof JabaFifoAllocationError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
     console.error('[Delivery Notes API] ❌ Error creating delivery note:', error)
@@ -376,86 +379,55 @@ export async function PUT(request: Request) {
 
           const packagingOutputs = await db.collection('jaba_packagingOutput').find({}, { session: mongoSession }).toArray()
           const allBatches = await db.collection('jaba_batches').find({}, { session: mongoSession }).toArray()
-          const batchIdToBatchNumber = new Map<string, string>()
-          allBatches.forEach((batch: any) => {
-            batchIdToBatchNumber.set(batch._id.toString(), batch.batchNumber)
-          })
-          const otherDeliveryNotes = await db.collection('jaba_deliveryNotes').find(
-            { _id: { $ne: new ObjectId(id) } },
-            { session: mongoSession }
-          ).toArray()
-          const oldItems = existing.items || []
+          const allDeliveryNotes = await db.collection('jaba_deliveryNotes').find({}, { session: mongoSession }).toArray()
 
-          for (const item of itemsWithQuantities) {
-            const requestedQty = Number(item.quantity) || 0
-            if (requestedQty <= 0) continue
-            const itemFlavourLineId = item.flavourLineId ? String(item.flavourLineId) : ''
+          const staffLines = itemsWithQuantities.map((item: any) => ({
+            flavor: String(item.flavor || '').trim(),
+            productType: item.productType != null ? String(item.productType) : undefined,
+            productName: item.productName != null ? String(item.productName) : undefined,
+            size: String(item.size || '').trim(),
+            flavourLineId: item.flavourLineId != null ? String(item.flavourLineId) : undefined,
+            quantity: Number(item.quantity) || 0,
+            pricePerUnit: Number(item.pricePerUnit) || 0,
+          }))
 
-            const oldItem = oldItems.find((old: any) =>
-              old.batchNumber === item.batchNumber &&
-              old.size === item.size &&
-              (String(old.flavourLineId || '') === itemFlavourLineId) &&
-              (old.finishedGoodId === item.finishedGoodId || old.packageNumber === item.packageNumber)
-            )
-            const oldQty = oldItem ? (Number(oldItem.quantity) || 0) : 0
-
-            let totalPackaged = 0
-            packagingOutputs.forEach((output: any) => {
-              const outputBatchNumber =
-                batchIdToBatchNumber.get(output.batchId?.toString() || '') ||
-                output.batchNumber ||
-                (output.batch && output.batch.batchNumber)
-              const outputFl = output.flavourLineId != null ? String(output.flavourLineId) : ''
-              const matchFlavour = itemFlavourLineId ? outputFl === itemFlavourLineId : !outputFl
-              if (!matchFlavour || outputBatchNumber !== item.batchNumber || !Array.isArray(output.containers)) return
-              output.containers.forEach((container: any) => {
-                if (container.size === item.size) totalPackaged += Number(container.quantity) || 0
-              })
+          let derivedPut: ReturnType<typeof deriveFifoDeliveryNotePayload>
+          try {
+            derivedPut = deriveFifoDeliveryNotePayload({
+              staffLines,
+              packagingOutputs,
+              batches: allBatches,
+              deliveryNotes: allDeliveryNotes,
+              excludeNoteId: id,
             })
-
-            let alreadyDistributed = 0
-            otherDeliveryNotes.forEach((note: any) => {
-              if (!Array.isArray(note.items)) return
-              note.items.forEach((noteItem: any) => {
-                const noteFl = noteItem.flavourLineId != null ? String(noteItem.flavourLineId) : ''
-                const matchFlavour = itemFlavourLineId ? noteFl === itemFlavourLineId : !noteFl
-                if (noteItem.batchNumber === item.batchNumber && noteItem.size === item.size && matchFlavour) {
-                  alreadyDistributed += Number(noteItem.quantity) || 0
-                }
-              })
-            })
-
-            const availableQuantity = Math.max(0, totalPackaged - alreadyDistributed + oldQty)
-            if (requestedQty > availableQuantity) {
-              throw new ApiError(
-                `Insufficient stock for ${item.productName || item.size} (Batch: ${item.batchNumber}). Available: ${availableQuantity.toLocaleString()}, Requested: ${requestedQty.toLocaleString()}`,
-                400
-              )
+          } catch (e: unknown) {
+            if (e instanceof JabaFifoAllocationError) {
+              throw new ApiError(e.message, e.status)
             }
+            throw e
           }
-
-          const calculatedTotalCost = itemsWithQuantities.reduce((sum: number, item: any) => {
-            const itemCost = (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0)
-            return sum + itemCost
-          }, 0)
 
           updateData.noteId = noteId?.trim() || existing.noteId
           updateData.distributorId = distributorId?.trim() || existing.distributorId
           updateData.distributorName = distributorName?.trim() || existing.distributorName
-          updateData.items = itemsWithQuantities.map((item: any) => ({
+          updateData.items = derivedPut.items.map((item) => ({
             finishedGoodId: item.finishedGoodId,
             productName: item.productName || '',
             flavor: item.flavor || '',
             productType: item.productType || '',
             size: item.size,
             batchNumber: item.batchNumber || '',
+            batchId: item.batchId || undefined,
             packageNumber: item.packageNumber || '',
+            packagingOutputId: item.packagingOutputId,
             flavourLineId: item.flavourLineId ? String(item.flavourLineId) : undefined,
             quantity: Number(item.quantity),
-            pricePerUnit: Number(item.pricePerUnit) || 0,
-            totalCost: (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0),
+            pricePerUnit: roundMoneyKes(Number(item.pricePerUnit) || 0),
+            totalCost: roundMoneyKes(item.totalCost),
           }))
-          updateData.totalCost = totalCost !== undefined ? Number(totalCost) : calculatedTotalCost
+          updateData.fifoAllocationVersion = 1
+          updateData.fifoAllocationTrace = derivedPut.allocationTrace
+          updateData.totalCost = roundMoneyKes(derivedPut.totalCost)
           updateData.vehicle = vehicle?.trim() || undefined
           updateData.driver = driver?.trim() || undefined
           updateData.driverPhone = driverPhone?.trim() || undefined
@@ -506,7 +478,7 @@ export async function PUT(request: Request) {
           updatedAt: updated!.updatedAt instanceof Date ? updated!.updatedAt.toISOString() : updated!.updatedAt,
           paymentDate: updated!.paymentDate instanceof Date ? updated!.paymentDate.toISOString() : updated!.paymentDate,
         }
-      })
+      }, JABA_DN_TXN_OPTIONS)
 
       const deliveredPayload = pendingDeliveredSms.payload
       if (deliveredPayload) {
@@ -532,6 +504,9 @@ export async function PUT(request: Request) {
     }
   } catch (error: any) {
     if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    if (error instanceof JabaFifoAllocationError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
     console.error('[Delivery Notes API] ❌ Error updating delivery note:', error)

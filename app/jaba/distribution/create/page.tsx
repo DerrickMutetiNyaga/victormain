@@ -13,44 +13,26 @@ import { FileText, Save, Plus, X, Package, Hash, Truck, ChevronDown, ChevronUp, 
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import {
+  listFlavorSizePickupGroups,
+  deriveFifoDeliveryNotePayload,
+  collapseNoteItemsToStaffLines,
+  staffFieldsToPickupGroupKey,
+  type FlavorSizePickupRow,
+} from "@/lib/jaba-delivery-note-fifo-allocation"
 
 interface SelectedItem {
   id: string
-  finishedGoodId: string
-  productName: string // Full product name like "Jaba Juice of Tangerine"
+  groupKey: string
+  productName: string
   flavor: string
   productType: string
   size: "250ml" | "500ml" | "1L" | "2L"
-  batchNumber: string
-  packageNumber: string // PKG-00001
-  /** When set, stock is tracked per flavour line under the same parent batch */
   flavourLineId?: string
-  availableQuantity: number
+  /** Informational — server recomputes availability at save */
+  availableBottles: number
   quantity: number
   pricePerUnit: number
-}
-
-interface Product {
-  id: string
-  flavor: string
-  productType: string
-  size: "250ml" | "500ml" | "1L" | "2L"
-  quantity: number
-  batches: string[]
-  lastUpdated: Date
-}
-
-interface BatchGroup {
-  batchNumber: string
-  flavor: string
-  productType: string
-  date: Date
-  products: Array<{
-    finishedGood: Product
-    packageNumber: string
-    availableQuantity: number
-    flavourLineId?: string
-  }>
 }
 
 function CreateDeliveryNotePageContent() {
@@ -64,7 +46,8 @@ function CreateDeliveryNotePageContent() {
   const [driverPhone, setDriverPhone] = useState("")
   const [notes, setNotes] = useState("")
   const [loading, setLoading] = useState(true)
-  const [batches, setBatches] = useState<any[]>([])
+  /** All batches from API — required for correct FIFO ordering vs packaging outputs */
+  const [allBatches, setAllBatches] = useState<any[]>([])
   const [packagingOutputs, setPackagingOutputs] = useState<any[]>([])
   /** Up to two batch document IDs to narrow the product list (optional). */
   const [batchFilter1, setBatchFilter1] = useState("")
@@ -116,24 +99,27 @@ function CreateDeliveryNotePageContent() {
             setNotes(noteToEdit.notes || '')
             
             // Map items to selectedItems format
-            const mappedItems: SelectedItem[] = noteToEdit.items.map((item: any, index: number) => {
-              const displayName = item.productName || 
-                (item.productType && item.flavor ? `${item.productType} of ${item.flavor}` : 
-                (item.flavor ? item.flavor : 'Product'))
-              
+            const collapsed = collapseNoteItemsToStaffLines(noteToEdit.items || [])
+            const mappedItems: SelectedItem[] = collapsed.map((row, index: number) => {
+              const displayName =
+                row.productName ||
+                (row.productType && row.flavor ? `${row.productType} of ${row.flavor}` : row.flavor || "Product")
+              const gk = staffFieldsToPickupGroupKey({
+                flavor: row.flavor || "",
+                flavourLineId: row.flavourLineId,
+                size: row.size,
+              })
               return {
-                id: `edit-${index}-${item.batchNumber}-${item.size}`,
-                finishedGoodId: item.finishedGoodId || `${item.batchNumber}-${item.size}`,
+                id: `edit-${index}-${gk}`,
+                groupKey: gk,
                 productName: displayName,
-                flavor: item.flavor || '',
-                productType: item.productType || 'Juice',
-                size: item.size,
-                batchNumber: item.batchNumber || '',
-                packageNumber: item.packageNumber || '',
-                flavourLineId: item.flavourLineId,
-                availableQuantity: item.quantity,
-                quantity: item.quantity,
-                pricePerUnit: item.pricePerUnit || 0,
+                flavor: row.flavor || "",
+                productType: row.productType || "Juice",
+                size: row.size as SelectedItem["size"],
+                flavourLineId: row.flavourLineId,
+                availableBottles: 0,
+                quantity: row.quantity,
+                pricePerUnit: row.pricePerUnit || 0,
               }
             })
             
@@ -229,160 +215,75 @@ function CreateDeliveryNotePageContent() {
 
   const batchId = (b: any) => String(b._id ?? b.id ?? "")
 
+  const batchesForDropdown = useMemo(() => {
+    return allBatches.filter((b: any) =>
+      ["Ready for Distribution", "Partially Packaged", "Partially Allocated", "Fully Allocated"].includes(b.status) &&
+      ((b.bottles250ml || 0) + (b.bottles500ml || 0) + (b.bottles1L || 0) + (b.bottles2L || 0) > 0)
+    )
+  }, [allBatches])
+
+  const flavorSizeGroups = useMemo(() => {
+    const allowed =
+      focusedBatchIds.length > 0 ? new Set(focusedBatchIds.map((id) => String(id))) : null
+    return listFlavorSizePickupGroups(packagingOutputs, allBatches, deliveryNotes, {
+      excludeNoteId: isEditMode && editingNoteId ? editingNoteId : null,
+      allowedBatchIds: allowed,
+    })
+  }, [packagingOutputs, allBatches, deliveryNotes, isEditMode, editingNoteId, focusedBatchIds])
+
+  const selectedItemsWithFreshAvail = useMemo(() => {
+    return selectedItems.map((item) => {
+      const row = flavorSizeGroups.find((g) => g.groupKey === item.groupKey)
+      const avail = row?.availableBottles ?? item.availableBottles
+      return { ...item, availableBottles: avail }
+    })
+  }, [selectedItems, flavorSizeGroups])
+
+  const fifoPreview = useMemo(() => {
+    const lines = selectedItemsWithFreshAvail
+      .filter((i) => i.quantity > 0)
+      .map((i) => ({
+        flavor: i.flavor,
+        productType: i.productType,
+        productName: i.productName,
+        size: i.size,
+        flavourLineId: i.flavourLineId,
+        quantity: i.quantity,
+        pricePerUnit: i.pricePerUnit,
+      }))
+    if (lines.length === 0 || !packagingOutputs.length || !allBatches.length) return null
+    try {
+      return deriveFifoDeliveryNotePayload({
+        staffLines: lines,
+        packagingOutputs,
+        batches: allBatches,
+        deliveryNotes,
+        excludeNoteId: isEditMode && editingNoteId ? editingNoteId : null,
+      })
+    } catch {
+      return null
+    }
+  }, [selectedItemsWithFreshAvail, packagingOutputs, allBatches, deliveryNotes, isEditMode, editingNoteId])
+
   const previewItemsByBatch = useMemo(() => {
-    const withQty = selectedItems.filter((i) => i.quantity > 0)
-    const map = new Map<string, SelectedItem[]>()
-    for (const item of withQty) {
-      const k = item.batchNumber || "Unknown"
+    if (!fifoPreview?.items?.length) return new Map<string, typeof fifoPreview.items>()
+    const map = new Map<string, typeof fifoPreview.items>()
+    for (const row of fifoPreview.items) {
+      const k = row.batchNumber || "Unknown"
       if (!map.has(k)) map.set(k, [])
-      map.get(k)!.push(item)
+      map.get(k)!.push(row)
     }
     return map
-  }, [selectedItems])
+  }, [fifoPreview])
 
   const focusedBatchLabels = useMemo(
     () =>
       focusedBatchIds
-        .map((id) => batches.find((b) => batchId(b) === id))
+        .map((id) => allBatches.find((b) => batchId(b) === id))
         .filter(Boolean)
         .map((b: any) => String(b.batchNumber)),
-    [focusedBatchIds, batches]
+    [focusedBatchIds, allBatches]
   )
-
-  // Get package number for a finished good based on batch number
-  const getPackageNumber = (batchNumber: string): string => {
-    const packagingOutput = packagingOutputs.find((po) => {
-      const batch = batches.find((b) => (b._id || b.id) === po.batchId)
-      return batch?.batchNumber === batchNumber
-    })
-    // Always prefer packageNumber from packaging output, generate if missing
-    if (packagingOutput?.packageNumber) {
-      return packagingOutput.packageNumber
-    }
-    // Generate a package number if not found
-    const currentYear = new Date().getFullYear()
-    const randomNum = String(Math.floor(Math.random() * 99999)).padStart(5, "0")
-    return `PKG-${currentYear}-${randomNum}`
-  }
-
-  const segmentForPackaging = (po: any, batchFlavor: string) => {
-    if (po.flavourLineId) return `fid:${String(po.flavourLineId)}`
-    const n = (po.flavourName || batchFlavor || "Unknown").trim()
-    return `fl:${n}`
-  }
-
-  const segmentForDeliveryItem = (item: any) => {
-    if (item.flavourLineId) return `fid:${String(item.flavourLineId)}`
-    return `fl:${(item.flavor || "").trim()}`
-  }
-
-  // Group products by batch from packaging outputs and calculate available quantities
-  const groupByBatch = (): Map<string, BatchGroup> => {
-    const batchMap = new Map<string, BatchGroup>()
-    const relevantPackagingOutputs =
-      focusedBatchIds.length > 0
-        ? packagingOutputs.filter((po) => focusedBatchIds.includes(String(po.batchId)))
-        : packagingOutputs
-
-    const packagedByKey = new Map<string, number>()
-    relevantPackagingOutputs.forEach((packagingOutput) => {
-      const batch = batches.find((b) => (b._id || b.id) === packagingOutput.batchId)
-      if (!batch) return
-      const batchNumber = batch.batchNumber
-      const seg = segmentForPackaging(packagingOutput, batch.flavor || "")
-      if (!packagingOutput.containers || !Array.isArray(packagingOutput.containers)) return
-      packagingOutput.containers.forEach((container: any) => {
-        const size = container.size || "500ml"
-        const quantity = parseFloat(container.quantity) || 0
-        const key = `${batchNumber}|${seg}|${size}`
-        packagedByKey.set(key, (packagedByKey.get(key) || 0) + quantity)
-      })
-    })
-
-    const distributedByKey = new Map<string, number>()
-    deliveryNotes.forEach((note: any) => {
-      if (!note.items || !Array.isArray(note.items)) return
-      note.items.forEach((item: any) => {
-        if (!item.batchNumber || !item.size) return
-        const seg = segmentForDeliveryItem(item)
-        const key = `${item.batchNumber}|${seg}|${item.size}`
-        const qty = parseFloat(item.quantity) || 0
-        distributedByKey.set(key, (distributedByKey.get(key) || 0) + qty)
-      })
-    })
-
-    relevantPackagingOutputs.forEach((packagingOutput) => {
-      const batch = batches.find((b) => (b._id || b.id) === packagingOutput.batchId)
-      if (!batch) return
-      const batchNumber = batch.batchNumber
-      const seg = segmentForPackaging(packagingOutput, batch.flavor || "")
-      const displayFlavor = (packagingOutput.flavourName || batch.flavor || "Unknown").trim()
-
-      if (!batchMap.has(batchNumber)) {
-        batchMap.set(batchNumber, {
-          batchNumber,
-          flavor: batch.flavor || "Unknown",
-          productType: batch.productCategory || "Juice",
-          date: batch.date ? new Date(batch.date) : new Date(),
-          products: [],
-        })
-      }
-
-      const group = batchMap.get(batchNumber)!
-
-      if (!packagingOutput.containers || !Array.isArray(packagingOutput.containers)) return
-
-      let pkgNumber = packagingOutput.packageNumber
-      if (!pkgNumber ||
-          pkgNumber === packagingOutput.batchNumber ||
-          pkgNumber === batchNumber ||
-          !pkgNumber.startsWith("PKG-")) {
-        const currentYear = new Date().getFullYear()
-        const randomNum = String(Math.floor(Math.random() * 99999)).padStart(5, "0")
-        pkgNumber = `PKG-${currentYear}-${randomNum}`
-      }
-
-      packagingOutput.containers.forEach((container: any) => {
-        const size = container.size || "500ml"
-        const packagedQty = parseFloat(container.quantity) || 0
-        if (packagedQty <= 0) return
-        const key = `${batchNumber}|${seg}|${size}`
-        const totalPackaged = packagedByKey.get(key) || 0
-        const totalDistributed = distributedByKey.get(key) || 0
-        const availableQty = Math.max(0, totalPackaged - totalDistributed)
-        if (availableQty <= 0) return
-
-        const finishedGoodId = `${batchNumber}|${seg}|${size}`
-        const existingProduct = group.products.find((p) => p.finishedGood.id === finishedGoodId)
-
-        if (existingProduct) {
-          existingProduct.availableQuantity = availableQty
-          if (packagingOutput.flavourLineId) {
-            existingProduct.flavourLineId = String(packagingOutput.flavourLineId)
-          }
-        } else {
-          group.products.push({
-            finishedGood: {
-              id: finishedGoodId,
-              flavor: displayFlavor,
-              productType: batch.productCategory || "Juice",
-              size: size as "250ml" | "500ml" | "1L" | "2L",
-              quantity: packagedQty,
-              batches: [batchNumber],
-              lastUpdated: new Date(),
-            },
-            packageNumber: pkgNumber,
-            availableQuantity: availableQty,
-            flavourLineId: packagingOutput.flavourLineId
-              ? String(packagingOutput.flavourLineId)
-              : undefined,
-          })
-        }
-      })
-    })
-
-    return batchMap
-  }
 
   // Fetch batches and packaging outputs; optional ?batch= pre-fills first filter
   useEffect(() => {
@@ -401,12 +302,7 @@ function CreateDeliveryNotePageContent() {
       const batchesData = await batchesResponse.json()
       
       if (batchesResponse.ok && batchesData.batches) {
-        // Filter batches that have packaged items ready for distribution
-        const readyBatches = batchesData.batches.filter((b: any) =>
-          ["Ready for Distribution", "Partially Packaged", "Partially Allocated", "Fully Allocated"].includes(b.status) &&
-          ((b.bottles250ml || 0) + (b.bottles500ml || 0) + (b.bottles1L || 0) + (b.bottles2L || 0) > 0)
-        )
-        setBatches(readyBatches)
+        setAllBatches(batchesData.batches)
       }
 
       // Fetch all packaging outputs
@@ -438,92 +334,33 @@ function CreateDeliveryNotePageContent() {
     }
   }
 
-  // When batch filter is set, expand those batch rows once batches are loaded
   useEffect(() => {
-    if (focusedBatchIds.length === 0 || batches.length === 0) return
-    const numbers = focusedBatchIds
-      .map((id) => batches.find((b) => batchId(b) === id)?.batchNumber)
-      .filter(Boolean) as string[]
-    if (numbers.length) setExpandedBatches(new Set(numbers))
-  }, [focusedBatchIds, batches])
+    if (flavorSizeGroups.length === 0) return
+    setExpandedBatches(new Set(flavorSizeGroups.map((g) => g.groupKey)))
+  }, [flavorSizeGroups])
 
-  // Filter batch groups based on mode
-  const getFilteredBatchGroups = () => {
-    const allGroups = Array.from(groupByBatch().values())
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .filter((bg) => bg.products.some((p) => p.availableQuantity > 0))
-
-    if (focusedBatchIds.length > 0) {
-      const allowed = new Set(
-        focusedBatchIds
-          .map((id) => batches.find((b) => batchId(b) === id)?.batchNumber)
-          .filter(Boolean) as string[]
-      )
-      return allGroups.filter((bg) => allowed.has(bg.batchNumber))
-    }
-
-    return allGroups
+  const toggleFlavorGroup = (groupKey: string) => {
+    const next = new Set(expandedBatches)
+    if (next.has(groupKey)) next.delete(groupKey)
+    else next.add(groupKey)
+    setExpandedBatches(next)
   }
 
-  const batchGroups = getFilteredBatchGroups()
-
-  const toggleBatch = (batchNumber: string) => {
-    const newExpanded = new Set(expandedBatches)
-    if (newExpanded.has(batchNumber)) {
-      newExpanded.delete(batchNumber)
-    } else {
-      newExpanded.add(batchNumber)
-    }
-    setExpandedBatches(newExpanded)
-  }
-
-  const addSelectedItem = (finishedGoodId: string, batchNumber: string, defaultQuantity?: number) => {
-    // Find the product in batch groups
-    const batchGroup = batchGroups.find((bg) => bg.batchNumber === batchNumber)
-    if (!batchGroup) return
-
-    const product = batchGroup.products.find((p) => p.finishedGood.id === finishedGoodId)
-    if (!product) return
-
-    const lineId = product.flavourLineId || ""
-    if (
-      selectedItems.some(
-        (item) =>
-          item.finishedGoodId === finishedGoodId &&
-          item.batchNumber === batchNumber &&
-          String(item.flavourLineId || "") === String(lineId)
-      )
-    ) {
-      return
-    }
-
-    // Ensure we have a valid package number (must start with PKG-)
-    let packageNumber = product.packageNumber
-    if (!packageNumber || !packageNumber.startsWith('PKG-') || packageNumber === batchNumber) {
-      // Fallback to getPackageNumber or generate one
-      packageNumber = getPackageNumber(batchNumber)
-      console.log(`[Distribution] Using fallback package number for item: ${packageNumber}`)
-    }
-    
-    const productName = `${product.finishedGood.productType} of ${product.finishedGood.flavor}` // e.g., "Juice of Tangerine"
-
+  const addFlavorLine = (row: FlavorSizePickupRow) => {
+    if (selectedItems.some((item) => item.groupKey === row.groupKey)) return
+    const productName = `${row.productType} of ${row.displayFlavor}`
     const newItem: SelectedItem = {
       id: `item-${Date.now()}-${Math.random()}`,
-      finishedGoodId: product.finishedGood.id,
+      groupKey: row.groupKey,
       productName,
-      flavor: product.finishedGood.flavor,
-      productType: product.finishedGood.productType,
-      size: product.finishedGood.size,
-      batchNumber,
-      packageNumber,
-      flavourLineId: product.flavourLineId || undefined,
-      availableQuantity: product.availableQuantity,
-      quantity: defaultQuantity || 0,
+      flavor: row.displayFlavor,
+      productType: row.productType,
+      size: row.size as SelectedItem["size"],
+      flavourLineId: row.flavourLineId,
+      availableBottles: row.availableBottles,
+      quantity: 0,
       pricePerUnit: 0,
     }
-    
-    console.log(`[Distribution] Added item with package number: ${packageNumber} for batch: ${batchNumber}`)
-
     setSelectedItems([...selectedItems, newItem])
   }
 
@@ -533,11 +370,13 @@ function CreateDeliveryNotePageContent() {
 
   const updateItemQuantity = (id: string, quantity: number) => {
     setSelectedItems(
-      selectedItems.map((item) =>
-        item.id === id
-          ? { ...item, quantity: Math.min(Math.max(0, quantity), item.availableQuantity) }
-          : item
-      )
+      selectedItems.map((item) => {
+        if (item.id !== id) return item
+        const cap =
+          flavorSizeGroups.find((g) => g.groupKey === item.groupKey)?.availableBottles ??
+          item.availableBottles
+        return { ...item, quantity: Math.min(Math.max(0, quantity), cap) }
+      })
     )
   }
 
@@ -555,18 +394,7 @@ function CreateDeliveryNotePageContent() {
   const totalCost = selectedItems.reduce((sum, item) => sum + (item.quantity * item.pricePerUnit), 0)
 
   // Check if a product is already selected
-  const isProductSelected = (
-    finishedGoodId: string,
-    batchNumber: string,
-    flavourLineId?: string
-  ): boolean => {
-    return selectedItems.some(
-      (item) =>
-        item.finishedGoodId === finishedGoodId &&
-        item.batchNumber === batchNumber &&
-        String(item.flavourLineId || "") === String(flavourLineId || "")
-    )
-  }
+  const isGroupSelected = (groupKey: string) => selectedItems.some((item) => item.groupKey === groupKey)
 
   // Handle generating delivery note
   const [isGenerating, setIsGenerating] = useState(false)
@@ -584,47 +412,24 @@ function CreateDeliveryNotePageContent() {
 
     setIsGenerating(true)
     try {
-      const itemsWithQuantities = selectedItems.filter((item) => item.quantity > 0)
-      
+      const itemsWithQuantities = selectedItemsWithFreshAvail.filter((item) => item.quantity > 0)
+
       if (itemsWithQuantities.length === 0) {
         toast.error("Please add at least one item with quantity greater than 0")
         setIsGenerating(false)
         return
       }
 
-      // CRITICAL: Validate quantities don't exceed available stock
-      const validationErrors: string[] = []
-      for (const item of itemsWithQuantities) {
-        // Re-fetch current available quantity to ensure we have latest data
-        const batchGroup = batchGroups.find((bg) => bg.batchNumber === item.batchNumber)
-        if (batchGroup) {
-          const product = batchGroup.products.find((p) => p.finishedGood.id === item.finishedGoodId)
-          if (product) {
-            const currentAvailable = product.availableQuantity
-            if (item.quantity > currentAvailable) {
-              validationErrors.push(
-                `${item.productName} (${item.size}): Requested ${item.quantity.toLocaleString()}, Available ${currentAvailable.toLocaleString()}`
-              )
-            }
-          } else {
-            validationErrors.push(`${item.productName} (${item.size}): Product not found in batch`)
-          }
-        } else {
-          validationErrors.push(`${item.productName} (${item.size}): Batch not found`)
-        }
-      }
+      const staffPayload = itemsWithQuantities.map((item) => ({
+        flavor: item.flavor,
+        productType: item.productType,
+        productName: item.productName,
+        size: item.size,
+        flavourLineId: item.flavourLineId,
+        quantity: item.quantity,
+        pricePerUnit: item.pricePerUnit,
+      }))
 
-      if (validationErrors.length > 0) {
-        toast.error(
-          `Cannot proceed: Quantities exceed available stock:\n${validationErrors.join('\n')}`,
-          { duration: 8000 }
-        )
-        setIsGenerating(false)
-        // Refresh data to get latest available quantities
-        await fetchData()
-        return
-      }
-      
       if (isEditMode && editingNoteId) {
         // Update existing delivery note
         const response = await fetch('/api/jaba/delivery-notes', {
@@ -637,24 +442,11 @@ function CreateDeliveryNotePageContent() {
             noteId: deliveryNoteId.trim(),
             distributorId: distributorId,
             distributorName: selectedDistributor?.name || '',
-            items: itemsWithQuantities.map((item) => ({
-              finishedGoodId: item.finishedGoodId,
-              productName: item.productName,
-              flavor: item.flavor,
-              productType: item.productType,
-              size: item.size,
-              batchNumber: item.batchNumber,
-              packageNumber: item.packageNumber,
-              flavourLineId: item.flavourLineId,
-              quantity: item.quantity,
-              pricePerUnit: item.pricePerUnit,
-              totalCost: item.quantity * item.pricePerUnit,
-            })),
+            items: staffPayload,
             vehicle: vehicle.trim() || undefined,
             driver: driver.trim() || undefined,
             driverPhone: driverPhone.trim() || undefined,
             notes: notes.trim() || undefined,
-            totalCost: itemsWithQuantities.reduce((sum, item) => sum + (item.quantity * item.pricePerUnit), 0),
           }),
         })
 
@@ -679,19 +471,7 @@ function CreateDeliveryNotePageContent() {
             noteId: deliveryNoteId.trim(),
             distributorId: distributorId,
             distributorName: selectedDistributor?.name || '',
-            items: itemsWithQuantities.map((item) => ({
-              finishedGoodId: item.finishedGoodId,
-              productName: item.productName,
-              flavor: item.flavor,
-              productType: item.productType,
-              size: item.size,
-              batchNumber: item.batchNumber,
-              packageNumber: item.packageNumber,
-              flavourLineId: item.flavourLineId,
-              quantity: item.quantity,
-              pricePerUnit: item.pricePerUnit,
-              totalCost: item.quantity * item.pricePerUnit,
-            })),
+            items: staffPayload,
             vehicle: vehicle.trim() || undefined,
             driver: driver.trim() || undefined,
             driverPhone: driverPhone.trim() || undefined,
@@ -732,7 +512,7 @@ function CreateDeliveryNotePageContent() {
               {isEditMode ? 'Edit Delivery Note' : 'Create Delivery Note'}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {isEditMode ? 'Update delivery note details' : 'Select products from batches to distribute'}
+              {isEditMode ? 'Update delivery note details' : 'Select flavour, bottle size, quantity, and price'}
             </p>
           </div>
         </div>
@@ -835,7 +615,7 @@ function CreateDeliveryNotePageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Any batch</SelectItem>
-                        {batches.map((b) => (
+                        {batchesForDropdown.map((b) => (
                           <SelectItem key={batchId(b)} value={batchId(b)}>
                             {b.batchNumber}
                             {b.flavor ? ` — ${b.flavor}` : ""}
@@ -856,7 +636,7 @@ function CreateDeliveryNotePageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">None</SelectItem>
-                        {batches.map((b) => (
+                        {batchesForDropdown.map((b) => (
                           <SelectItem key={`2-${batchId(b)}`} value={batchId(b)}>
                             {b.batchNumber}
                             {b.flavor ? ` — ${b.flavor}` : ""}
@@ -900,55 +680,50 @@ function CreateDeliveryNotePageContent() {
                       {focusedBatchLabels.length === 1 ? "" : "es"} ({focusedBatchLabels.join(" · ")})
                     </>
                   ) : (
-                    <>Select products from batches ({batchGroups.length} with stock)</>
+                    <>Select finished products ({flavorSizeGroups.length} flavour + size with stock)</>
                   )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-3">
-                {isBatchFilterActive && batchGroups.length > 0 && (
-                  <div className="rounded-xl border-2 border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 space-y-3 mb-2">
+                <p className="text-xs text-muted-foreground rounded-lg border border-purple-200/60 dark:border-purple-900/40 bg-purple-50/40 dark:bg-purple-950/20 px-3 py-2">
+                  Choose flavour and bottle size only. The server allocates oldest packaged batches and packages automatically when you save — batch and package numbers from the browser are never used for stock.
+                </p>
+                {isBatchFilterActive && flavorSizeGroups.length > 0 && (
+                  <div className="rounded-xl border-2 border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 space-y-2 mb-2">
                     <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                      Packaged stock in selected batch(es)
+                      Packaged stock (selected batches only)
                     </p>
-                    {batchGroups.map((bg) => (
-                      <div key={bg.batchNumber} className="rounded-lg bg-white/80 dark:bg-slate-900/60 border border-emerald-100 dark:border-emerald-900/40 p-3">
-                        <p className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                          {bg.batchNumber}
-                          <span className="font-normal text-slate-600 dark:text-slate-400"> — {bg.flavor}</span>
-                        </p>
-                        <ul className="mt-2 space-y-1 text-xs text-slate-700 dark:text-slate-300">
-                          {bg.products.map((p) => (
-                            <li key={`${bg.batchNumber}-${p.finishedGood.id}`} className="flex justify-between gap-2">
-                              <span>
-                                {p.finishedGood.flavor} · {p.finishedGood.size}
-                              </span>
-                              <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
-                                {p.availableQuantity.toLocaleString()} avail
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
+                    <ul className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
+                      {flavorSizeGroups.map((row) => (
+                        <li key={row.groupKey} className="flex justify-between gap-2">
+                          <span>
+                            {row.displayFlavor} · {row.size}
+                          </span>
+                          <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+                            {row.availableBottles.toLocaleString()} avail
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
                 {loading ? (
                   <div className="text-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-3" />
-                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Loading batches...</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Loading stock…</p>
                   </div>
-                ) : batchGroups.length === 0 ? (
+                ) : flavorSizeGroups.length === 0 ? (
                   <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
                     <Package className="h-12 w-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
                     <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">
                       {isBatchFilterActive
                         ? "No packaged stock left for the selected batch(es)"
-                        : "No batches with available stock"}
+                        : "No distributable packaged stock"}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
                       {isBatchFilterActive
-                        ? "Try another batch or clear filters to see all batches"
-                        : "All products may already be distributed"}
+                        ? "Try another batch or clear filters"
+                        : "Packaging output may be missing or already fully allocated on delivery notes"}
                     </p>
                     {isBatchFilterActive && (
                       <Button
@@ -966,14 +741,16 @@ function CreateDeliveryNotePageContent() {
                     )}
                   </div>
                 ) : (
-                  batchGroups.map((batchGroup) => {
-                    const isExpanded = expandedBatches.has(batchGroup.batchNumber)
-                    const selectedCount = selectedItems.filter((item) => item.batchNumber === batchGroup.batchNumber).length
-                    const hasSelectedItems = selectedCount > 0
+                  flavorSizeGroups.map((row) => {
+                    const isExpanded = expandedBatches.has(row.groupKey)
+                    const isSelected = isGroupSelected(row.groupKey)
+                    const selectedItem = selectedItems.find((item) => item.groupKey === row.groupKey)
+                    const productName = `${row.productType} of ${row.displayFlavor}`
+                    const hasSelectedItems = isSelected
 
                     return (
                       <Card
-                        key={batchGroup.batchNumber}
+                        key={row.groupKey}
                         className={cn(
                           "border-2 shadow-md transition-all",
                           hasSelectedItems
@@ -982,31 +759,31 @@ function CreateDeliveryNotePageContent() {
                         )}
                       >
                         <CardContent className="p-0">
-                          {/* Batch Header - Clickable to Expand */}
                           <button
-                            onClick={() => toggleBatch(batchGroup.batchNumber)}
+                            type="button"
+                            onClick={() => toggleFlavorGroup(row.groupKey)}
                             className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
                           >
                             <div className="flex items-center gap-3 flex-1 text-left">
                               <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/30">
-                                <Hash className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                <Package className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                               </div>
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 flex-wrap mb-1">
                                   <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
-                                    {batchGroup.batchNumber}
+                                    {productName}
                                   </h3>
                                   {hasSelectedItems && (
                                     <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs px-2 py-0.5">
-                                      {selectedCount} selected
+                                      In note
                                     </Badge>
                                   )}
                                 </div>
                                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                  {batchGroup.flavor} • {batchGroup.productType}
+                                  {row.displayFlavor} • {row.productType}
                                 </p>
                                 <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-                                  {batchGroup.date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} • {batchGroup.products.length} products
+                                  {row.size} • {row.availableBottles.toLocaleString()} bottles available (FIFO preview)
                                 </p>
                               </div>
                             </div>
@@ -1019,196 +796,174 @@ function CreateDeliveryNotePageContent() {
                             </div>
                           </button>
 
-                          {/* Expanded Products List */}
                           {isExpanded && (
                             <div className="border-t border-slate-200 dark:border-slate-800 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/30">
-                              {batchGroup.products.map((product) => {
-                                const isSelected = isProductSelected(
-                                  product.finishedGood.id,
-                                  batchGroup.batchNumber,
-                                  product.flavourLineId
-                                )
-                                const selectedItem = selectedItems.find(
-                                  (item) => item.finishedGoodId === product.finishedGood.id && item.batchNumber === batchGroup.batchNumber
-                                )
-                                const productName = `${product.finishedGood.productType} of ${product.finishedGood.flavor}`
-
-                                return (
-                                  <Card
-                                    key={`${product.finishedGood.id}-${batchGroup.batchNumber}`}
-                                    className={cn(
-                                      "border-2 shadow-sm transition-all",
-                                      isSelected
-                                        ? "border-purple-300 dark:border-purple-800 bg-gradient-to-br from-purple-50/80 to-violet-50/50 dark:from-purple-950/40 dark:to-violet-950/30"
-                                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50"
-                                    )}
-                                  >
-                                    <CardContent className="p-4">
-                                      <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 space-y-2">
-                                          {/* Product Name - This is where they see "Jaba Juice of Tangerine" */}
-                                          <div>
-                                            <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 mb-1">
-                                              {productName}
-                                            </h4>
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <Badge className="font-medium text-xs px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                                                {product.finishedGood.size}
-                                              </Badge>
-                                              <Badge className="font-medium text-xs px-2 py-0.5 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
-                                                {product.finishedGood.productType}
-                                              </Badge>
-                                            </div>
-                                          </div>
-
-                                          {/* Batch and Package Info */}
-                                          <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
-                                            <div className="flex items-center gap-1">
-                                              <Hash className="h-3 w-3" />
-                                              <span>Batch: {batchGroup.batchNumber}</span>
-                                            </div>
-                                            <span className="text-slate-400">•</span>
-                                            <div className="flex items-center gap-1">
-                                              <Package className="h-3 w-3" />
-                                              <span className="font-semibold">Package: {product.packageNumber}</span>
-                                            </div>
-                                            <span className="text-slate-400">•</span>
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-xs text-slate-600 dark:text-slate-400">
-                                                Available: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{product.availableQuantity.toLocaleString()}</span> bottles
-                                              </span>
-                                              {product.availableQuantity === 0 && (
-                                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                                                  Out of Stock
-                                                </Badge>
-                                              )}
-                                              {product.availableQuantity > 0 && product.availableQuantity <= 10 && (
-                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 dark:text-amber-300">
-                                                  Low Stock
-                                                </Badge>
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          {/* Quantity and Price Input - Redesigned */}
-                                          {isSelected && selectedItem && (
-                                            <div className="mt-4 pt-4 border-t-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50/50 to-violet-50/30 dark:from-purple-950/20 dark:to-violet-950/10 rounded-lg p-4">
-                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {/* Quantity Section */}
-                                                <div className="space-y-2">
-                                                  <Label htmlFor={`qty-${selectedItem.id}`} className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                                    <div className="h-2 w-2 rounded-full bg-purple-500"></div>
-                                                    Quantity
-                                                  </Label>
-                                                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(140px,1fr)_auto] items-center gap-2">
-                                                    <Input
-                                                      id={`qty-${selectedItem.id}`}
-                                                      type="number"
-                                                      min="0"
-                                                      max={selectedItem.availableQuantity}
-                                                      value={selectedItem.quantity || ""}
-                                                      onChange={(e) => updateItemQuantity(selectedItem.id, parseInt(e.target.value) || 0)}
-                                                      className={cn(
-                                                        "h-11 w-full min-w-[140px] border-2 font-semibold text-slate-900 dark:text-slate-100",
-                                                        selectedItem.quantity > selectedItem.availableQuantity
-                                                          ? "border-red-500 dark:border-red-500 bg-red-50 dark:bg-red-950/20 focus:border-red-600 dark:focus:border-red-600"
-                                                          : "border-purple-300 dark:border-purple-700 focus:border-purple-500 dark:focus:border-purple-500 bg-white dark:bg-slate-900"
-                                                      )}
-                                                      placeholder="0"
-                                                    />
-                                                    <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md">
-                                                      / <span className="font-semibold text-emerald-600 dark:text-emerald-400">{selectedItem.availableQuantity.toLocaleString()}</span> max
-                                                      {selectedItem.quantity > 0 && (
-                                                        <span className="ml-2 text-emerald-600 dark:text-emerald-400">
-                                                          (Remaining: <span className="font-bold">{Math.max(0, selectedItem.availableQuantity - selectedItem.quantity).toLocaleString()}</span>)
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                </div>
-
-                                                {/* Price Per Unit Section */}
-                                                <div className="space-y-2">
-                                                  <Label htmlFor={`price-${selectedItem.id}`} className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                                    <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                                                    Price Per Unit
-                                                  </Label>
-                                                  <div className="relative">
-                                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-600 dark:text-slate-400">
-                                                      KES
-                                                    </div>
-                                                    <Input
-                                                      id={`price-${selectedItem.id}`}
-                                                      type="number"
-                                                      min="0"
-                                                      step="0.01"
-                                                      value={selectedItem.pricePerUnit || ""}
-                                                      onChange={(e) => updateItemPricePerUnit(selectedItem.id, parseFloat(e.target.value) || 0)}
-                                                      className="h-11 w-full pl-16 border-2 border-blue-300 dark:border-blue-700 focus:border-blue-500 dark:focus:border-blue-500 bg-white dark:bg-slate-900 font-semibold"
-                                                      placeholder="0.00"
-                                                    />
-                                                  </div>
-                                                </div>
-                                              </div>
-
-                                              {/* Total Cost Display */}
-                                              {selectedItem.quantity > 0 && selectedItem.pricePerUnit > 0 && (
-                                                <div className="mt-4 pt-4 border-t-2 border-green-300 dark:border-green-700 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/20 rounded-lg p-3">
-                                                  <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-                                                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-                                                        Total Cost
-                                                      </span>
-                                                    </div>
-                                                    <div className="text-right">
-                                                      <p className="text-2xl font-bold text-green-700 dark:text-green-400">
-                                                        KES {(selectedItem.quantity * selectedItem.pricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                      </p>
-                                                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                        {selectedItem.quantity.toLocaleString()} × {selectedItem.pricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                      </p>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        {/* Add/Remove Button */}
-                                        <div className="flex flex-col gap-2">
-                                          {isSelected ? (
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => removeSelectedItem(selectedItem!.id)}
-                                              className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                            >
-                                              <X className="h-4 w-4" />
-                                            </Button>
-                                          ) : (
-                                            <Button
-                                              size="sm"
-                                              onClick={() => addSelectedItem(product.finishedGood.id, batchGroup.batchNumber)}
-                                              disabled={product.availableQuantity === 0}
-                                              className="bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-700 hover:to-violet-800 h-9"
-                                            >
-                                              <Plus className="h-4 w-4 mr-1" />
-                                              Add
-                                            </Button>
-                                          )}
-                                          {isSelected && selectedItem && selectedItem.quantity > 0 && (
-                                            <div className="text-xs text-center font-semibold text-purple-700 dark:text-purple-400">
-                                              {selectedItem.quantity} qty
-                                            </div>
-                                          )}
+                              <Card
+                                className={cn(
+                                  "border-2 shadow-sm transition-all",
+                                  isSelected
+                                    ? "border-purple-300 dark:border-purple-800 bg-gradient-to-br from-purple-50/80 to-violet-50/50 dark:from-purple-950/40 dark:to-violet-950/30"
+                                    : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50"
+                                )}
+                              >
+                                <CardContent className="p-4">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 space-y-2">
+                                      <div>
+                                        <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 mb-1">
+                                          {productName}
+                                        </h4>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <Badge className="font-medium text-xs px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                            {row.size}
+                                          </Badge>
+                                          <Badge className="font-medium text-xs px-2 py-0.5 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                                            {row.productType}
+                                          </Badge>
                                         </div>
                                       </div>
-                                    </CardContent>
-                                  </Card>
-                                )
-                              })}
+
+                                      <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
+                                        <span>
+                                          Available:{" "}
+                                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                            {row.availableBottles.toLocaleString()}
+                                          </span>{" "}
+                                          bottles
+                                        </span>
+                                        {row.availableBottles === 0 && (
+                                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                            Out of Stock
+                                          </Badge>
+                                        )}
+                                        {row.availableBottles > 0 && row.availableBottles <= 10 && (
+                                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-700 dark:text-amber-300">
+                                            Low Stock
+                                          </Badge>
+                                        )}
+                                      </div>
+
+                                      {isSelected && selectedItem && (
+                                        <div className="mt-4 pt-4 border-t-2 border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50/50 to-violet-50/30 dark:from-purple-950/20 dark:to-violet-950/10 rounded-lg p-4">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                              <Label htmlFor={`qty-${selectedItem.id}`} className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                <div className="h-2 w-2 rounded-full bg-purple-500"></div>
+                                                Quantity
+                                              </Label>
+                                              <div className="grid grid-cols-1 sm:grid-cols-[minmax(140px,1fr)_auto] items-center gap-2">
+                                                <Input
+                                                  id={`qty-${selectedItem.id}`}
+                                                  type="number"
+                                                  min="0"
+                                                  max={row.availableBottles}
+                                                  value={selectedItem.quantity || ""}
+                                                  onChange={(e) => updateItemQuantity(selectedItem.id, parseInt(e.target.value, 10) || 0)}
+                                                  className={cn(
+                                                    "h-11 w-full min-w-[140px] border-2 font-semibold text-slate-900 dark:text-slate-100",
+                                                    selectedItem.quantity > row.availableBottles
+                                                      ? "border-red-500 dark:border-red-500 bg-red-50 dark:bg-red-950/20 focus:border-red-600 dark:focus:border-red-600"
+                                                      : "border-purple-300 dark:border-purple-700 focus:border-purple-500 dark:focus:border-purple-500 bg-white dark:bg-slate-900"
+                                                  )}
+                                                  placeholder="0"
+                                                />
+                                                <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md">
+                                                  /{" "}
+                                                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                                    {row.availableBottles.toLocaleString()}
+                                                  </span>{" "}
+                                                  max
+                                                  {selectedItem.quantity > 0 && (
+                                                    <span className="ml-2 text-emerald-600 dark:text-emerald-400">
+                                                      (Remaining:{" "}
+                                                      <span className="font-bold">
+                                                        {Math.max(0, row.availableBottles - selectedItem.quantity).toLocaleString()}
+                                                      </span>
+                                                      )
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                              <Label htmlFor={`price-${selectedItem.id}`} className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                                                Price Per Unit
+                                              </Label>
+                                              <div className="relative">
+                                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-600 dark:text-slate-400">
+                                                  KES
+                                                </div>
+                                                <Input
+                                                  id={`price-${selectedItem.id}`}
+                                                  type="number"
+                                                  min="0"
+                                                  step="0.01"
+                                                  value={selectedItem.pricePerUnit || ""}
+                                                  onChange={(e) => updateItemPricePerUnit(selectedItem.id, parseFloat(e.target.value) || 0)}
+                                                  className="h-11 w-full pl-16 border-2 border-blue-300 dark:border-blue-700 focus:border-blue-500 dark:focus:border-blue-500 bg-white dark:bg-slate-900 font-semibold"
+                                                  placeholder="0.00"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {selectedItem.quantity > 0 && selectedItem.pricePerUnit > 0 && (
+                                            <div className="mt-4 pt-4 border-t-2 border-green-300 dark:border-green-700 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/20 rounded-lg p-3">
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
+                                                    Line Total
+                                                  </span>
+                                                </div>
+                                                <div className="text-right">
+                                                  <p className="text-2xl font-bold text-green-700 dark:text-green-400">
+                                                    KES{" "}
+                                                    {(selectedItem.quantity * selectedItem.pricePerUnit).toLocaleString(undefined, {
+                                                      minimumFractionDigits: 2,
+                                                      maximumFractionDigits: 2,
+                                                    })}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="flex flex-col gap-2">
+                                      {isSelected ? (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => removeSelectedItem(selectedItem!.id)}
+                                          className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          onClick={() => addFlavorLine(row)}
+                                          disabled={row.availableBottles === 0}
+                                          className="bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-700 hover:to-violet-800 h-9"
+                                        >
+                                          <Plus className="h-4 w-4 mr-1" />
+                                          Add
+                                        </Button>
+                                      )}
+                                      {isSelected && selectedItem && selectedItem.quantity > 0 && (
+                                        <div className="text-xs text-center font-semibold text-purple-700 dark:text-purple-400">
+                                          {selectedItem.quantity} qty
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
                             </div>
                           )}
                         </CardContent>
@@ -1249,11 +1004,9 @@ function CreateDeliveryNotePageContent() {
                                   {item.size}
                                 </Badge>
                               </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 flex-wrap mb-3">
-                                <span>Batch: {item.batchNumber}</span>
-                                <span>•</span>
-                                <span>Package: {item.packageNumber}</span>
-                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-500 mb-3">
+                                Batches and packages are assigned on save (oldest stock first).
+                              </p>
                               
                               {/* Price and Quantity Info */}
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
@@ -1462,9 +1215,9 @@ function CreateDeliveryNotePageContent() {
                               </span>
                             </div>
                             <ul className="px-3 py-2 space-y-1.5 text-sm">
-                              {items.map((i) => (
+                              {items.map((i, idx) => (
                                 <li
-                                  key={i.id}
+                                  key={`${i.packagingOutputId}-${idx}`}
                                   className="flex justify-between gap-2 text-slate-800 dark:text-slate-200"
                                 >
                                   <span className="min-w-0 truncate">
@@ -1488,54 +1241,103 @@ function CreateDeliveryNotePageContent() {
                   <div className="border-t border-slate-200 dark:border-slate-800"></div>
                 )}
 
-                {/* Items Section - Clean List Style */}
+                {/* Items Section — mirrors persisted note lines after server FIFO */}
                 {selectedItems.length > 0 && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">All line items</p>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                        {fifoPreview?.items?.length ? "Saved-style lines (preview)" : "Staff lines"}
+                      </p>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {selectedItems.filter((item) => item.quantity > 0).length} {selectedItems.filter((item) => item.quantity > 0).length === 1 ? 'item' : 'items'}
+                        {(fifoPreview?.items?.length
+                          ? fifoPreview.items.length
+                          : selectedItems.filter((item) => item.quantity > 0).length
+                        ).toLocaleString()}{" "}
+                        {(fifoPreview?.items?.length || selectedItems.filter((item) => item.quantity > 0).length) === 1
+                          ? "line"
+                          : "lines"}
                       </span>
                     </div>
                     <div className="space-y-0 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-                      {selectedItems
-                        .filter((item) => item.quantity > 0)
-                        .map((item, index) => (
-                          <div
-                            key={item.id}
-                            className={cn(
-                              "px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors",
-                              index !== selectedItems.filter((item) => item.quantity > 0).length - 1 && "border-b border-slate-200 dark:border-slate-800"
-                            )}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex-1 min-w-0 pr-4">
-                                <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
-                                  {item.productName}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                                    {item.size}
-                                  </Badge>
-                                  <span className="text-[10px] text-slate-500 dark:text-slate-500">•</span>
-                                  <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
-                                    {item.batchNumber}
-                                  </span>
+                      {fifoPreview?.items && fifoPreview.items.length > 0
+                        ? fifoPreview.items.map((item, index) => (
+                            <div
+                              key={`${item.packagingOutputId}-${index}`}
+                              className={cn(
+                                "px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors",
+                                index !== fifoPreview.items.length - 1 && "border-b border-slate-200 dark:border-slate-800"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1 min-w-0 pr-4">
+                                  <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                                    {item.productName}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                                      {item.size}
+                                    </Badge>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-500">•</span>
+                                    <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
+                                      {item.batchNumber}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <p className="font-bold text-base text-slate-900 dark:text-slate-100">
+                                    {item.quantity.toLocaleString()}
+                                  </p>
+                                  {item.pricePerUnit > 0 && (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                      @ KES{" "}
+                                      {item.pricePerUnit.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
-                              <div className="text-right flex-shrink-0">
-                                <p className="font-bold text-base text-slate-900 dark:text-slate-100">
-                                  {item.quantity.toLocaleString()}
-                                </p>
-                                {item.pricePerUnit > 0 && (
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                    @ KES {item.pricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                )}
-                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))
+                        : selectedItems
+                            .filter((item) => item.quantity > 0)
+                            .map((item, index, arr) => (
+                              <div
+                                key={item.id}
+                                className={cn(
+                                  "px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors",
+                                  index !== arr.length - 1 && "border-b border-slate-200 dark:border-slate-800"
+                                )}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1 min-w-0 pr-4">
+                                    <p className="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
+                                      {item.productName}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">
+                                        {item.size}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className="font-bold text-base text-slate-900 dark:text-slate-100">
+                                      {item.quantity.toLocaleString()}
+                                    </p>
+                                    {item.pricePerUnit > 0 && (
+                                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        @ KES{" "}
+                                        {item.pricePerUnit.toLocaleString(undefined, {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 2,
+                                        })}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                       {selectedItems.filter((item) => item.quantity > 0).length === 0 && (
                         <div className="px-4 py-8 text-center">
                           <p className="text-sm text-slate-500 dark:text-slate-400 italic">No quantities specified</p>
