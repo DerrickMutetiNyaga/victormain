@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import {
   ArrowLeft, Check, Smartphone, Loader2, MapPin, Store,
-  Shield, Truck, Wine, LogIn, Phone, User,
+  Shield, Truck, Wine, LogIn, Phone, User, Info,
 } from "lucide-react"
 import { toast } from "sonner"
 import { calculateCartTotals } from "@/lib/ecommerce/pricing"
@@ -44,6 +44,12 @@ const DEFAULT_DELIVERY_OPTIONS = [
 ] as const
 
 type DeliveryOption = { value: string; label: string; fee: number; subtext: string; icon: typeof MapPin }
+
+type OpeningHoursGate = {
+  showNotice: boolean
+  message: string | null
+  blockCheckout: boolean
+}
 
 const DEFAULT_PICKUP = "Catha Lounge – Nairobi (exact address confirmed at order)"
 
@@ -84,6 +90,7 @@ export default function CheckoutPage() {
   // M-Pesa payment number (separate from order phone, pre-filled from session)
   const [mpesaDigits, setMpesaDigits] = useState("")
   const [paymentError, setPaymentError] = useState<{ message: string; status: string } | null>(null)
+  const [hoursGate, setHoursGate] = useState<OpeningHoursGate | null>(null)
 
   /* ── Computed ── */
   const deliveryItem = deliveryOptions.find(o => o.value === selectedDelivery)
@@ -96,6 +103,11 @@ export default function CheckoutPage() {
   const isPhoneValid = phoneDigits.length === 9
   const mpesaFullPhone = `+254${mpesaDigits}`
   const isMpesaValid = mpesaDigits.length === 9
+  const closedCheckoutNotice =
+    hoursGate?.showNotice && typeof hoursGate.message === "string" && hoursGate.message.trim()
+      ? hoursGate.message.trim()
+      : null
+  const checkoutBlocked = hoursGate?.blockCheckout === true
 
   /* ── Pre-fill phone from session ── */
   useEffect(() => {
@@ -132,6 +144,25 @@ export default function CheckoutPage() {
       } catch {}
     }
     load()
+  }, [])
+
+  useEffect(() => {
+    const loadHours = async () => {
+      try {
+        const res = await fetch("/api/ecommerce/opening-hours-status", { cache: "no-store" })
+        const d = await res.json().catch(() => ({}))
+        if (d.success) {
+          setHoursGate({
+            showNotice: Boolean(d.showNotice),
+            message: typeof d.message === "string" ? d.message : null,
+            blockCheckout: Boolean(d.blockCheckout),
+          })
+        }
+      } catch {
+        setHoursGate(null)
+      }
+    }
+    loadHours()
   }, [])
 
   /* ── Payment status polling (M-Pesa txn → checkout session → real order id) ── */
@@ -233,6 +264,10 @@ export default function CheckoutPage() {
     if (!selectedDelivery) { toast.error("Please select a delivery option"); return }
     if (showLocationInput && !locationNote.trim()) { toast.error("Please enter your location or area"); return }
     if (!mpesaEnabled) { toast.error("M-Pesa payment is not available. Please contact support."); return }
+    if (checkoutBlocked) {
+      toast.error(closedCheckoutNotice || "Checkout is temporarily unavailable during closed hours.")
+      return
+    }
     setMpesaDigits(phoneDigits) // pre-fill mpesa from checkout phone
     setPaymentError(null)
     setShowMpesaDialog(true)
@@ -241,6 +276,10 @@ export default function CheckoutPage() {
   /* ── M-Pesa payment ── */
   const handleMpesaPayment = async () => {
     if (!isMpesaValid) { toast.error("Enter a valid 9-digit M-Pesa number after +254"); return }
+    if (checkoutBlocked) {
+      toast.error(closedCheckoutNotice || "Checkout is temporarily unavailable during closed hours.")
+      return
+    }
     setPaymentError(null); setProcessing(true)
     try {
       const deliveryAddress =
@@ -274,12 +313,19 @@ export default function CheckoutPage() {
       })
       if (!sessionRes.ok) {
         let detail = "Failed to start checkout"
+        let code = ""
         try {
           const errBody = await sessionRes.json()
           if (typeof errBody?.error === "string" && errBody.error) detail = errBody.error
           else if (typeof errBody?.message === "string" && errBody.message) detail = errBody.message
+          if (typeof errBody?.code === "string") code = errBody.code
         } catch {
           /* ignore */
+        }
+        if (sessionRes.status === 403 && code === "ECOMMERCE_CLOSED") {
+          setPaymentError({ message: detail, status: "ECOMMERCE_CLOSED" })
+          setProcessing(false)
+          return
         }
         throw new Error(detail)
       }
@@ -405,6 +451,18 @@ export default function CheckoutPage() {
 
         <form id="checkout-form" onSubmit={handleSubmit}>
           <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-8 xl:gap-12">
+            {closedCheckoutNotice && (
+              <div className="lg:col-span-2 rounded-2xl border border-amber-200/90 bg-amber-50/95 p-4 sm:p-5 shadow-[0_8px_22px_rgba(120,80,20,0.08)]">
+                <div className="flex gap-3">
+                  <div className="shrink-0 h-10 w-10 rounded-xl bg-amber-100 border border-amber-200/80 flex items-center justify-center">
+                    <Info className="h-5 w-5 text-amber-800" aria-hidden />
+                  </div>
+                  <p className="text-sm sm:text-[15px] leading-relaxed text-amber-950 font-medium pt-0.5">
+                    {closedCheckoutNotice}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* LEFT: details + delivery */}
             <div className="space-y-5 lg:space-y-6">
@@ -551,6 +609,7 @@ export default function CheckoutPage() {
               <CheckoutSummary
                 cart={cart} subtotal={subtotal} deliveryFee={deliveryFee} total={total}
                 processing={processing}
+                checkoutBlocked={checkoutBlocked}
               />
             </div>
           </div>
@@ -565,6 +624,7 @@ export default function CheckoutPage() {
             total={total}
             processing={processing}
             sticky={false}
+            checkoutBlocked={checkoutBlocked}
           />
         </div>
 
@@ -581,7 +641,7 @@ export default function CheckoutPage() {
             <Button
               type="submit"
               form="checkout-form"
-              disabled={processing}
+              disabled={processing || checkoutBlocked}
               className="h-14 min-w-[180px] rounded-2xl bg-gradient-to-r from-[#2f241e] via-[#3a2d24] to-[#281e18] text-[#f8ecd6] border border-[#7d5f37]/55 font-bold shadow-lg active:scale-[0.97] disabled:opacity-50"
             >
               {processing ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Smartphone className="h-5 w-5 mr-2" />Pay with M-Pesa</>}
@@ -609,13 +669,21 @@ export default function CheckoutPage() {
                 </DialogDescription>
               </DialogHeader>
 
+              {closedCheckoutNotice && !paymentError && (
+                <div className="rounded-xl border border-amber-200/90 bg-amber-50 p-3 mb-4 flex gap-2 text-sm text-amber-950">
+                  <Info className="h-4 w-4 shrink-0 mt-0.5 text-amber-800" />
+                  <span>{closedCheckoutNotice}</span>
+                </div>
+              )}
+
               {/* Error box */}
               {paymentError && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
                   <p className="text-sm font-bold text-red-800 mb-1">
                     {paymentError.status === "CANCELLED" ? "Payment Cancelled" :
                      paymentError.status === "FAILED" ? "Payment Failed" :
-                     paymentError.status === "TIMEOUT" ? "Timeout" : "Error"}
+                     paymentError.status === "TIMEOUT" ? "Timeout" :
+                     paymentError.status === "ECOMMERCE_CLOSED" ? "Checkout unavailable" : "Error"}
                   </p>
                   <p className="text-sm text-red-700">{paymentError.message}</p>
                 </div>
@@ -691,7 +759,7 @@ export default function CheckoutPage() {
                   <>
                     <Button
                       onClick={handleMpesaPayment}
-                      disabled={!isMpesaValid || processing || !!pendingCheckoutSessionId}
+                      disabled={!isMpesaValid || processing || !!pendingCheckoutSessionId || checkoutBlocked}
                       className="flex-1 h-13 rounded-xl font-bold bg-gradient-to-r from-[#2f241e] via-[#3a2d24] to-[#281e18] text-[#f8ecd6] border border-[#7d5f37]/55 shadow-lg disabled:opacity-40"
                     >
                       {processing
@@ -714,8 +782,9 @@ export default function CheckoutPage() {
 }
 
 /* ─────────────── checkout summary card ─────────────── */
-function CheckoutSummary({ cart, subtotal, deliveryFee, total, processing, sticky = true }: {
+function CheckoutSummary({ cart, subtotal, deliveryFee, total, processing, sticky = true, checkoutBlocked }: {
   cart: any[]; subtotal: number; deliveryFee: number; total: number; processing: boolean; sticky?: boolean
+  checkoutBlocked?: boolean
 }) {
   return (
     <div className={cn(
@@ -761,12 +830,14 @@ function CheckoutSummary({ cart, subtotal, deliveryFee, total, processing, stick
         <Button
           type="submit"
           form="checkout-form"
-          disabled={processing}
+          disabled={processing || checkoutBlocked}
           className="w-full h-14 rounded-2xl bg-gradient-to-r from-[#2f241e] via-[#3a2d24] to-[#281e18] text-[#f8ecd6] border border-[#7d5f37]/55 font-black text-base shadow-lg hover:from-[#3a2c23] hover:via-[#47372d] hover:to-[#332720] active:scale-[0.98] disabled:opacity-50 transition-all"
         >
           {processing
             ? <span className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" />Processing…</span>
-            : <><Smartphone className="h-5 w-5 mr-2" />Proceed to Payment</>
+            : checkoutBlocked
+              ? <span>Unavailable · closed hours</span>
+              : <><Smartphone className="h-5 w-5 mr-2" />Proceed to Payment</>
           }
         </Button>
 

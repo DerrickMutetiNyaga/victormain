@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,24 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
 import { staff } from "@/lib/dummy-data"
-import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store } from "lucide-react"
+import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  evaluateEcommerceOpeningHours,
+  validateEcommerceOpeningHoursPayload,
+  type EcommerceOpeningHoursSettings,
+} from "@/lib/ecommerce-opening-hours"
+
+const EO_DAY_DEFS: { value: number; label: string }[] = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+]
 
 interface Settings {
   businessInfo?: {
@@ -71,6 +88,7 @@ interface Settings {
       enabled: boolean
     }>
   }
+  ecommerceOpeningHours?: EcommerceOpeningHoursSettings
 }
 
 export default function SettingsPage() {
@@ -131,6 +149,29 @@ export default function SettingsPage() {
     { value: "westlands", label: "Deliver within Westlands", fee: 200, subtext: "KES 200 delivery", enabled: true },
     { value: "kilimani", label: "Deliver within Kilimani", fee: 200, subtext: "KES 200 delivery", enabled: true },
   ])
+
+  const [eoEnabled, setEoEnabled] = useState(false)
+  const [eoOpenTime, setEoOpenTime] = useState("09:00")
+  const [eoCloseTime, setEoCloseTime] = useState("18:00")
+  const [eoOpenDays, setEoOpenDays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [eoCustomNotice, setEoCustomNotice] = useState("")
+  const [eoBlockCheckout, setEoBlockCheckout] = useState(false)
+
+  const eoPreview = useMemo(
+    () =>
+      evaluateEcommerceOpeningHours(
+        {
+          enabled: eoEnabled,
+          openingTime: eoOpenTime,
+          closingTime: eoCloseTime,
+          openDays: eoOpenDays,
+          customNotice: eoCustomNotice,
+          blockCheckoutWhenClosed: eoBlockCheckout,
+        },
+        new Date()
+      ),
+    [eoEnabled, eoOpenTime, eoCloseTime, eoOpenDays, eoCustomNotice, eoBlockCheckout]
+  )
 
   // Load settings on mount
   useEffect(() => {
@@ -203,6 +244,18 @@ export default function SettingsPage() {
             if (settings.delivery.options && settings.delivery.options.length > 0) {
               setDeliveryOptions(settings.delivery.options)
             }
+          }
+
+          const eoh = settings.ecommerceOpeningHours
+          if (eoh) {
+            setEoEnabled(!!eoh.enabled)
+            setEoOpenTime(typeof eoh.openingTime === "string" ? eoh.openingTime : "09:00")
+            setEoCloseTime(typeof eoh.closingTime === "string" ? eoh.closingTime : "18:00")
+            if (Array.isArray(eoh.openDays) && eoh.openDays.length) {
+              setEoOpenDays([...new Set(eoh.openDays.map((n: number) => Number(n)).filter((n) => n >= 0 && n <= 6))].sort((a, b) => a - b))
+            }
+            setEoCustomNotice(typeof eoh.customNotice === "string" ? eoh.customNotice : "")
+            setEoBlockCheckout(!!eoh.blockCheckoutWhenClosed)
           }
         }
       } catch (error) {
@@ -584,6 +637,41 @@ export default function SettingsPage() {
     }
   }
 
+  const saveEcommerceOpeningHours = async () => {
+    const payload = {
+      enabled: eoEnabled,
+      openingTime: eoOpenTime.trim(),
+      closingTime: eoCloseTime.trim(),
+      openDays: eoOpenDays,
+      customNotice: eoCustomNotice.trim(),
+      blockCheckoutWhenClosed: eoBlockCheckout,
+    }
+    const validated = validateEcommerceOpeningHoursPayload(payload)
+    if (!validated.ok) {
+      sonnerToast.error(validated.error)
+      return
+    }
+    setSaving(true)
+    try {
+      const response = await fetch("/api/catha/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ecommerceOpeningHours: validated.value }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        sonnerToast.success("E-commerce opening hours saved")
+      } else {
+        sonnerToast.error(typeof data.error === "string" ? data.error : "Failed to save")
+      }
+    } catch (e) {
+      console.error(e)
+      sonnerToast.error("Failed to save e-commerce opening hours")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -628,6 +716,10 @@ export default function SettingsPage() {
               <TabsTrigger value="delivery" className="gap-2">
                 <Truck className="h-4 w-4" />
                 Delivery
+              </TabsTrigger>
+              <TabsTrigger value="ecommerce-hours" className="gap-2">
+                <Clock className="h-4 w-4" />
+                Opening hours
               </TabsTrigger>
             </TabsList>
 
@@ -1355,6 +1447,137 @@ export default function SettingsPage() {
 
                   <Button onClick={saveDelivery} disabled={saving}>
                     {saving ? "Saving..." : "Save Delivery Settings"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="ecommerce-hours" className="space-y-6">
+              <Card className="border-border bg-card">
+                <CardHeader>
+                  <CardTitle className="text-card-foreground flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Ecommerce opening hours
+                  </CardTitle>
+                  <CardDescription>
+                    Show a notice on the public checkout page when the business is closed (Nairobi time). Customers can still pay unless you enable blocking below.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <p className="text-sm text-muted-foreground border border-border rounded-lg p-3 bg-muted/30">
+                    All ecommerce time checks use Nairobi time (EAT).
+                  </p>
+
+                  <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+                    <div>
+                      <Label htmlFor="eo-enabled" className="text-base font-semibold">
+                        Enable ecommerce operating-hours notice
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        When enabled, closed periods show a notice before payment on checkout.
+                      </p>
+                    </div>
+                    <Switch id="eo-enabled" checked={eoEnabled} onCheckedChange={setEoEnabled} />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="eo-open">Opening time (24h HH:mm)</Label>
+                      <Input
+                        id="eo-open"
+                        value={eoOpenTime}
+                        onChange={(e) => setEoOpenTime(e.target.value)}
+                        placeholder="09:00"
+                        disabled={!eoEnabled}
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="eo-close">Closing time (24h HH:mm)</Label>
+                      <Input
+                        id="eo-close"
+                        value={eoCloseTime}
+                        onChange={(e) => setEoCloseTime(e.target.value)}
+                        placeholder="18:00"
+                        disabled={!eoEnabled}
+                        className="font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label>Open days</Label>
+                    <div className="flex flex-wrap gap-4">
+                      {EO_DAY_DEFS.map(({ value, label }) => (
+                        <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox
+                            checked={eoOpenDays.includes(value)}
+                            disabled={!eoEnabled}
+                            onCheckedChange={(c) => {
+                              const on = c === true
+                              setEoOpenDays((prev) => {
+                                if (on) return [...new Set([...prev, value])].sort((a, b) => a - b)
+                                return prev.filter((d) => d !== value)
+                              })
+                            }}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Same-day hours only; closing must be after opening.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="eo-custom">Optional custom checkout notice</Label>
+                    <Textarea
+                      id="eo-custom"
+                      value={eoCustomNotice}
+                      onChange={(e) => setEoCustomNotice(e.target.value)}
+                      disabled={!eoEnabled}
+                      placeholder="If set, this text replaces the default closed message when the store is closed."
+                      rows={3}
+                      className="resize-y min-h-[80px]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed border-border p-4 bg-muted/15">
+                    <div>
+                      <Label htmlFor="eo-block" className="text-base font-semibold">
+                        Block checkout while closed
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Optional: when on, checkout session creation is rejected during closed hours. Off by default (notice only).
+                      </p>
+                    </div>
+                    <Switch id="eo-block" checked={eoBlockCheckout} onCheckedChange={setEoBlockCheckout} disabled={!eoEnabled} />
+                  </div>
+
+                  <Separator />
+
+                  <div>
+                    <Label className="font-semibold">Live preview (Nairobi)</Label>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Reflects the form above using the shared evaluator (not your device timezone).
+                    </p>
+                    <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-sm">
+                      <p>
+                        <span className="text-muted-foreground">Store status:</span>{" "}
+                        <span className="font-medium">{eoPreview.isOpen ? "Open" : "Closed"}</span>
+                      </p>
+                      {eoPreview.isClosed && eoEnabled && (
+                        <div className="rounded-md border border-amber-200/80 bg-amber-50 dark:bg-amber-950/30 p-3 text-amber-950 dark:text-amber-100">
+                          {eoPreview.message}
+                        </div>
+                      )}
+                      {(!eoEnabled || eoPreview.isOpen) && (
+                        <p className="text-muted-foreground">No checkout notice would be shown.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <Button onClick={saveEcommerceOpeningHours} disabled={saving}>
+                    {saving ? "Saving..." : "Save ecommerce opening hours"}
                   </Button>
                 </CardContent>
               </Card>

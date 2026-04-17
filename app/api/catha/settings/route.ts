@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import {
+  defaultEcommerceOpeningHours,
+  validateEcommerceOpeningHoursPayload,
+  type EcommerceOpeningHoursSettings,
+} from '@/lib/ecommerce-opening-hours'
 
 export interface Settings {
   _id?: string
@@ -58,6 +63,7 @@ export interface Settings {
       enabled: boolean
     }>
   }
+  ecommerceOpeningHours?: EcommerceOpeningHoursSettings
   createdAt?: Date
   updatedAt?: Date
 }
@@ -117,6 +123,7 @@ const defaultSettings: Settings = {
       { value: 'kilimani', label: 'Deliver within Kilimani', fee: 200, subtext: 'KES 200 delivery', enabled: true },
     ],
   },
+  ecommerceOpeningHours: { ...defaultEcommerceOpeningHours },
 }
 
 export async function GET() {
@@ -179,6 +186,10 @@ export async function GET() {
       etims: { ...defaultSettings.etims, ...(settings.etims || {}) },
       mpesa: { ...defaultSettings.mpesa, ...(settings.mpesa || {}) },
       delivery: { ...defaultSettings.delivery, ...(settings.delivery || {}) },
+      ecommerceOpeningHours: {
+        ...defaultEcommerceOpeningHours,
+        ...(settings as { ecommerceOpeningHours?: EcommerceOpeningHoursSettings }).ecommerceOpeningHours,
+      },
       _id: settings._id,
       createdAt: settings.createdAt,
       updatedAt: updatedTimestamp,
@@ -236,7 +247,14 @@ export async function PUT(request: Request) {
     if (body.delivery !== undefined) {
       updateData.delivery = body.delivery
     }
-    
+    if (body.ecommerceOpeningHours !== undefined) {
+      const validated = validateEcommerceOpeningHoursPayload(body.ecommerceOpeningHours)
+      if (!validated.ok) {
+        return NextResponse.json({ success: false, error: validated.error }, { status: 400 })
+      }
+      updateData.ecommerceOpeningHours = validated.value
+    }
+
     // Set createdAt on first creation
     const existing = await db.collection<Settings>('catha_settings').findOne({})
     if (!existing) {

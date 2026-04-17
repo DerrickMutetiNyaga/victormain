@@ -18,6 +18,11 @@ import {
   reserveStockForCheckoutSessionAtomic,
   releaseCheckoutSessionReservation,
 } from '@/lib/ecommerce-stock-reservation'
+import {
+  defaultEcommerceOpeningHours,
+  evaluateEcommerceOpeningHours,
+  type EcommerceOpeningHoursSettings,
+} from '@/lib/ecommerce-opening-hours'
 
 async function resolveDeliveryFeeKes(
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -86,6 +91,20 @@ export async function POST(request: Request) {
 
     const body = parsed.data
     const db = await getDatabase('infusion_jaba')
+
+    const settingsDoc = await db.collection('catha_settings').findOne({})
+    const hoursRaw = (settingsDoc as { ecommerceOpeningHours?: unknown } | null)?.ecommerceOpeningHours
+    const hoursMerged: EcommerceOpeningHoursSettings = {
+      ...defaultEcommerceOpeningHours,
+      ...(hoursRaw && typeof hoursRaw === 'object' ? (hoursRaw as object) : {}),
+    }
+    const hoursEval = evaluateEcommerceOpeningHours(hoursMerged, new Date())
+    if (hoursEval.isClosed && hoursMerged.blockCheckoutWhenClosed) {
+      return NextResponse.json(
+        { success: false, error: hoursEval.message, code: 'ECOMMERCE_CLOSED' },
+        { status: 403 }
+      )
+    }
 
     const staleSessions = await db
       .collection(ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION)
