@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 
@@ -193,13 +194,13 @@ export default function JabaBarcodesPage() {
                   Copies per label
                 </p>
                 <div className="flex items-center gap-2">
-                  <input
+                  <Input
                     type="number"
                     min={1}
                     max={50}
                     value={copiesPerLabel}
                     onChange={(e) => handleCopiesChange(e.target.value)}
-                    className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                    className="w-20 px-2 py-1 text-sm"
                   />
                   <span className="text-xs text-muted-foreground">per distinct product</span>
                 </div>
