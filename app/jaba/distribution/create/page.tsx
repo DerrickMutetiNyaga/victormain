@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, Suspense } from "react"
+import { useState, useEffect, useLayoutEffect, useMemo, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { FileText, Save, Plus, X, Package, Hash, Truck, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
+import { FileText, Save, Plus, X, Package, Truck, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -49,9 +49,6 @@ function CreateDeliveryNotePageContent() {
   /** All batches from API — required for correct FIFO ordering vs packaging outputs */
   const [allBatches, setAllBatches] = useState<any[]>([])
   const [packagingOutputs, setPackagingOutputs] = useState<any[]>([])
-  /** Up to two batch document IDs to narrow the product list (optional). */
-  const [batchFilter1, setBatchFilter1] = useState("")
-  const [batchFilter2, setBatchFilter2] = useState("")
   const [deliveryNoteId, setDeliveryNoteId] = useState<string>("")
   const [loadingNoteId, setLoadingNoteId] = useState(true)
   const [distributors, setDistributors] = useState<any[]>([])
@@ -202,34 +199,23 @@ function CreateDeliveryNotePageContent() {
 
   const selectedDistributor = distributors.find((d) => (d._id || d.id) === distributorId)
 
-  const focusedBatchIds = useMemo(() => {
-    const a = batchFilter1.trim()
-    const b = batchFilter2.trim()
-    const out: string[] = []
-    if (a) out.push(a)
-    if (b && b !== a) out.push(b)
-    return out
-  }, [batchFilter1, batchFilter2])
+  /** Legacy URLs used `?batch=…`; allocation is global — strip so the address bar matches behavior. */
+  useLayoutEffect(() => {
+    if (!searchParams.get("batch")) return
+    const p = new URLSearchParams(searchParams.toString())
+    p.delete("batch")
+    const qs = p.toString()
+    router.replace(qs ? `/jaba/distribution/create?${qs}` : "/jaba/distribution/create", { scroll: false })
+  }, [searchParams, router])
 
-  const isBatchFilterActive = focusedBatchIds.length > 0
-
-  const batchId = (b: any) => String(b._id ?? b.id ?? "")
-
-  const batchesForDropdown = useMemo(() => {
-    return allBatches.filter((b: any) =>
-      ["Ready for Distribution", "Partially Packaged", "Partially Allocated", "Fully Allocated"].includes(b.status) &&
-      ((b.bottles250ml || 0) + (b.bottles500ml || 0) + (b.bottles1L || 0) + (b.bottles2L || 0) > 0)
-    )
-  }, [allBatches])
+  const editQueryKey = searchParams.get("edit") ?? ""
 
   const flavorSizeGroups = useMemo(() => {
-    const allowed =
-      focusedBatchIds.length > 0 ? new Set(focusedBatchIds.map((id) => String(id))) : null
     return listFlavorSizePickupGroups(packagingOutputs, allBatches, deliveryNotes, {
       excludeNoteId: isEditMode && editingNoteId ? editingNoteId : null,
-      allowedBatchIds: allowed,
+      allowedBatchIds: null,
     })
-  }, [packagingOutputs, allBatches, deliveryNotes, isEditMode, editingNoteId, focusedBatchIds])
+  }, [packagingOutputs, allBatches, deliveryNotes, isEditMode, editingNoteId])
 
   const selectedItemsWithFreshAvail = useMemo(() => {
     return selectedItems.map((item) => {
@@ -276,23 +262,9 @@ function CreateDeliveryNotePageContent() {
     return map
   }, [fifoPreview])
 
-  const focusedBatchLabels = useMemo(
-    () =>
-      focusedBatchIds
-        .map((id) => allBatches.find((b) => batchId(b) === id))
-        .filter(Boolean)
-        .map((b: any) => String(b.batchNumber)),
-    [focusedBatchIds, allBatches]
-  )
-
-  // Fetch batches and packaging outputs; optional ?batch= pre-fills first filter
   useEffect(() => {
-    const batchParam = searchParams.get("batch")
-    if (batchParam) {
-      setBatchFilter1(batchParam)
-    }
     fetchData()
-  }, [searchParams])
+  }, [editQueryKey])
 
   const fetchData = async () => {
     try {
@@ -590,123 +562,20 @@ function CreateDeliveryNotePageContent() {
               </CardContent>
             </Card>
 
-            {/* Optional: narrow to one or two batches */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50/80 to-white dark:from-slate-900 dark:to-slate-950 shadow-md">
-              <CardHeader className="pb-3 border-b border-slate-200 dark:border-slate-800">
-                <CardTitle className="text-base font-bold text-card-foreground flex items-center gap-2">
-                  <Hash className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-                  Batches to distribute from (optional, max 2)
-                </CardTitle>
-                <p className="text-xs text-muted-foreground font-normal mt-1">
-                  Leave empty to list every batch that has packaged stock. Pick one or two batch numbers to focus the list and summaries below.
-                </p>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Batch 1</Label>
-                    <Select
-                      value={batchFilter1 || "__none__"}
-                      onValueChange={(v) => setBatchFilter1(v === "__none__" ? "" : v)}
-                      disabled={loading}
-                    >
-                      <SelectTrigger className="h-11 border-2">
-                        <SelectValue placeholder="Any batch" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Any batch</SelectItem>
-                        {batchesForDropdown.map((b) => (
-                          <SelectItem key={batchId(b)} value={batchId(b)}>
-                            {b.batchNumber}
-                            {b.flavor ? ` — ${b.flavor}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Batch 2</Label>
-                    <Select
-                      value={batchFilter2 || "__none__"}
-                      onValueChange={(v) => setBatchFilter2(v === "__none__" ? "" : v)}
-                      disabled={loading}
-                    >
-                      <SelectTrigger className="h-11 border-2">
-                        <SelectValue placeholder="Second batch (optional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">None</SelectItem>
-                        {batchesForDropdown.map((b) => (
-                          <SelectItem key={`2-${batchId(b)}`} value={batchId(b)}>
-                            {b.batchNumber}
-                            {b.flavor ? ` — ${b.flavor}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                {isBatchFilterActive && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setBatchFilter1("")
-                        setBatchFilter2("")
-                      }}
-                    >
-                      Clear batch filters
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      Showing: {focusedBatchLabels.join(" · ") || focusedBatchIds.join(", ")}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Select Products from Batches */}
+            {/* Select finished products (flavour + bottle size) */}
             <Card className="border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50/50 to-violet-50/30 dark:from-purple-950/20 dark:to-violet-950/10 shadow-lg">
               <CardHeader className="bg-gradient-to-r from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/20 border-b border-purple-200 dark:border-purple-900/50">
                 <CardTitle className="text-lg font-bold text-card-foreground flex items-center gap-2">
                   <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/30">
                     <Package className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
-                  {isBatchFilterActive ? (
-                    <>
-                      Select products — {focusedBatchLabels.length} batch
-                      {focusedBatchLabels.length === 1 ? "" : "es"} ({focusedBatchLabels.join(" · ")})
-                    </>
-                  ) : (
-                    <>Select finished products ({flavorSizeGroups.length} flavour + size with stock)</>
-                  )}
+                  <span>Select finished products ({flavorSizeGroups.length} flavour + size with stock)</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-3">
                 <p className="text-xs text-muted-foreground rounded-lg border border-purple-200/60 dark:border-purple-900/40 bg-purple-50/40 dark:bg-purple-950/20 px-3 py-2">
                   Choose flavour and bottle size only. The server allocates oldest packaged batches and packages automatically when you save — batch and package numbers from the browser are never used for stock.
                 </p>
-                {isBatchFilterActive && flavorSizeGroups.length > 0 && (
-                  <div className="rounded-xl border-2 border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 space-y-2 mb-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                      Packaged stock (selected batches only)
-                    </p>
-                    <ul className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
-                      {flavorSizeGroups.map((row) => (
-                        <li key={row.groupKey} className="flex justify-between gap-2">
-                          <span>
-                            {row.displayFlavor} · {row.size}
-                          </span>
-                          <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
-                            {row.availableBottles.toLocaleString()} avail
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 {loading ? (
                   <div className="text-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-purple-600 mx-auto mb-3" />
@@ -716,29 +585,11 @@ function CreateDeliveryNotePageContent() {
                   <div className="text-center py-12 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
                     <Package className="h-12 w-12 text-slate-400 dark:text-slate-500 mx-auto mb-3" />
                     <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">
-                      {isBatchFilterActive
-                        ? "No packaged stock left for the selected batch(es)"
-                        : "No distributable packaged stock"}
+                      No distributable packaged stock
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                      {isBatchFilterActive
-                        ? "Try another batch or clear filters"
-                        : "Packaging output may be missing or already fully allocated on delivery notes"}
+                      Packaging output may be missing or already fully allocated on delivery notes
                     </p>
-                    {isBatchFilterActive && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="mt-4"
-                        onClick={() => {
-                          setBatchFilter1("")
-                          setBatchFilter2("")
-                        }}
-                      >
-                        Show all batches
-                      </Button>
-                    )}
                   </div>
                 ) : (
                   flavorSizeGroups.map((row) => {

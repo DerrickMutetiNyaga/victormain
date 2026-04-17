@@ -1354,7 +1354,7 @@ export default function BatchesPage() {
                             {/* Show distribution button ONLY if has available stock (packaged - distributed > 0) */}
                             {((batch.status === "Ready for Distribution" || batch.status === "Partially Packaged") && 
                               getAvailableStock(batch) > 0) && (
-                              <Link href={`/jaba/distribution/create?batch=${batch._id || batch.id}`}>
+                              <Link href="/jaba/distribution/create">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1482,7 +1482,7 @@ export default function BatchesPage() {
                                             </Link>
                                           )}
                                           {countAvailableBottlesForFlavourRow(fk as any, packagingOutputs, deliveryNotes) > 0 && (
-                                            <Link href={`/jaba/distribution/create?batch=${batch._id || batch.id}&flavourLineId=${fk._id || fk.id}`}>
+                                            <Link href="/jaba/distribution/create">
                                               <Button variant="outline" size="sm" className="h-8 text-xs border-violet-300 text-violet-800">
                                                 Ship
                                               </Button>
@@ -1721,7 +1721,7 @@ export default function BatchesPage() {
                           ((batch.status === "Ready for Distribution" || batch.status === "Partially Packaged") && 
                           getAvailableStock(batch) > 0)
                       })() && (
-                        <Link href={`/jaba/distribution/create?batch=${batch._id || batch.id}`} className="flex-1">
+                        <Link href="/jaba/distribution/create" className="flex-1">
                           <Button
                             variant="outline"
                             size="sm"

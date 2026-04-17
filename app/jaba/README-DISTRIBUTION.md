@@ -25,7 +25,7 @@ There is **no separate `/jaba/distribution/dispatch` page**; dispatch is express
 ### 2.1 Prerequisites on the production side
 
 1. **Packaging** must exist in `jaba_packagingOutput` with `containers[]` (per size quantities) for the batch (and flavour line when applicable).
-2. **Batches** eligible to appear on the create form are those whose status is one of: `Ready for Distribution`, `Partially Packaged`, `Partially Allocated`, `Fully Allocated`, and which have at least some bottle counts (implementation filters in `distribution/create/page.tsx`).
+2. **`jaba_batches`** supplies batch metadata (batch number, dates, flavour, product category) used to **order FIFO** and resolve packaging rows. Create is **global**: staff pick **flavour + bottle size + quantity + price** only; **no `?batch=`** scoping (legacy query param is stripped on `/jaba/distribution/create`).
 
 ### 2.2 Partners
 
@@ -36,11 +36,11 @@ There is **no separate `/jaba/distribution/dispatch` page**; dispatch is express
 
 | Step | Where | What happens |
 |------|--------|----------------|
-| Open create flow | **`/jaba/distribution/create`** | Permission: `distribution.create` (add). |
+| Open create flow | **`/jaba/distribution/create`** | Permission: `distribution.create` (add). Global product list from all packaged stock; **`?batch=` is ignored** (removed from the URL). |
 | Suggested next `noteId` | `GET /api/jaba/delivery-notes/next-id` | Scans existing notes, finds max `DN-###` in range 1–999, returns next padded id. **This route does not enforce Jaba session** in code—treat as implementation detail; protect at edge if needed. |
 | Load stock context | Same page | Fetches **`/api/jaba/batches`**, **`/api/jaba/packaging-output`**, **`/api/jaba/delivery-notes`** to compute **what is still available** to allocate (packaged minus quantities already on **any** delivery note, all statuses). |
 | Choose distributor | UI | Uses distributor list from **`/api/jaba/distributors`**. |
-| Submit new note | `POST /api/jaba/delivery-notes` | Permission: `distribution.create` + `add`. Runs **stock validation in a Mongo transaction** (see §3). |
+| Submit new note | `POST /api/jaba/delivery-notes` | Permission: `distribution.create` + `add`. Body sends staff lines (flavour / size / qty / price). Server runs **FIFO allocation + stock validation in a Mongo transaction** (see §3). |
 | Edit existing note | Same page with edit query | `PUT /api/jaba/delivery-notes` with full payload + line items (see §4). |
 
 After save, the app typically returns operators to **`/jaba/distribution`** (list).
@@ -67,21 +67,18 @@ After save, the app typically returns operators to **`/jaba/distribution`** (lis
 
 ---
 
-## 3. Stock validation (authoritative rules on create)
+## 3. Stock validation & FIFO allocation (authoritative rules on create / full item edit)
 
-`POST /api/jaba/delivery-notes` runs inside a **MongoDB transaction**:
+`POST /api/jaba/delivery-notes` and **`PUT` when `items` are sent** run inside a **MongoDB transaction** using `lib/jaba-delivery-note-fifo-allocation.ts`:
 
-1. Load **all** `jaba_packagingOutput` and **all** `jaba_batches` (to map `batchId` → `batchNumber`).
-2. Load **all** existing `jaba_deliveryNotes`.
-3. For each requested line item (qty &gt; 0), match packaging rows where:
-   - resolved **batch number** equals the item’s `batchNumber`, and  
-   - **flavour line** matches (`flavourLineId` on both sides, or neither has a flavour id for base batch lines).
-4. **Sum packaged** bottles per **size** from matching packaging `containers`.
-5. **Sum already distributed** bottles for the same batch + size + flavour line across **all existing delivery notes** (every status counts toward allocated quantity).
-6. **Available** = packaged − already on notes. If **requested &gt; available**, the transaction aborts with `400` and a clear error string.
-7. Insert the document with default **`status: 'Pending'`**, **`paymentStatus: 'Unpaid'`**, timestamps, `totalCost`, optional vehicle/driver fields.
+1. Load **all** `jaba_packagingOutput`, **all** `jaba_batches`, and **all** existing `jaba_deliveryNotes` (for **`PUT`**, the current note’s id is **excluded** from consumption math, then lines are **re-derived** from scratch).
+2. The client sends **staff lines only**: flavour (or `flavourLineId`), bottle size, quantity, price per unit (plus display fields). **Batch number and package number from the client are not used** for allocation.
+3. The server builds **per–packaging-output × size** slots, subtracts already-allocated quantities (including legacy lines without `packagingOutputId` via FIFO-style attribution within each batch + flavour + size bucket), and sorts slots **oldest batch first**, then oldest packaging session within the batch.
+4. For each staff line, it **walks slots in order** and fills requested quantity until satisfied or stock runs out. If quantity exceeds total remaining for that flavour + size, the transaction aborts with **`400`**.
+5. Persisted **`items[]`** hold the **split lines** (each with real `batchNumber`, `packageNumber`, `packagingOutputId`, `batchId`, quantities, `pricePerUnit`, `totalCost`). **`totalCost`** on the note is **recomputed server-side** (rounded KES). **`fifoAllocationTrace`** records internal audit slices per staff line.
+6. Insert / update with default **`status: 'Pending'`** on create, **`paymentStatus: 'Unpaid'`** on create, timestamps, optional vehicle/driver fields.
 
-**Important:** Because “already distributed” counts **all** notes, you cannot over-book stock with overlapping Pending/In Transit notes. That is separate from **dashboard** “finished goods” stock math (§5).
+**Important:** “Already distributed” still counts **all** notes (every status) for availability, so overlapping Pending notes still consume packaged stock. That is separate from **dashboard** “finished goods” stock math when it filters by **Delivered** (§5).
 
 ---
 
@@ -98,7 +95,7 @@ All mutations go through **`/api/jaba/delivery-notes`** unless noted.
 
 So **every** `PUT` path (including status-only or payment-only) is gated the same way in code. The list and create pages **often call `PUT` without that header**; if updates fail with OTP / super-admin errors, that matches the current server implementation.
 
-When `items` are present, the handler re-runs **availability checks** similar to `POST`, but excludes the current note’s id when summing “other” notes and **adds back** the line’s previous quantity for that specific line match (so edits can shrink or grow within true availability). Missing `publicShortToken` on old documents can be **backfilled** on update.
+When `items` are present, the handler applies the **same FIFO derivation as `POST`**, excluding the current note from stock math then **replacing** `items` with newly derived slices (no reliance on prior batch/package lines from the client). Missing `publicShortToken` on old documents can be **backfilled** on update.
 
 ### 4.2 `DELETE`
 
@@ -154,6 +151,7 @@ Exact checks use `lib/jaba-permissions.ts` and `requireJabaAction` in `lib/api-j
 | List / print / status / payment / delete UI | `app/jaba/distribution/page.tsx` |
 | Create / edit form | `app/jaba/distribution/create/page.tsx` |
 | Delivery notes API | `app/api/jaba/delivery-notes/route.ts` |
+| FIFO allocation + availability helpers | `lib/jaba-delivery-note-fifo-allocation.ts` |
 | Next `DN-###` id | `app/api/jaba/delivery-notes/next-id/route.ts` |
 | Public JSON by token | `app/api/jaba/public/delivery-note/[token]/route.ts` |
 | Short public URL page | `app/dn/[slug]/page.tsx` + `app/delivery-note/[token]/delivery-note-public-client.tsx` |
