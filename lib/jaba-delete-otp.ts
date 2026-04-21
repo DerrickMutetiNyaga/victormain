@@ -20,6 +20,20 @@ function generateOtp(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
+/**
+ * mongodb@6+ returns the matched document from findOneAndUpdate; older drivers
+ * returned ModifyResult { value: doc | null }.
+ */
+function findOneAndUpdateResultDoc(r: unknown): Record<string, unknown> | null {
+  if (r == null || typeof r !== 'object') return null
+  const o = r as Record<string, unknown>
+  if ('value' in o && o.value !== undefined && !('_id' in o)) {
+    const inner = o.value
+    return inner != null && typeof inner === 'object' ? (inner as Record<string, unknown>) : null
+  }
+  return o
+}
+
 export async function requestDeleteOtp(params: {
   action: DeleteAction
   targetId: string
@@ -68,7 +82,10 @@ export async function verifyDeleteOtpResult(params: {
   requestedBy: string
   otp: string
 }): Promise<VerifyDeleteOtpResult> {
-  const otpTrim = params.otp.trim()
+  const raw = params.otp.trim()
+  const digitsOnly = raw.replace(/\D/g, '')
+  // Stored codes are 6 digits; accept pasted formats like "123 456" or "123-456"
+  const otpTrim = digitsOnly.length === 6 ? digitsOnly : raw
   if (!otpTrim) {
     return { ok: false, reason: 'missing_header' }
   }
@@ -91,7 +108,7 @@ export async function verifyDeleteOtpResult(params: {
     { returnDocument: 'before' }
   )
 
-  if (r?.value) {
+  if (findOneAndUpdateResultDoc(r)) {
     return { ok: true }
   }
 
