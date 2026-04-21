@@ -486,7 +486,7 @@ export async function GET(
   }
 }
 
-// DELETE batch by ID — super_admin only (DB role + OTP). Same bar as bulk root purge.
+// DELETE batch by ID — super_admin only (DB role + OTP).
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }

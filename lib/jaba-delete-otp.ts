@@ -1,15 +1,12 @@
 import clientPromise from '@/lib/mongodb'
 import { normalizePhoneNumbers, sendJabaSmsStrict } from '@/lib/jaba-sms'
-import { hashJabaBulkPurgeToken } from '@/lib/jaba-bulk-purge-crypto'
 
 const DB_NAME = 'infusion_jaba'
 const COLLECTION = 'jaba_delete_otps'
 const OTP_EXPIRY_MINUTES = 10
-const BULK_DELETE_OTP_EXPIRY_MINUTES = 5
 
 export type DeleteAction =
   | 'delete_batch'
-  | 'delete_all_batches'
   | 'delete_packaging'
   | 'delete_delivery_note'
   | 'delete_raw_material'
@@ -23,24 +20,14 @@ function generateOtp(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
 
-/** Stored on OTP rows so bulk-delete OTPs never store the raw purge token in this collection. */
-function storageTargetIdForOtp(action: DeleteAction, targetId: string): string {
-  if (action === 'delete_all_batches') {
-    return hashJabaBulkPurgeToken(targetId)
-  }
-  return targetId
-}
-
 export async function requestDeleteOtp(params: {
   action: DeleteAction
   targetId: string
   requestedBy: string
-  /** Override default expiry (e.g. shorter for bulk). */
+  /** Override default expiry. */
   expiryMinutes?: number
 }) {
-  const defaultMinutes =
-    params.action === 'delete_all_batches' ? BULK_DELETE_OTP_EXPIRY_MINUTES : OTP_EXPIRY_MINUTES
-  const minutes = params.expiryMinutes ?? defaultMinutes
+  const minutes = params.expiryMinutes ?? OTP_EXPIRY_MINUTES
   const expiresAt = new Date(Date.now() + minutes * 60 * 1000)
   const targetNumbers = normalizePhoneNumbers(process.env.OT_NUMBER || '')
 
@@ -52,7 +39,7 @@ export async function requestDeleteOtp(params: {
 
   const client = await clientPromise
   const db = client.db(DB_NAME)
-  const storageTargetId = storageTargetIdForOtp(params.action, params.targetId)
+  const storageTargetId = params.targetId
   const otp = generateOtp()
 
   await db.collection(COLLECTION).insertOne({
@@ -89,7 +76,7 @@ export async function verifyDeleteOtpResult(params: {
   const client = await clientPromise
   const db = client.db(DB_NAME)
   const now = new Date()
-  const storageTargetId = storageTargetIdForOtp(params.action, params.targetId)
+  const storageTargetId = params.targetId
 
   const r = await db.collection(COLLECTION).findOneAndUpdate(
     {

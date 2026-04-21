@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Hash, Tag, LayoutGrid, List, Loader2, X, Save, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX, FlaskConical, GitBranch, AlertTriangle } from "lucide-react"
+import { Eye, Edit, Truck, Plus, Search, Filter, Factory, TrendingUp, Package, CheckSquare, Hash, Tag, LayoutGrid, List, Loader2, X, Save, Boxes, Warehouse, Lock, ChevronDown, ChevronUp, PackageX, FlaskConical, GitBranch } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -17,8 +17,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from "@/components/ui/label"
 import { useJabaPermissions } from "@/hooks/use-jaba-permissions"
 import { countAvailableBottlesForFlavourRow } from "@/lib/jaba-flavour-lines"
-import { JABA_PURGE_MONGODB_TRANSACTIONS_REQUIRED_CODE } from "@/lib/jaba-purge-constants"
-
 interface FlavourOutputRow {
   _id: string
   id: string
@@ -107,17 +105,13 @@ interface Batch {
 }
 
 type DeleteIntent = {
-  action: "delete_batch" | "delete_flavour_output" | "delete_flavor" | "delete_all_batches"
+  action: "delete_batch" | "delete_flavour_output" | "delete_flavor"
   targetId: string
   title: string
   description: string
   confirmLabel: string
   successMessage: string
   requestUrl: string
-  /** When set, user must type this exact string (bulk delete). */
-  requiredConfirmPhrase?: string
-  /** Server-issued token; OTP is bound to this value. */
-  purgeToken?: string
 }
 
 // Helper function to get shift badge colors
@@ -195,8 +189,6 @@ export default function BatchesPage() {
   const [deleteOtp, setDeleteOtp] = useState("")
   const [deleteOtpSent, setDeleteOtpSent] = useState(false)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
-  const [bulkDeleteConfirmPhrase, setBulkDeleteConfirmPhrase] = useState("")
-
   const toggleBatchExpand = (bid: string) => {
     if (!bid) return
     setExpandedBatchIds((prev) => {
@@ -287,7 +279,6 @@ export default function BatchesPage() {
   const deleteFlavourOutput = async (childId: string, parentLabel: string) => {
     setDeleteOtp("")
     setDeleteOtpSent(false)
-    setBulkDeleteConfirmPhrase("")
     setDeleteIntent({
       action: "delete_flavour_output",
       targetId: childId,
@@ -308,7 +299,6 @@ export default function BatchesPage() {
     }
     setDeleteOtp("")
     setDeleteOtpSent(false)
-    setBulkDeleteConfirmPhrase("")
     setDeleteIntent({
       action: "delete_batch",
       targetId: batchId,
@@ -408,7 +398,6 @@ export default function BatchesPage() {
   const handleDeleteFlavor = async (flavorId: string, flavorName: string) => {
     setDeleteOtp("")
     setDeleteOtpSent(false)
-    setBulkDeleteConfirmPhrase("")
     setDeleteIntent({
       action: "delete_flavor",
       targetId: flavorId,
@@ -420,39 +409,6 @@ export default function BatchesPage() {
     })
   }
 
-  const prepareBulkDeleteAllBatches = async () => {
-    setDeleteSubmitting(true)
-    try {
-      const prep = await fetch("/api/jaba/batches/bulk-delete-prepare", { method: "POST" })
-      const data = await prep.json().catch(() => ({}))
-      if (!prep.ok) {
-        throw new Error(data.error || "Could not start secure purge session")
-      }
-      const purgeToken = String(data.purgeToken || "")
-      if (!purgeToken) throw new Error("Invalid server response (missing purge token)")
-
-      const rootCount = batches.length
-      setBulkDeleteConfirmPhrase("")
-      setDeleteOtp("")
-      setDeleteOtpSent(false)
-      setDeleteIntent({
-        action: "delete_all_batches",
-        targetId: purgeToken,
-        purgeToken,
-        requiredConfirmPhrase: "DELETE ALL BATCHES",
-        title: "Delete all root batches",
-        description: `You are about to permanently delete ${rootCount} root batch(es) in order. Each root is removed in one database transaction (all-or-nothing for that root). If the run stops partway, earlier roots stay deleted—this bulk action is best-effort across roots, not one giant transaction. Stock: ingredient refunds and packaging rows that store materialsUsed are restored; very old packaging rows without materialsUsed are removed without an automatic raw stock refund (reconcile manually if needed). Orphan rows not tied to a listed root are out of scope. This cannot be undone. A one-time OTP will be sent to the operations number.`,
-        confirmLabel: "Delete all root batches",
-        successMessage: "All root batches (and their linked data) were removed.",
-        requestUrl: "/api/jaba/batches",
-      })
-    } catch (error: any) {
-      toast.error(error.message || "Failed to prepare bulk delete")
-    } finally {
-      setDeleteSubmitting(false)
-    }
-  }
-
   const handleDeleteWithOtp = async () => {
     const intent = deleteIntent
     if (!intent) return
@@ -461,44 +417,19 @@ export default function BatchesPage() {
       if (!deleteOtp.trim()) {
         throw new Error("Enter the OTP from the SMS")
       }
-      if (intent.requiredConfirmPhrase && bulkDeleteConfirmPhrase.trim() !== intent.requiredConfirmPhrase) {
-        throw new Error(`Type exactly: ${intent.requiredConfirmPhrase}`)
-      }
-
       const headers: Record<string, string> = { "x-delete-otp": deleteOtp.trim() }
       const init: RequestInit = { method: "DELETE", headers }
-      if (intent.action === "delete_all_batches") {
-        headers["Content-Type"] = "application/json"
-        init.body = JSON.stringify({
-          purgeToken: intent.purgeToken,
-          confirmPhrase: bulkDeleteConfirmPhrase.trim(),
-        })
-      }
 
       const response = await fetch(intent.requestUrl, init)
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        let msg = typeof data.error === "string" ? data.error : "Failed to delete"
-        if (data.code === JABA_PURGE_MONGODB_TRANSACTIONS_REQUIRED_CODE) {
-          msg = `${msg} Configure MongoDB as a replica set (e.g. Atlas); standalone servers cannot run purge transactions.`
-        }
-        if (typeof data.warning === "string" && data.warning.trim()) {
-          msg = `${msg} — ${data.warning}`
-        }
+        const msg = typeof data.error === "string" ? data.error : "Failed to delete"
         throw new Error(msg)
       }
 
-      if (intent.action === "delete_all_batches") {
-        toast.success(intent.successMessage, {
-          description:
-            "Each root was purged in its own DB transaction. Deleting many roots is best-effort: if one root fails, earlier roots are already committed.",
-        })
-      } else {
-        toast.success(intent.successMessage)
-      }
+      toast.success(intent.successMessage)
       setDeleteIntent(null)
       setDeleteOtp("")
-      setBulkDeleteConfirmPhrase("")
       if (intent.action === "delete_flavor") {
         await fetchFlavors()
       } else {
@@ -908,18 +839,6 @@ export default function BatchesPage() {
           <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mt-0.5">Manage and track production batches</p>
         </div>
         <div className="flex items-center gap-2">
-          {isSuperAdmin && batches.length > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
-              disabled={deleteSubmitting}
-              onClick={() => void prepareBulkDeleteAllBatches()}
-            >
-              <AlertTriangle className="mr-2 h-4 w-4" />
-              Delete all root batches…
-            </Button>
-          )}
           {canCreate && (
             <Link href="/jaba/batches/add">
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
@@ -2283,7 +2202,6 @@ export default function BatchesPage() {
             setDeleteIntent(null)
             setDeleteOtp("")
             setDeleteOtpSent(false)
-            setBulkDeleteConfirmPhrase("")
           }
         }}
       >
@@ -2294,22 +2212,6 @@ export default function BatchesPage() {
           </DialogHeader>
 
           <div className="space-y-3">
-            {deleteIntent?.action === "delete_all_batches" && (
-              <div className="rounded-lg border border-red-200 bg-red-50/80 dark:bg-red-950/30 dark:border-red-900 p-3 text-xs text-red-900 dark:text-red-200 space-y-2">
-                <p className="font-semibold">Danger zone</p>
-                <p>
-                  Type <strong className="font-mono">DELETE ALL BATCHES</strong> exactly (case and spaces matter),
-                  then request the OTP and submit.
-                </p>
-                <Input
-                  value={bulkDeleteConfirmPhrase}
-                  onChange={(e) => setBulkDeleteConfirmPhrase(e.target.value)}
-                  placeholder="DELETE ALL BATCHES"
-                  className="font-mono text-sm bg-white dark:bg-slate-900"
-                  autoComplete="off"
-                />
-              </div>
-            )}
             <div className="text-xs text-muted-foreground rounded-lg border p-2">
               Tap <strong>Send OTP</strong> first. When the SMS arrives, enter the code and tap{" "}
               <strong>Submit OTP and delete</strong> to complete the action.
@@ -2338,12 +2240,7 @@ export default function BatchesPage() {
             <Button
               variant="destructive"
               onClick={() => void handleDeleteWithOtp()}
-              disabled={
-                deleteSubmitting ||
-                !deleteOtp.trim() ||
-                (deleteIntent?.requiredConfirmPhrase != null &&
-                  bulkDeleteConfirmPhrase.trim() !== deleteIntent.requiredConfirmPhrase)
-              }
+              disabled={deleteSubmitting || !deleteOtp.trim()}
               className="w-full"
             >
               Submit OTP and delete
@@ -2354,7 +2251,6 @@ export default function BatchesPage() {
                 setDeleteIntent(null)
                 setDeleteOtp("")
                 setDeleteOtpSent(false)
-                setBulkDeleteConfirmPhrase("")
               }}
               className="w-full"
             >
