@@ -7,6 +7,7 @@ import {
   baseLinkedListFromOrder,
   recalculateOrderPaymentsAfterLinks,
 } from '@/lib/catha-append-mpesa-payment'
+import { deleteMpesaOrderAllocation, refreshMpesaTransactionLinkMetadata } from '@/lib/catha-mpesa-order-allocations'
 
 export async function POST(request: Request) {
   try {
@@ -57,10 +58,8 @@ export async function POST(request: Request) {
       }
     )
 
-    await db.collection('mpesa_transactions').updateOne(
-      { _id: new ObjectId(transactionId) },
-      { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: now } }
-    )
+    await deleteMpesaOrderAllocation(db, orderId, transactionId)
+    await refreshMpesaTransactionLinkMetadata(db, transactionId)
 
     await recalculateOrderPaymentsAfterLinks(db, orderId)
 

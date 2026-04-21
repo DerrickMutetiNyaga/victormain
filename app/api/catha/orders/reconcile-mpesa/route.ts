@@ -64,7 +64,12 @@ export async function POST() {
         continue
       }
 
-      const result = await appendMpesaPaymentToOrder(db, { orderId, transactionId, linkedBy })
+      const result = await appendMpesaPaymentToOrder(db, {
+        orderId,
+        transactionId,
+        linkedBy,
+        allocationMode: 'full_transaction',
+      })
       if (result.ok) {
         reconciled++
       } else {

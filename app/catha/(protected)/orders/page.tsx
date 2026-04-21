@@ -225,6 +225,7 @@ export default function OrdersPage() {
   const [mpesaLinkCandidates, setMpesaLinkCandidates] = useState<any[]>([])
   const [loadingMpesaCandidates, setLoadingMpesaCandidates] = useState(false)
   const [selectedMpesaTransactionId, setSelectedMpesaTransactionId] = useState<string | null>(null)
+  const [mpesaAllocationInput, setMpesaAllocationInput] = useState("")
   const [linkingMpesaTransaction, setLinkingMpesaTransaction] = useState(false)
   const [mpesaRequestStatus, setMpesaRequestStatus] = useState<"idle" | "sent" | "waiting" | "paid" | "failed">("idle")
   const [printingOrder, setPrintingOrder] = useState<Transaction | null>(null)
@@ -741,6 +742,7 @@ export default function OrdersPage() {
     setMpesaExactAmountSearch(hint > 0 ? String(hint.toFixed(2)) : "")
     setMpesaLinkCandidates([])
     setSelectedMpesaTransactionId(null)
+    setMpesaAllocationInput("")
     const existingPhone = String((order as any).customerPhone || "")
     setMpesaPhoneNumber(existingPhone)
     setPaymentCustomerPhone(existingPhone)
@@ -821,13 +823,28 @@ export default function OrdersPage() {
       toast.error("Select a valid M-Pesa transaction first.")
       return
     }
+    const allocNum = Number(mpesaAllocationInput)
+    if (!Number.isFinite(allocNum) || allocNum <= 0) {
+      toast.error("Enter a valid allocation amount (KSh) greater than zero.")
+      return
+    }
+    const txRow = mpesaLinkCandidates.find((t) => t.id === selectedMpesaTransactionId)
+    const rem = txRow != null ? Number(txRow.remainingUnallocated ?? txRow.amount ?? 0) : null
+    if (rem != null && Number.isFinite(rem) && allocNum > rem + 0.005) {
+      toast.error(`Allocation exceeds remaining transaction balance (KSh ${rem.toFixed(2)}).`)
+      return
+    }
     setLinkingMpesaTransaction(true)
     try {
       const response = await fetch("/api/catha/orders/link-mpesa", {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: processingPayment.id, transactionId: selectedMpesaTransactionId }),
+        body: JSON.stringify({
+          orderId: processingPayment.id,
+          transactionId: selectedMpesaTransactionId,
+          allocatedAmount: allocNum,
+        }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error || "Failed to link transaction")
@@ -845,11 +862,13 @@ export default function OrdersPage() {
         setProcessingPayment(null)
         setSelectedPaymentMethod("")
         setSelectedMpesaTransactionId(null)
+        setMpesaAllocationInput("")
       } else {
         toast.success(`M-Pesa payment linked — balance KSh ${Number(data?.summary?.balanceDue ?? 0).toFixed(2)} remaining`)
         const updated = { ...processingPayment, ...patch } as Transaction
         setProcessingPayment(updated)
         setSelectedMpesaTransactionId(null)
+        setMpesaAllocationInput("")
         const bal = Number(data?.summary?.balanceDue ?? 0)
         setMpesaExactAmountSearch(bal > 0 ? bal.toFixed(2) : "")
         loadMpesaLinkCandidates("recent")
@@ -948,7 +967,7 @@ export default function OrdersPage() {
               method: "POST",
               cache: "no-store",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orderId: currentOrderId, transactionId: transaction.id }),
+              body: JSON.stringify({ orderId: currentOrderId, transactionId: transaction.id, linkSource: "stk" }),
             })
             const linkData = await linkRes.json()
             if (linkRes.ok) {
@@ -3349,7 +3368,7 @@ export default function OrdersPage() {
                         </div>
                       )}
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold text-slate-700">Available to link (unlinked only)</p>
+                        <p className="text-xs font-semibold text-slate-700">Transactions with remaining balance</p>
                         <Button
                           type="button"
                           size="sm"
@@ -3360,6 +3379,22 @@ export default function OrdersPage() {
                           <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loadingMpesaCandidates ? "animate-spin" : ""}`} />
                           Refresh
                         </Button>
+                      </div>
+                      <div className="space-y-1.5 rounded-md border border-amber-100 bg-amber-50/60 p-2">
+                        <Label className="text-xs font-semibold text-amber-950">Allocate to this order (KSh)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="h-9 text-sm font-mono"
+                          value={mpesaAllocationInput}
+                          onChange={(e) => setMpesaAllocationInput(e.target.value)}
+                          placeholder="e.g. 500.00"
+                        />
+                        <p className="text-[10px] text-amber-900/90 leading-snug">
+                          One M-Pesa payment can be split across several orders. Enter how much of the selected
+                          transaction should apply to this order (cannot exceed the transaction&apos;s remaining balance).
+                        </p>
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs font-medium">Optional: list transactions with exact amount</Label>
@@ -3386,11 +3421,24 @@ export default function OrdersPage() {
                         {!loadingMpesaCandidates && candidateTxs.length === 0 && (
                           <p className="text-xs text-slate-600">
                             {mpesaCandidatesLoadModeRef.current === "exact"
-                              ? `No completed M-Pesa transactions found for this amount (KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)}). Matching payments may already be linked to other orders, or none exist yet.`
-                              : "No completed M-Pesa transactions right now. Tap Refresh or search by exact amount."}
+                              ? `No completed M-Pesa transactions found for this amount (KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)}), or every match is already fully allocated.`
+                              : "No completed M-Pesa transactions with spare balance right now. Tap Refresh or search by exact amount."}
                           </p>
                         )}
-                        {candidateTxs.map((tx) => (
+                        {candidateTxs.map((tx) => {
+                          const rem = Number(tx.remainingUnallocated ?? tx.amount ?? 0)
+                          const alloc = Number(tx.allocatedTotal ?? 0)
+                          const statusLabel =
+                            tx.allocationStatus === "full"
+                              ? "Fully allocated"
+                              : tx.allocationStatus === "partial"
+                                ? "Partially allocated"
+                                : "Unallocated"
+                          const otherOrders =
+                            Array.isArray(tx.linkedOrderIds) && tx.linkedOrderIds.length > 0
+                              ? tx.linkedOrderIds.join(", ")
+                              : null
+                          return (
                             <label
                               key={tx.id}
                               className="block rounded-md border p-2 text-xs bg-white border-slate-200 cursor-pointer hover:border-green-300"
@@ -3401,19 +3449,35 @@ export default function OrdersPage() {
                                   name="selected-mpesa-transaction"
                                   className="mt-1"
                                   checked={selectedMpesaTransactionId === tx.id}
-                                  onChange={() => setSelectedMpesaTransactionId(tx.id)}
+                                  onChange={() => {
+                                    setSelectedMpesaTransactionId(tx.id)
+                                    const live = summarizeCathaOrderPayments(processingPayment as any)
+                                    const rem = Math.max(0, Number(tx.remainingUnallocated ?? tx.amount ?? 0))
+                                    const due = Math.max(0, live.balanceDue)
+                                    const def = due > 0.005 ? Math.min(due, rem) : rem
+                                    setMpesaAllocationInput(def > 0 ? def.toFixed(2) : "")
+                                  }}
                                 />
                                 <div className="flex-1 space-y-0.5">
                                   <p className="font-semibold">Receipt: {tx.mpesaReceiptNumber || tx.mpesaRef || tx.transactionId || "—"}</p>
                                   <p>M-Pesa Ref: {tx.checkoutRequestId || tx.transactionId || "—"}</p>
-                                  <p>Amount: KSh {Number(tx.amount || 0).toFixed(2)}</p>
+                                  <p>Transaction amount: KSh {Number(tx.amount || 0).toFixed(2)}</p>
+                                  <p className="text-slate-700">
+                                    Allocated (all orders): KSh {alloc.toFixed(2)} · Remaining:{" "}
+                                    <span className="font-semibold text-amber-800">KSh {rem.toFixed(2)}</span>
+                                  </p>
+                                  <p className="text-slate-600">
+                                    {statusLabel}
+                                    {otherOrders ? ` · Orders: ${otherOrders}` : ""}
+                                  </p>
                                   <p>Phone: {tx.phoneNumber || "—"}</p>
                                   <p>Date/Time: {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "—"}</p>
                                   <p>Type: {tx.transactionType || "—"}</p>
                                 </div>
                               </div>
                             </label>
-                          ))}
+                          )
+                        })}
                       </div>
                     </div>
                     )
@@ -3448,7 +3512,12 @@ export default function OrdersPage() {
               {selectedPaymentMethod === "mpesa" && mpesaFlowTab === "link" ? (
                 <Button
                   onClick={handleLinkMpesaTransaction}
-                  disabled={!selectedMpesaTransactionId || linkingMpesaTransaction}
+                  disabled={
+                    !selectedMpesaTransactionId ||
+                    linkingMpesaTransaction ||
+                    !mpesaAllocationInput.trim() ||
+                    Number(mpesaAllocationInput) <= 0
+                  }
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   {linkingMpesaTransaction ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Linking...</> : <><Smartphone className="h-4 w-4 mr-2" />Link M-Pesa payment</>}

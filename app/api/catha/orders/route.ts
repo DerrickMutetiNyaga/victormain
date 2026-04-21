@@ -18,6 +18,7 @@ import {
 } from '@/lib/inventory-ops'
 import { formatCathaOrderForApi } from '@/lib/catha-order-payments'
 import { baseLinkedListFromOrder } from '@/lib/catha-append-mpesa-payment'
+import { deleteAllAllocationsForOrder, refreshMpesaTransactionLinkMetadata } from '@/lib/catha-mpesa-order-allocations'
 import { filterInventoryStockLineItems, orderLineFingerprintParts } from '@/lib/catha-order-inventory-lines'
 import { buildOrdersListMongoFilter, mergeCathaOrdersMainListFilter } from '@/lib/catha-orders-list-filter'
 import { computeOrdersDashboardSummary } from '@/lib/catha-orders-dashboard-summary'
@@ -546,12 +547,11 @@ export async function PUT(request: Request) {
     if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'mpesa') {
       const wasMpesa = String(existingOrder.paymentMethod || '').toLowerCase() === 'mpesa'
       if (wasMpesa) {
-        for (const p of baseLinkedListFromOrder(existingOrder)) {
+        const linkedBefore = baseLinkedListFromOrder(existingOrder)
+        await deleteAllAllocationsForOrder(db, id)
+        for (const p of linkedBefore) {
           if (ObjectId.isValid(p.transactionId)) {
-            await db.collection('mpesa_transactions').updateOne(
-              { _id: new ObjectId(p.transactionId) },
-              { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
-            )
+            await refreshMpesaTransactionLinkMetadata(db, p.transactionId)
           }
         }
       }
@@ -586,12 +586,11 @@ export async function PUT(request: Request) {
       }
       updateData.stockDeducted = false
       updateData.stockReleasedAt = new Date()
-      for (const p of baseLinkedListFromOrder(existingOrder)) {
+      const linkedTerminal = baseLinkedListFromOrder(existingOrder)
+      await deleteAllAllocationsForOrder(db, id)
+      for (const p of linkedTerminal) {
         if (ObjectId.isValid(p.transactionId)) {
-          await db.collection('mpesa_transactions').updateOne(
-            { _id: new ObjectId(p.transactionId) },
-            { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
-          )
+          await refreshMpesaTransactionLinkMetadata(db, p.transactionId)
         }
       }
       updateData.linkedPayments = []
@@ -745,12 +744,11 @@ export async function DELETE(request: Request) {
       }
     }
 
-    for (const p of baseLinkedListFromOrder(order)) {
+    const linkedDelete = baseLinkedListFromOrder(order)
+    await deleteAllAllocationsForOrder(db, id)
+    for (const p of linkedDelete) {
       if (ObjectId.isValid(p.transactionId)) {
-        await db.collection('mpesa_transactions').updateOne(
-          { _id: new ObjectId(p.transactionId) },
-          { $unset: { linked_order_id: '', linked_at: '', linked_by: '' }, $set: { updatedAt: new Date() } }
-        )
+        await refreshMpesaTransactionLinkMetadata(db, p.transactionId)
       }
     }
 

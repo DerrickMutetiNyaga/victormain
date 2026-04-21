@@ -3,6 +3,34 @@ import { normalizeMpesaStatus } from '@/lib/mpesa-status'
 import { summarizeCathaOrderPayments, type LinkedMpesaPayment } from '@/lib/catha-order-payments'
 import { normalizeMpesaReceiptCode } from '@/lib/mpesa-receipt-normalize'
 import { escapeRegex } from '@/lib/catha-orders-list-filter'
+import {
+  ensureMpesaOrderAllocationsIndexes,
+  materializeAllocationsFromOrders,
+  sumAllocationsForTransaction,
+  getAllocationAmountForPair,
+  upsertMpesaOrderAllocation,
+  refreshMpesaTransactionLinkMetadata,
+  MONEY_EPS,
+  roundMoney,
+  type AllocationTotalsForApi,
+  buildAllocationTotalsForApi,
+  listOrderIdsForTransaction,
+} from '@/lib/catha-mpesa-order-allocations'
+
+export type AppendMpesaPaymentParams = {
+  orderId: string
+  transactionId: string
+  linkedBy: string
+  /** When set, this amount is applied to the order (must fit remaining transaction balance). */
+  allocatedAmount?: number | null
+  notes?: string | null
+  /**
+   * When allocatedAmount is omitted:
+   * - full_transaction — min(remaining, full tx amount) for STK / reconcile flows
+   * - order_balance_then_tx — min(remaining, order balance due), else min(remaining, tx amount) when already settled
+   */
+  allocationMode?: 'full_transaction' | 'order_balance_then_tx'
+}
 
 export type AppendMpesaResult =
   | {
@@ -13,6 +41,7 @@ export type AppendMpesaResult =
       linkedPayments: LinkedMpesaPayment[]
       mpesaReceiptNumber: string | null
       linkedAt: Date
+      transactionAllocation: AllocationTotalsForApi
     }
   | { ok: false; error: string; status: number }
 
@@ -58,14 +87,15 @@ export function baseLinkedListFromOrder(order: any): LinkedMpesaPayment[] {
   ]
 }
 
-export async function appendMpesaPaymentToOrder(
-  db: Db,
-  params: { orderId: string; transactionId: string; linkedBy: string }
-): Promise<AppendMpesaResult> {
-  const { orderId, transactionId, linkedBy } = params
+export async function appendMpesaPaymentToOrder(db: Db, params: AppendMpesaPaymentParams): Promise<AppendMpesaResult> {
+  const { orderId, transactionId, linkedBy, notes } = params
+  const allocationMode = params.allocationMode ?? 'order_balance_then_tx'
+
   if (!orderId || !transactionId || !ObjectId.isValid(transactionId)) {
     return { ok: false, error: 'Invalid order or transaction', status: 400 }
   }
+
+  await ensureMpesaOrderAllocationsIndexes(db)
 
   const order = await db.collection('orders').findOne({ id: orderId })
   if (!order) return { ok: false, error: 'Order not found', status: 404 }
@@ -78,7 +108,11 @@ export async function appendMpesaPaymentToOrder(
     return { ok: false, error: 'Only completed M-Pesa transactions can be linked', status: 400 }
   }
 
-  const txAmt = Number(tx.amount || 0)
+  const txAmt = roundMoney(Number(tx.amount || 0))
+  if (txAmt <= 0) {
+    return { ok: false, error: 'M-Pesa transaction has no positive amount', status: 400 }
+  }
+
   const phone = tx.phone_number != null ? String(tx.phone_number) : null
   const mpesaReceiptNumber =
     tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null
@@ -88,71 +122,109 @@ export async function appendMpesaPaymentToOrder(
     mpesaReceiptNumber != null ? String(mpesaReceiptNumber) : tx.transaction_id != null ? String(tx.transaction_id) : ''
   )
 
-  // —— Global duplicate: transaction already tied to another order ——
-  const otherOrder = await db.collection('orders').findOne({
-    id: { $ne: orderId },
-    $or: [{ mpesaTransactionId: transactionId }, { 'linkedPayments.transactionId': transactionId }],
-  })
-  if (otherOrder) {
-    return {
-      ok: false,
-      error: `This M-Pesa payment is already linked to order ${otherOrder.id}. Each payment can only be attached to one order.`,
-      status: 409,
+  await materializeAllocationsFromOrders(db, transactionId)
+  const totalAllocatedBefore = await sumAllocationsForTransaction(db, transactionId)
+  const thisPairBefore = await getAllocationAmountForPair(db, orderId, transactionId)
+  const othersAllocated = roundMoney(totalAllocatedBefore - thisPairBefore)
+  const room = roundMoney(txAmt - othersAllocated)
+
+  const listSansThis = baseLinkedListFromOrder(order).filter((p) => p.transactionId !== transactionId)
+  const orderSansThisTx = { ...order, linkedPayments: listSansThis, mpesaTransactionId: null }
+  const preSummary = summarizeCathaOrderPayments(orderSansThisTx)
+  const balanceDue = roundMoney(preSummary.balanceDue)
+
+  let requested: number
+  if (params.allocatedAmount != null && !Number.isNaN(Number(params.allocatedAmount))) {
+    requested = roundMoney(Number(params.allocatedAmount))
+  } else if (allocationMode === 'full_transaction') {
+    requested = roundMoney(Math.min(room, txAmt))
+  } else {
+    if (balanceDue > MONEY_EPS) {
+      requested = roundMoney(Math.min(room, balanceDue))
+    } else {
+      requested = roundMoney(Math.min(room, txAmt))
     }
   }
 
-  const existingGlobal = await db.collection('mpesa_transactions').findOne({ _id: new ObjectId(transactionId) })
-  const glo = existingGlobal?.linked_order_id
-  if (glo && String(glo) !== orderId) {
+  if (requested <= MONEY_EPS) {
     return {
       ok: false,
-      error: `This M-Pesa payment is already linked to order ${String(glo)}. Each payment can only be attached to one order.`,
-      status: 409,
+      error:
+        room <= MONEY_EPS
+          ? 'This M-Pesa transaction has no remaining balance to allocate (fully used on other orders).'
+          : 'Allocation amount must be greater than zero.',
+      status: 400,
     }
   }
 
-  // —— Same M-Pesa receipt / code cannot be used on two orders ——
+  if (requested > room + MONEY_EPS) {
+    return {
+      ok: false,
+      error: `Allocation KSh ${requested.toFixed(2)} exceeds remaining transaction balance KSh ${room.toFixed(2)}.`,
+      status: 400,
+    }
+  }
+
+  // —— Same receipt on a different M-Pesa transaction record already in use ——
   if (receiptNorm.length >= 3) {
     const rx = new RegExp(`^${escapeRegex(receiptNorm)}$`, 'i')
-    const orderReceiptDup = await db.collection('orders').findOne({
-      id: { $ne: orderId },
-      $or: [{ mpesaReceiptNumber: rx }, { linkedPayments: { $elemMatch: { receiptNumber: rx } } }],
-    })
-    if (orderReceiptDup) {
-      return {
-        ok: false,
-        error: `This M-Pesa receipt/code is already attached to order ${orderReceiptDup.id}.`,
-        status: 409,
-      }
-    }
-    const txReceiptDup = await db.collection('mpesa_transactions').findOne({
+    const otherTx = await db.collection('mpesa_transactions').findOne({
       _id: { $ne: new ObjectId(transactionId) },
-      linked_order_id: { $exists: true, $nin: [null, ''] },
       $or: [{ mpesa_receipt_number: rx }, { transaction_id: rx }],
     })
-    if (txReceiptDup && String(txReceiptDup.linked_order_id) !== orderId) {
-      return {
-        ok: false,
-        error: `This M-Pesa receipt/code is already linked to order ${String(txReceiptDup.linked_order_id)}.`,
-        status: 409,
+    if (otherTx) {
+      const otherId = String(otherTx._id)
+      const otherAlloc = await sumAllocationsForTransaction(db, otherId)
+      const legacyOther = otherTx.linked_order_id != null && String(otherTx.linked_order_id).trim() !== ''
+      if (otherAlloc > MONEY_EPS || legacyOther) {
+        return {
+          ok: false,
+          error: 'Another M-Pesa record with the same receipt is already linked. Resolve the duplicate record first.',
+          status: 409,
+        }
       }
     }
   }
 
-  let list = baseLinkedListFromOrder(order)
-  if (list.some((p) => p.transactionId === transactionId)) {
-    return { ok: false, error: 'This transaction is already linked to this order', status: 409 }
-  }
-
+  // —— Same receipt string already on this order via a different transaction id ——
   if (receiptNorm.length >= 3) {
-    const dupReceiptOnOrder = list.some((p) => {
+    const dupReceiptOnOrder = listSansThis.some((p) => {
       const pr = normalizeMpesaReceiptCode(p.receiptNumber || '')
       return pr === receiptNorm && p.transactionId !== transactionId
     })
     if (dupReceiptOnOrder) {
       return {
         ok: false,
-        error: 'This M-Pesa receipt/code is already attached to this order.',
+        error: 'This M-Pesa receipt/code is already attached to this order on a different transaction.',
+        status: 409,
+      }
+    }
+  }
+
+  // —— Another order: same receipt on a different transaction id ——
+  if (receiptNorm.length >= 3) {
+    const rx = new RegExp(`^${escapeRegex(receiptNorm)}$`, 'i')
+    const orderReceiptDup = await db.collection('orders').findOne({
+      id: { $ne: orderId },
+      $or: [
+        {
+          mpesaReceiptNumber: rx,
+          mpesaTransactionId: { $exists: true, $nin: [null, '', transactionId] },
+        },
+        {
+          linkedPayments: {
+            $elemMatch: {
+              receiptNumber: rx,
+              transactionId: { $exists: true, $ne: transactionId },
+            },
+          },
+        },
+      ],
+    })
+    if (orderReceiptDup) {
+      return {
+        ok: false,
+        error: `This M-Pesa receipt/code is already attached to order ${orderReceiptDup.id} (different transaction).`,
         status: 409,
       }
     }
@@ -169,17 +241,26 @@ export async function appendMpesaPaymentToOrder(
   }
   const transactionDateRaw = tx.transaction_date ?? tx.createdAt ?? linkedAt
 
+  const list = [...listSansThis]
   list.push({
     method: 'mpesa',
     transactionId,
     receiptNumber: mpesaReceiptNumber != null ? String(mpesaReceiptNumber) : null,
-    amount: txAmt,
+    amount: requested,
     phone,
     payerName,
     mpesaStatus: txStatus,
     transactionDate: transactionDateRaw,
     linkedAt,
     linkedBy,
+  })
+
+  await upsertMpesaOrderAllocation(db, {
+    orderId,
+    transactionId,
+    allocatedAmount: requested,
+    linkedBy,
+    notes: notes ?? null,
   })
 
   const summary = summarizeCathaOrderPayments({
@@ -236,17 +317,11 @@ export async function appendMpesaPaymentToOrder(
     }
   )
 
-  await db.collection('mpesa_transactions').updateOne(
-    { _id: new ObjectId(transactionId) },
-    {
-      $set: {
-        linked_order_id: orderId,
-        linked_at: linkedAt,
-        linked_by: linkedBy,
-        updatedAt: linkedAt,
-      },
-    }
-  )
+  await refreshMpesaTransactionLinkMetadata(db, transactionId)
+
+  const linkedIds = await listOrderIdsForTransaction(db, transactionId)
+  const totalAfter = await sumAllocationsForTransaction(db, transactionId)
+  const transactionAllocation = buildAllocationTotalsForApi(txAmt, totalAfter, linkedIds)
 
   if (orderCompleted) {
     await db.collection('menu_orders').updateOne(
@@ -283,6 +358,7 @@ export async function appendMpesaPaymentToOrder(
     })),
     mpesaReceiptNumber: mpesaReceiptNumber != null ? String(mpesaReceiptNumber) : null,
     linkedAt,
+    transactionAllocation,
   }
 }
 

@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { normalizeMpesaStatus } from '@/lib/mpesa-status'
+import {
+  MPESA_ORDER_ALLOCATIONS,
+  MONEY_EPS,
+  roundMoney,
+  buildAllocationTotalsForApi,
+  linkedMpesaRowsFromOrderDoc,
+} from '@/lib/catha-mpesa-order-allocations'
 
 export async function GET(request: Request) {
   try {
@@ -117,26 +124,90 @@ export async function GET(request: Request) {
       }
     }
 
+    const allocAgg =
+      transactionIds.length > 0
+        ? await db
+            .collection(MPESA_ORDER_ALLOCATIONS)
+            .aggregate<{ _id: string; total: number; orderIds: string[] }>([
+              { $match: { mpesaTransactionId: { $in: transactionIds } } },
+              {
+                $group: {
+                  _id: '$mpesaTransactionId',
+                  total: { $sum: '$allocatedAmount' },
+                  orderIds: { $addToSet: '$orderId' },
+                },
+              },
+            ])
+            .toArray()
+        : []
+    const allocByTx = new Map<string, { total: number; orderIds: string[] }>()
+    for (const row of allocAgg) {
+      allocByTx.set(String(row._id), {
+        total: roundMoney(Number(row.total) || 0),
+        orderIds: Array.isArray(row.orderIds) ? row.orderIds.map(String) : [],
+      })
+    }
+
+    const sumAllocatedFromOrderDocs = (txId: string) => {
+      let s = 0
+      for (const o of linkedOrders) {
+        for (const row of linkedMpesaRowsFromOrderDoc(o)) {
+          if (row.transactionId === txId) s += Number(row.amount) || 0
+        }
+      }
+      return roundMoney(s)
+    }
+
+    const orderIdsFromOrderDocs = (txId: string) => {
+      const ids: string[] = []
+      for (const o of linkedOrders) {
+        if (!o?.id) continue
+        if (linkedMpesaRowsFromOrderDoc(o).some((r) => r.transactionId === txId)) ids.push(String(o.id))
+      }
+      return ids
+    }
+
     // Format transactions
     const formattedTransactions = transactions.map((tx: any) => ({
       ...(function () {
         const txId = tx._id?.toString()
-        const orderFromTxId = txId ? orderByMpesaTxId.get(txId) : null
-        const docLinked = tx.linked_order_id != null && String(tx.linked_order_id).trim() !== ''
-        const paymentLinkedOrderId =
-          (orderFromTxId?.id != null ? String(orderFromTxId.id) : null) ||
-          (docLinked ? String(tx.linked_order_id).trim() : null) ||
-          null
-        /** Reserved = already attached to an order (DB); not merely account_reference match (STK may still need linking). */
-        const reservedByPayment = Boolean(paymentLinkedOrderId)
+        const txAmt = roundMoney(Number(tx.amount) || 0)
+        const fromAgg = txId ? allocByTx.get(txId)?.total ?? 0 : 0
+        const fromDocs = txId ? sumAllocatedFromOrderDocs(txId) : 0
+        const allocatedTotal = fromAgg > MONEY_EPS ? fromAgg : fromDocs
 
+        const idsAgg = txId ? allocByTx.get(txId)?.orderIds ?? [] : []
+        const idsDoc = txId ? orderIdsFromOrderDocs(txId) : []
+        const linkedOrderIds = Array.from(new Set([...idsAgg, ...idsDoc].filter(Boolean)))
+
+        const totals = buildAllocationTotalsForApi(txAmt, allocatedTotal, linkedOrderIds)
+
+        const orderFromTxId = txId ? orderByMpesaTxId.get(txId) : null
         const refOrder = tx.account_reference ? orderById.get(String(tx.account_reference).trim()) : null
-        const linkedOrderId = paymentLinkedOrderId || refOrder?.id || null
+
+        const linkedOrderId =
+          totals.linkedOrderIds[0] ||
+          (orderFromTxId?.id != null ? String(orderFromTxId.id) : null) ||
+          (tx.linked_order_id != null && String(tx.linked_order_id).trim() !== ''
+            ? String(tx.linked_order_id).trim()
+            : null) ||
+          refOrder?.id ||
+          null
+
+        const linked = Boolean(totals.linkedOrderIds.length > 0) || Boolean(linkedOrderId)
+        /** @deprecated use fullyAllocated — kept for older clients */
+        const reservedByPayment = totals.remainingUnallocated <= MONEY_EPS && txAmt > MONEY_EPS
+        const fullyAllocated = reservedByPayment
 
         return {
-          linked: Boolean(linkedOrderId),
+          linked,
           linkedOrderId,
+          linkedOrderIds: totals.linkedOrderIds,
           reservedByPayment,
+          fullyAllocated,
+          allocatedTotal: totals.allocatedTotal,
+          remainingUnallocated: totals.remainingUnallocated,
+          allocationStatus: totals.allocationStatus,
           mpesaRef: tx.mpesa_receipt_number || tx.transaction_id || tx.checkout_request_id || null,
         }
       })(),
@@ -159,7 +230,7 @@ export async function GET(request: Request) {
 
     let out = formattedTransactions
     if (linkableOnly) {
-      out = out.filter((t: any) => !t.reservedByPayment)
+      out = out.filter((t: any) => !t.fullyAllocated)
       if (recentLimit > 0) {
         out = out.slice(0, recentLimit)
       }

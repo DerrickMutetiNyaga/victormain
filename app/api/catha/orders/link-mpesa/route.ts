@@ -24,10 +24,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'orderId and transactionId are required' }, { status: 400 })
     }
 
+    const rawAlloc = body?.allocatedAmount
+    const allocatedAmount =
+      rawAlloc != null && rawAlloc !== '' && !Number.isNaN(Number(rawAlloc)) ? Number(rawAlloc) : null
+    const notes = body?.notes != null ? String(body.notes) : null
+    const linkSource = String(body?.linkSource || '').toLowerCase()
+    const allocationMode =
+      linkSource === 'stk' || linkSource === 'reconcile'
+        ? ('full_transaction' as const)
+        : body?.allocationMode === 'full_transaction'
+          ? ('full_transaction' as const)
+          : ('order_balance_then_tx' as const)
+
     const db = await getDatabase('infusion_jaba')
     const linkedBy = (session.user as any).name || session.user.email || 'System'
 
-    const result = await appendMpesaPaymentToOrder(db, { orderId, transactionId, linkedBy })
+    const result = await appendMpesaPaymentToOrder(db, {
+      orderId,
+      transactionId,
+      linkedBy,
+      allocatedAmount,
+      notes,
+      allocationMode,
+    })
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
@@ -43,6 +62,7 @@ export async function POST(request: Request) {
       linkedBy,
       summary: result.summary,
       linkedPayments: result.linkedPayments,
+      transactionAllocation: result.transactionAllocation,
       customerPhone: orderAfter?.customerPhone ?? null,
       customerName: orderAfter?.customerName ?? null,
     })

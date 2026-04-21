@@ -40,8 +40,25 @@ interface MpesaTransaction {
   mpesaReceiptNumber?: string
   linked?: boolean
   linkedOrderId?: string | null
+  linkedOrderIds?: string[]
+  allocatedTotal?: number
+  remainingUnallocated?: number
+  allocationStatus?: "none" | "partial" | "full"
   createdAt: string
   updatedAt: string
+}
+
+function formatMpesaLinkedOrdersLine(tx: MpesaTransaction): string {
+  if (!tx.linked) return "Not linked"
+  const ids =
+    Array.isArray(tx.linkedOrderIds) && tx.linkedOrderIds.length > 0
+      ? tx.linkedOrderIds.join(", ")
+      : tx.linkedOrderId || tx.accountReference || "Order"
+  const rem =
+    tx.remainingUnallocated != null && Number(tx.remainingUnallocated) > 0.005
+      ? ` · KSh ${Number(tx.remainingUnallocated).toFixed(2)} unallocated`
+      : ""
+  return `Linked: ${ids}${rem}`
 }
 
 export default function MpesaTransactionsPage() {
@@ -457,7 +474,7 @@ export default function MpesaTransactionsPage() {
                                 <span className="text-xs text-slate-500 truncate block">{tx.accountReference || "—"}</span>
                               )}
                               <span className={`text-[10px] ${tx.linked ? "text-emerald-700" : "text-slate-400"}`}>
-                                {tx.linked ? `Linked: ${tx.linkedOrderId || tx.accountReference || "Order"}` : "Not linked"}
+                                {formatMpesaLinkedOrdersLine(tx)}
                               </span>
                               {tx.phoneNumber && (
                                 <span className="text-[10px] text-slate-400 font-mono">{maskPhone(tx.phoneNumber)}</span>
@@ -546,7 +563,7 @@ export default function MpesaTransactionsPage() {
                               <span className="text-sm text-slate-500">{tx.accountReference || "—"}</span>
                             )}
                             <p className={`text-xs mt-1 ${tx.linked ? "text-emerald-700" : "text-slate-400"}`}>
-                              {tx.linked ? `Linked: ${tx.linkedOrderId || tx.accountReference || "Order"}` : "Not linked"}
+                              {formatMpesaLinkedOrdersLine(tx)}
                             </p>
                           </TableCell>
                           <TableCell className="py-5 pr-6 text-right border-0 align-top">
@@ -631,7 +648,7 @@ export default function MpesaTransactionsPage() {
                         <div className="text-right">
                           <span className="text-sm font-medium text-slate-900">{selectedTx.accountReference || "—"}</span>
                           <p className={`text-xs mt-1 ${selectedTx.linked ? "text-emerald-700" : "text-slate-500"}`}>
-                            {selectedTx.linked ? `Linked to ${selectedTx.linkedOrderId || selectedTx.accountReference || "order"}` : "Not linked"}
+                            {formatMpesaLinkedOrdersLine(selectedTx)}
                           </p>
                           {selectedTx.accountReference?.startsWith("TXN") && (
                             <a
