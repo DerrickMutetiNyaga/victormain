@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-jaba'
 import { getUserByEmail } from '@/lib/models/user'
 import { requestDeleteOtp, type DeleteAction } from '@/lib/jaba-delete-otp'
+import { checkRateLimit } from '@/lib/rate-limit-simple'
+import { assertJabaStatefulRequestOrigin } from '@/lib/jaba-destructive-request-guard'
 
 const ALLOWED_ACTIONS: DeleteAction[] = [
   'delete_batch',
+  'delete_all_batches',
   'delete_packaging',
   'delete_delivery_note',
   'delete_raw_material',
@@ -17,6 +20,9 @@ const ALLOWED_ACTIONS: DeleteAction[] = [
 
 export async function POST(request: NextRequest) {
   try {
+    const originBlock = assertJabaStatefulRequestOrigin(request)
+    if (originBlock) return originBlock
+
     const session = await auth()
     const email = session?.user?.email
     if (!email) {
@@ -33,6 +39,16 @@ export async function POST(request: NextRequest) {
     const targetId = String(body.targetId || '')
     if (!ALLOWED_ACTIONS.includes(action) || !targetId) {
       return NextResponse.json({ error: 'Invalid OTP request payload' }, { status: 400 })
+    }
+
+    if (action === 'delete_all_batches') {
+      const rl = checkRateLimit(`jaba-delete-otp-bulk-batches:${email}`, 4, 60 * 60 * 1000)
+      if (!rl.ok) {
+        return NextResponse.json(
+          { error: 'Too many bulk-delete OTP requests. Try again later.', retryAfterMs: rl.retryAfterMs },
+          { status: 429, headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) } }
+        )
+      }
     }
 
     await requestDeleteOtp({

@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth-jaba'
 import { getUserByEmail } from '@/lib/models/user'
-import { type DeleteAction, verifyDeleteOtp } from '@/lib/jaba-delete-otp'
+import { type DeleteAction, verifyDeleteOtpResult } from '@/lib/jaba-delete-otp'
 
-export async function requireDeleteOtp(request: Request, action: DeleteAction, targetId: string) {
+export type RequireDeleteOtpResult =
+  | { authorized: true; userEmail: string }
+  | { response: NextResponse; otpInvalid?: boolean }
+
+export async function requireDeleteOtp(
+  request: Request,
+  action: DeleteAction,
+  targetId: string
+): Promise<RequireDeleteOtpResult> {
   const session = await auth()
   const userEmail = session?.user?.email
   if (!userEmail) {
@@ -25,20 +33,25 @@ export async function requireDeleteOtp(request: Request, action: DeleteAction, t
     }
   }
 
-  const otpValid = await verifyDeleteOtp({
+  const vr = await verifyDeleteOtpResult({
     action,
     targetId,
     requestedBy: userEmail,
     otp,
   })
-  if (!otpValid) {
+
+  if (!vr.ok) {
+    const msg =
+      vr.reason === 'expired'
+        ? 'OTP has expired. Request a new OTP.'
+        : vr.reason === 'no_otp_doc'
+          ? 'No OTP session found for this action. Request a new OTP first.'
+          : 'Invalid OTP. Request a new OTP and try again.'
     return {
-      response: NextResponse.json(
-        { error: 'Invalid or expired OTP. Request a new OTP and try again.' },
-        { status: 403 }
-      ),
+      response: NextResponse.json({ error: msg, code: vr.reason }, { status: 403 }),
+      otpInvalid: vr.reason === 'bad_otp',
     }
   }
 
-  return { authorized: true as const, userEmail }
+  return { authorized: true, userEmail }
 }

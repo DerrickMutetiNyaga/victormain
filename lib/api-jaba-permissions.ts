@@ -54,7 +54,10 @@ export async function requireJabaAction(
 }
 
 /** Super-admin-only routes: role must match DB (not session/JWT alone). */
-export async function requireJabaSuperAdminDb(): Promise<
+export async function requireJabaSuperAdminDb(options?: {
+  /** Shown when the user is authenticated but not super_admin (default: "Forbidden"). */
+  forbiddenMessage?: string
+}): Promise<
   { authorized: true; userId: string; email: string } | { response: NextResponse }
 > {
   const session = await auth()
@@ -66,7 +69,12 @@ export async function requireJabaSuperAdminDb(): Promise<
     return { response: NextResponse.json({ error: 'User not found' }, { status: 404 }) }
   }
   if (user.role !== 'super_admin') {
-    return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+    return {
+      response: NextResponse.json(
+        { error: options?.forbiddenMessage ?? 'Forbidden' },
+        { status: 403 }
+      ),
+    }
   }
   return {
     authorized: true,

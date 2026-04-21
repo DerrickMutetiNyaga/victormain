@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import clientPromise from '@/lib/mongodb'
-import { requireJabaAction } from '@/lib/api-jaba-permissions'
+import { requireJabaAction, requireJabaSuperAdminDb } from '@/lib/api-jaba-permissions'
 import {
   NEUTRAL_BATCH_DISPLAY_FLAVOR,
   normalizeBatchType,
@@ -10,8 +10,9 @@ import {
 } from '@/lib/jaba-batch-utils'
 import { JABA_FLAVOUR_LINES_COLLECTION } from '@/lib/jaba-flavour-lines'
 import { loadMergedFlavourRowsForParent } from '@/lib/jaba-flavour-lines-server'
-import { findPrimaryPackagingMaterials } from '@/lib/jaba-packaging-materials'
 import { requireDeleteOtp } from '@/lib/jaba-delete-otp-guard'
+import { purgeJabaBatchGraphByRootId } from '@/lib/jaba-purge-batch-graph'
+import { JABA_PURGE_MONGODB_TRANSACTIONS_REQUIRED_CODE } from '@/lib/jaba-purge-constants'
 import { enrichIngredientsCosts } from '@/lib/jaba-ingredient-costs'
 import {
   JABA_DUPLICATE_BATCH_NUMBER_MESSAGE,
@@ -20,15 +21,6 @@ import {
 } from '@/lib/jaba-batch-number'
 
 export const runtime = 'nodejs'
-
-function normalizeQty(value: unknown): number {
-  const n = typeof value === 'number' ? value : parseFloat(String(value ?? '0'))
-  return Number.isFinite(n) ? n : 0
-}
-
-function getTotalContainerUnits(containers: Array<{ quantity?: string | number }>): number {
-  return containers.reduce((sum, c) => sum + normalizeQty(c.quantity), 0)
-}
 
 function serializeBatchDoc(batch: any) {
   return {
@@ -494,13 +486,15 @@ export async function GET(
   }
 }
 
-// DELETE batch by ID - restores materials to inventory
+// DELETE batch by ID — super_admin only (DB role + OTP). Same bar as bulk root purge.
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authResult = await requireJabaAction('production.batches', 'delete')
-  if ('response' in authResult) return authResult.response
+  const adminGate = await requireJabaSuperAdminDb({
+    forbiddenMessage: 'Only super admins can delete batches',
+  })
+  if ('response' in adminGate) return adminGate.response
 
   try {
     const { id } = await params
@@ -519,185 +513,33 @@ export async function DELETE(
 
     const client = await clientPromise
     const db = client.db('infusion_jaba')
-    const { ObjectId } = await import('mongodb')
 
-    // Find batch to get ingredients
-    const batch = await db.collection('jaba_batches').findOne({ _id: new ObjectId(id) })
-    
-    if (!batch) {
-      return NextResponse.json(
-        { error: 'Batch not found' },
-        { status: 404 }
-      )
-    }
-
-    const batchIdsToDelete = new Set<string>([id])
-    const batchNumbersToDelete = new Set<string>([String(batch.batchNumber || '')])
-    const flavourLineIdsToDelete = new Set<string>()
-
-    if (!batch.parentBatchId) {
-      const legacyChildren = await db.collection('jaba_batches').find({ parentBatchId: id }).toArray()
-      for (const child of legacyChildren) {
-        batchIdsToDelete.add(String(child._id))
-        batchNumbersToDelete.add(String(child.batchNumber || ''))
+    const purge = await purgeJabaBatchGraphByRootId(db, id)
+    if (!purge.ok) {
+      if ('notFound' in purge && purge.notFound) {
+        return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
       }
-      const lines = await db
-        .collection(JABA_FLAVOUR_LINES_COLLECTION)
-        .find({ parentBatchId: id })
-        .project({ _id: 1 })
-        .toArray()
-      for (const line of lines) {
-        flavourLineIdsToDelete.add(String(line._id))
-      }
-    }
-
-    // Restore materials for every batch row we are deleting.
-    const batchDocsToDelete = await db
-      .collection('jaba_batches')
-      .find({ _id: { $in: Array.from(batchIdsToDelete).map((x) => new ObjectId(x)) } })
-      .toArray()
-
-    for (const b of batchDocsToDelete) {
-      if (!b.ingredients || !Array.isArray(b.ingredients) || b.ingredients.length === 0) continue
-      for (const ingredient of b.ingredients) {
-        const materialName = ingredient.material
-        const quantity = Number(ingredient.quantity)
-        if (!materialName || quantity <= 0) continue
-
-        let material
-        if (ingredient.materialId) {
-          try {
-            material = await db.collection('jaba_rawMaterials').findOne({
-              _id: new ObjectId(ingredient.materialId),
-            })
-          } catch {
-            material = await db.collection('jaba_rawMaterials').findOne({
-              name: { $regex: new RegExp(`^${materialName}$`, 'i') },
-            })
-          }
-        } else {
-          material = await db.collection('jaba_rawMaterials').findOne({
-            name: { $regex: new RegExp(`^${materialName}$`, 'i') },
-          })
-        }
-        if (!material) continue
-
-        const newStock = material.currentStock + quantity
-        await db.collection('jaba_rawMaterials').updateOne(
-          { _id: material._id },
-          { $set: { currentStock: newStock, updatedAt: new Date() } }
+      if ('error' in purge) {
+        const code = purge.code
+        const status =
+          code === JABA_PURGE_MONGODB_TRANSACTIONS_REQUIRED_CODE ? 503 : 500
+        return NextResponse.json(
+          {
+            error: purge.error || 'Failed to delete batch',
+            ...(code ? { code } : {}),
+          },
+          { status }
         )
       }
+      return NextResponse.json({ error: 'Failed to delete batch' }, { status: 500 })
     }
 
-    // Restore packaging materials first, then delete packaging outputs linked to this batch graph.
-    const packagingOr: Record<string, unknown>[] = [
-      { batchId: { $in: Array.from(batchIdsToDelete) } },
-      { batchNumber: { $in: Array.from(batchNumbersToDelete).filter(Boolean) } },
-    ]
-    if (flavourLineIdsToDelete.size > 0) {
-      packagingOr.push({ flavourLineId: { $in: Array.from(flavourLineIdsToDelete) } })
-    }
-    const packagingOutputsToDelete = await db.collection('jaba_packagingOutput').find({ $or: packagingOr }).toArray()
-    const rawMaterialsCollection = db.collection('jaba_rawMaterials')
-
-    for (const po of packagingOutputsToDelete) {
-      const materialsUsed = Array.isArray((po as any).materialsUsed) ? (po as any).materialsUsed : []
-      if (materialsUsed.length > 0) {
-        for (const materialUse of materialsUsed) {
-          const qty = normalizeQty(materialUse.quantity)
-          if (!materialUse.materialId || qty <= 0) continue
-          await rawMaterialsCollection.updateOne(
-            { _id: new ObjectId(String(materialUse.materialId)) },
-            { $inc: { currentStock: qty }, $set: { updatedAt: new Date() } }
-          )
-        }
-        continue
-      }
-
-      // Fallback for old records without materialsUsed metadata.
-      const totalUnitsPacked = getTotalContainerUnits(Array.isArray((po as any).containers) ? (po as any).containers : [])
-      if (totalUnitsPacked <= 0) continue
-
-      const { bottleMaterial, stickerMaterial } = await findPrimaryPackagingMaterials(rawMaterialsCollection)
-
-      if (bottleMaterial) {
-        await rawMaterialsCollection.updateOne(
-          { _id: bottleMaterial._id },
-          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
-        )
-      }
-      if (stickerMaterial) {
-        await rawMaterialsCollection.updateOne(
-          { _id: stickerMaterial._id },
-          { $inc: { currentStock: totalUnitsPacked }, $set: { updatedAt: new Date() } }
-        )
-      }
-    }
-
-    if (packagingOutputsToDelete.length > 0) {
-      await db.collection('jaba_packagingOutput').deleteMany({ _id: { $in: packagingOutputsToDelete.map((d) => d._id) } })
-    }
-
-    // Remove delivery-note items linked to this batch; delete notes that become empty.
-    const linkedBatchNumbers = new Set(Array.from(batchNumbersToDelete).filter(Boolean))
-    const linkedFlavourLineIds = new Set(Array.from(flavourLineIdsToDelete))
-    const notes = await db.collection('jaba_deliveryNotes').find({}).toArray()
-    for (const note of notes) {
-      const items = Array.isArray(note.items) ? note.items : []
-      const keptItems = items.filter((item: any) => {
-        const itemBatch = String(item?.batchNumber || '')
-        const itemFl = String(item?.flavourLineId || '')
-        return !linkedBatchNumbers.has(itemBatch) && !(itemFl && linkedFlavourLineIds.has(itemFl))
-      })
-      if (keptItems.length === items.length) continue
-
-      if (keptItems.length === 0) {
-        await db.collection('jaba_deliveryNotes').deleteOne({ _id: note._id })
-      } else {
-        const nextTotalCost = keptItems.reduce((sum: number, it: any) => {
-          const explicit = Number(it.totalCost)
-          if (!Number.isNaN(explicit) && explicit > 0) return sum + explicit
-          return sum + ((Number(it.quantity) || 0) * (Number(it.pricePerUnit) || 0))
-        }, 0)
-        await db.collection('jaba_deliveryNotes').updateOne(
-          { _id: note._id },
-          { $set: { items: keptItems, totalCost: nextTotalCost, updatedAt: new Date() } }
-        )
-      }
-    }
-
-    // Delete movement logs linked to batch ids / numbers.
-    await db.collection('jaba_inventory_movements').deleteMany({
-      $or: [
-        { batchId: { $in: Array.from(batchIdsToDelete) } },
-        { batchNumber: { $in: Array.from(batchNumbersToDelete).filter(Boolean) } },
-      ],
-    })
-
-    // Remove flavour lines for neutral parent deletion.
-    if (!batch.parentBatchId) {
-      await db.collection(JABA_FLAVOUR_LINES_COLLECTION).deleteMany({ parentBatchId: id })
-    }
-
-    // Delete selected batch and any legacy child batches.
-    const result = await db.collection('jaba_batches').deleteMany({
-      _id: { $in: Array.from(batchIdsToDelete).map((x) => new ObjectId(x)) },
-    })
-    
-    if (result.deletedCount === 0) {
-      return NextResponse.json(
-        { error: 'Batch not found' },
-        { status: 404 }
-      )
-    }
-
-    console.log(`[Batches API] ✅ Batch deleted successfully: ${batch.batchNumber} (ID: ${id})`)
+    console.log(`[Batches API] ✅ Batch deleted successfully: ${purge.batchNumber} (ID: ${id})`)
 
     return NextResponse.json(
-      { 
+      {
         success: true,
-        message: 'Batch and linked records deleted; materials restored to inventory'
+        message: 'Batch and linked records deleted; materials restored to inventory',
       },
       { status: 200 }
     )
