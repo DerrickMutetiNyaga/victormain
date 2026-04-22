@@ -40,6 +40,9 @@ export type FifoPackagedSlot = {
   flavourSeg: string
   size: string
   qtyPackaged: number
+  /** Oldest-first production time (date → productionDate → infusionDate → createdAt) */
+  batchFifoTime: number
+  /** @deprecated use batchFifoTime — kept for any external debug dumps */
   batchSortAt: number
   poSortAt: number
   poOid: string
@@ -127,6 +130,56 @@ function timeMs(d: unknown): number {
   return 0
 }
 
+/** BCH-2026-01310 → { year: 2026, seq: 1310 } — authoritative FIFO for Infusion Jaba batches */
+export function parseJabaBatchOrdinal(batchNumber: string): { year: number; seq: number } | null {
+  const m = String(batchNumber || '')
+    .trim()
+    .match(/^BCH-(\d{4})-(\d+)$/i)
+  if (!m) return null
+  return { year: parseInt(m[1], 10), seq: parseInt(m[2], 10) }
+}
+
+function batchFifoPrimaryTime(batch: Record<string, unknown>): number {
+  const t =
+    timeMs(batch.date) ||
+    timeMs(batch.productionDate) ||
+    timeMs(batch.infusionDate) ||
+    timeMs(batch.createdAt) ||
+    0
+  return t
+}
+
+/** Mongo ObjectId 24-hex → insertion time (older id → smaller ms). */
+function objectIdToCreationMs(hex: string): number {
+  if (!/^[a-f0-9]{24}$/i.test(hex)) return 0
+  return parseInt(hex.slice(0, 8), 16) * 1000
+}
+
+/**
+ * Global ordering for packaged slots: exhaust lower batch numbers first, then production time,
+ * then packaging doc order. Packaging completion time alone must not reorder batches.
+ */
+export function compareFifoPackagedSlots(a: FifoPackagedSlot, b: FifoPackagedSlot): number {
+  const oa = parseJabaBatchOrdinal(a.batchNumber)
+  const ob = parseJabaBatchOrdinal(b.batchNumber)
+  if (oa && ob) {
+    if (oa.year !== ob.year) return oa.year - ob.year
+    if (oa.seq !== ob.seq) return oa.seq - ob.seq
+  }
+
+  if (a.batchFifoTime !== b.batchFifoTime) return a.batchFifoTime - b.batchFifoTime
+
+  const lex = a.batchNumber.localeCompare(b.batchNumber, undefined, { numeric: true, sensitivity: 'base' })
+  if (lex !== 0) return lex
+
+  const idA = objectIdToCreationMs(a.batchId)
+  const idB = objectIdToCreationMs(b.batchId)
+  if (idA !== idB) return idA - idB
+
+  if (a.poSortAt !== b.poSortAt) return a.poSortAt - b.poSortAt
+  return a.poOid.localeCompare(b.poOid)
+}
+
 function groupKey(flavourSeg: string, size: string): string {
   return `${flavourSeg}@@${size}`
 }
@@ -190,7 +243,7 @@ export function buildPackagedSlots(packagingOutputs: unknown[], batches: unknown
     const containers = Array.isArray(po.containers) ? po.containers : []
     const poOid = mongoIdString(po._id)
     if (!poOid) continue
-    const batchSortAt = timeMs(batch.date) || timeMs(batch.createdAt) || 0
+    const batchFifoTime = batchFifoPrimaryTime(batch)
     const poSortAt = timeMs(po.createdAt) || timeMs(po.packagingDate) || 0
 
     for (const c of containers as Record<string, unknown>[]) {
@@ -209,7 +262,8 @@ export function buildPackagedSlots(packagingOutputs: unknown[], batches: unknown
         flavourSeg,
         size,
         qtyPackaged: qty,
-        batchSortAt,
+        batchFifoTime,
+        batchSortAt: batchFifoTime,
         poSortAt,
         poOid,
         productType,
@@ -217,11 +271,7 @@ export function buildPackagedSlots(packagingOutputs: unknown[], batches: unknown
     }
   }
 
-  slots.sort((a, b) => {
-    if (a.batchSortAt !== b.batchSortAt) return a.batchSortAt - b.batchSortAt
-    if (a.poSortAt !== b.poSortAt) return a.poSortAt - b.poSortAt
-    return a.poOid.localeCompare(b.poOid)
-  })
+  slots.sort(compareFifoPackagedSlots)
 
   return slots
 }
@@ -435,11 +485,7 @@ export function deriveFifoDeliveryNotePayload(args: {
 
     const slices: FifoAllocationTraceLine['slices'] = []
     let left = need
-    const ordered = [...groupSlots].sort((a, b) => {
-      if (a.batchSortAt !== b.batchSortAt) return a.batchSortAt - b.batchSortAt
-      if (a.poSortAt !== b.poSortAt) return a.poSortAt - b.poSortAt
-      return a.poOid.localeCompare(b.poOid)
-    })
+    const ordered = [...groupSlots].sort(compareFifoPackagedSlots)
 
     for (const slot of ordered) {
       if (left <= 0) break
