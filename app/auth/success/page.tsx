@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, ShieldCheck } from "lucide-react"
@@ -23,7 +23,7 @@ async function sendHealthEvent(type: string, payload: Record<string, unknown>) {
   }
 }
 
-export default function AuthSuccessPage() {
+function AuthSuccessPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [timedOut, setTimedOut] = useState(false)
@@ -101,5 +101,21 @@ export default function AuthSuccessPage() {
         )}
       </section>
     </main>
+  )
+}
+
+export default function AuthSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_24%_12%,rgba(191,140,69,0.16)_0%,transparent_45%),linear-gradient(155deg,#1a1310_0%,#241a15_45%,#14100d_100%)] px-4">
+          <section className="w-full max-w-md rounded-3xl border border-[#d5c0a1]/55 bg-gradient-to-b from-[#fffdf8] via-[#f6eee3] to-[#eee3d2] p-6 text-center shadow-[0_30px_70px_rgba(28,18,12,0.45)] sm:p-8">
+            <p className="text-sm font-medium text-[#655445]">Finalizing sign-in...</p>
+          </section>
+        </main>
+      }
+    >
+      <AuthSuccessPageContent />
+    </Suspense>
   )
 }

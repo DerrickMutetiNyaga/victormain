@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { Suspense, useMemo, useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ShieldCheck, Zap, KeyRound, Loader2 } from "lucide-react"
@@ -33,7 +33,7 @@ function GoogleMark() {
   )
 }
 
-export default function AuthPage() {
+function AuthPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { session, loading } = useShopSession()
@@ -153,5 +153,23 @@ export default function AuthPage() {
         </section>
       </div>
     </main>
+  )
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[radial-gradient(circle_at_18%_14%,rgba(191,140,69,0.18)_0%,transparent_44%),radial-gradient(circle_at_84%_6%,rgba(89,64,41,0.18)_0%,transparent_38%),linear-gradient(155deg,#1a1310_0%,#241a15_45%,#14100d_100%)] px-4 py-6 sm:px-6 sm:py-10">
+          <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-5xl items-center justify-center">
+            <section className="w-full max-w-xl rounded-[2rem] border border-[#d5c0a1]/55 bg-gradient-to-b from-[#fffdf8] via-[#f6eee3] to-[#eee3d2] p-6 shadow-[0_30px_70px_rgba(28,18,12,0.45)] sm:p-10">
+              <p className="text-center text-sm font-medium text-[#6a5a4b]">Loading sign-in...</p>
+            </section>
+          </div>
+        </main>
+      }
+    >
+      <AuthPageContent />
+    </Suspense>
   )
 }
