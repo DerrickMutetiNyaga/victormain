@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -42,6 +43,8 @@ interface DeliveryNote {
   status: "Pending" | "In Transit" | "Delivered"
   paymentStatus?: "Unpaid" | "Partial" | "Paid"
   paymentDate?: string | Date
+  paymentAmount?: number
+  paymentReason?: string
   createdAt: string | Date
   updatedAt: string | Date
 }
@@ -532,6 +535,10 @@ export default function DistributionPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [editChoiceNote, setEditChoiceNote] = useState<DeliveryNote | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [paymentDialogNote, setPaymentDialogNote] = useState<DeliveryNote | null>(null)
+  const [paymentAmountInput, setPaymentAmountInput] = useState("")
+  const [paymentReasonInput, setPaymentReasonInput] = useState("")
+  const [savingPayment, setSavingPayment] = useState(false)
 
   // Fetch delivery notes from API
   useEffect(() => {
@@ -580,14 +587,36 @@ export default function DistributionPage() {
   const totalItems = deliveryNotes.reduce((sum, note) => 
     sum + note.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
   )
-  const unpaidNotes = deliveryNotes.filter((dn) => (dn.paymentStatus || "Unpaid") === "Unpaid")
+  const pendingCollectionNotes = deliveryNotes.filter((note) => {
+    const total =
+      typeof note.totalCost === "number"
+        ? note.totalCost
+        : note.items.reduce((innerSum, item) => innerSum + (item.totalCost || (item.quantity * (item.pricePerUnit || 0))), 0)
+    const paid = typeof note.paymentAmount === "number" ? note.paymentAmount : 0
+    return Math.max(0, total - paid) > 0
+  })
   const paidNotes = deliveryNotes.filter((dn) => (dn.paymentStatus || "Unpaid") === "Paid")
-  const totalOutstanding = deliveryNotes
-    .filter((dn) => (dn.paymentStatus || "Unpaid") !== "Paid")
-    .reduce((sum, note) => sum + (note.totalCost || 0), 0)
-  const totalPaid = deliveryNotes
-    .filter((dn) => (dn.paymentStatus || "Unpaid") === "Paid")
-    .reduce((sum, note) => sum + (note.totalCost || 0), 0)
+  const totalOutstanding = deliveryNotes.reduce((sum, note) => {
+    const total =
+      typeof note.totalCost === "number"
+        ? note.totalCost
+        : note.items.reduce((innerSum, item) => innerSum + (item.totalCost || (item.quantity * (item.pricePerUnit || 0))), 0)
+    const paid = typeof note.paymentAmount === "number" ? note.paymentAmount : 0
+    return sum + Math.max(0, total - paid)
+  }, 0)
+  const totalCollected = deliveryNotes.reduce((sum, note) => {
+    const paid = typeof note.paymentAmount === "number" ? note.paymentAmount : 0
+    if (paid > 0) return sum + paid
+    const status = note.paymentStatus || "Unpaid"
+    if (status === "Paid") {
+      const noteTotal =
+        typeof note.totalCost === "number"
+          ? note.totalCost
+          : note.items.reduce((innerSum, item) => innerSum + (item.totalCost || (item.quantity * (item.pricePerUnit || 0))), 0)
+      return sum + noteTotal
+    }
+    return sum
+  }, 0)
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -611,30 +640,80 @@ export default function DistributionPage() {
     })
   }
 
-  const handleMarkAsPaid = async (noteId: string) => {
+  const getNoteTotalCost = (note: DeliveryNote) => {
+    if (typeof note.totalCost === "number" && Number.isFinite(note.totalCost)) {
+      return note.totalCost
+    }
+    return note.items.reduce((sum, item) => {
+      const lineTotal =
+        typeof item.totalCost === "number"
+          ? item.totalCost
+          : item.quantity * (item.pricePerUnit || 0)
+      return sum + lineTotal
+    }, 0)
+  }
+
+  const openRecordPaymentDialog = (note: DeliveryNote) => {
+    const existingAmount =
+      typeof note.paymentAmount === "number" && note.paymentAmount > 0
+        ? note.paymentAmount
+        : getNoteTotalCost(note)
+    setPaymentDialogNote(note)
+    setPaymentAmountInput(existingAmount > 0 ? existingAmount.toFixed(2) : "")
+    setPaymentReasonInput(note.paymentReason || "")
+  }
+
+  const handleRecordPayment = async () => {
+    if (!paymentDialogNote) return
+
+    const parsedAmount = Number(paymentAmountInput)
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error("Enter a valid paid amount greater than zero")
+      return
+    }
+
+    const reason = paymentReasonInput.trim()
+    if (!reason) {
+      toast.error("Please add a payment note to improve reporting")
+      return
+    }
+
+    const noteTotalCost = getNoteTotalCost(paymentDialogNote)
+    const nextPaymentStatus =
+      noteTotalCost > 0 && parsedAmount < noteTotalCost ? "Partial" : "Paid"
+
     try {
+      setSavingPayment(true)
       const response = await fetch('/api/jaba/delivery-notes', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: noteId,
-          paymentStatus: 'Paid',
+          id: paymentDialogNote._id || paymentDialogNote.id,
+          paymentStatus: nextPaymentStatus,
+          paymentAmount: parsedAmount,
+          paymentReason: reason,
+          paymentDate: new Date().toISOString(),
         }),
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
-        toast.success('Payment marked as received!')
+        toast.success(nextPaymentStatus === "Paid" ? "Payment recorded as fully settled" : "Payment recorded as partial")
+        setPaymentDialogNote(null)
+        setPaymentAmountInput("")
+        setPaymentReasonInput("")
         fetchDeliveryNotes() // Refresh the list
       } else {
-        toast.error(data.error || 'Failed to update payment status')
+        toast.error(data.error || 'Failed to record payment')
       }
     } catch (error) {
-      console.error('Error updating payment status:', error)
-      toast.error('Failed to update payment status')
+      console.error('Error recording payment:', error)
+      toast.error('Failed to record payment')
+    } finally {
+      setSavingPayment(false)
     }
   }
 
@@ -867,8 +946,8 @@ export default function DistributionPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-1">Unpaid</p>
-                  <p className="text-2xl font-bold text-red-900 dark:text-red-100 mb-1">{unpaidNotes.length}</p>
+                  <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-1">Pending Collection</p>
+                  <p className="text-2xl font-bold text-red-900 dark:text-red-100 mb-1">{pendingCollectionNotes.length}</p>
                   <p className="text-lg font-semibold text-red-800 dark:text-red-200">
                     KES {totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -887,7 +966,7 @@ export default function DistributionPage() {
                   <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Paid</p>
                   <p className="text-2xl font-bold text-green-900 dark:text-green-100 mb-1">{paidNotes.length}</p>
                   <p className="text-lg font-semibold text-green-800 dark:text-green-200">
-                    KES {totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    KES {totalCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="rounded-xl p-3 bg-green-100 dark:bg-green-900/40 border border-green-200 dark:border-green-800/50">
@@ -1112,15 +1191,35 @@ export default function DistributionPage() {
                               <Badge className={cn("text-[10px] px-2 py-0.5 font-semibold w-fit", getPaymentStatusColor(paymentStatus))}>
                                 {paymentStatus}
                               </Badge>
+                              {typeof note.paymentAmount === "number" && note.paymentAmount > 0 && (
+                                <span className="text-[10px] text-slate-600 dark:text-slate-400">
+                                  KES {note.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              )}
+                              {(() => {
+                                const noteTotalCost = getNoteTotalCost(note)
+                                const remaining = Math.max(0, noteTotalCost - (note.paymentAmount || 0))
+                                if (remaining <= 0) return null
+                                return (
+                                  <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                                    Remaining: KES {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                )
+                              })()}
+                              {note.paymentReason && (
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2" title={note.paymentReason}>
+                                  {note.paymentReason}
+                                </span>
+                              )}
                               {paymentStatus !== "Paid" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleMarkAsPaid(note._id || note.id)}
+                                  onClick={() => openRecordPaymentDialog(note)}
                                   className="h-6 text-[10px] px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Mark Paid
+                                  Record Payment
                                 </Button>
                               )}
                             </div>
@@ -1236,21 +1335,28 @@ export default function DistributionPage() {
                     {/* Payment Status */}
                     {noteTotalCost > 0 && (
                       <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                        <Badge className={cn("text-[10px] px-2 py-0.5 font-semibold", getPaymentStatusColor(paymentStatus))}>
-                          {paymentStatus}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge className={cn("text-[10px] px-2 py-0.5 font-semibold w-fit", getPaymentStatusColor(paymentStatus))}>
+                            {paymentStatus}
+                          </Badge>
+                          {typeof note.paymentAmount === "number" && note.paymentAmount > 0 && (
+                            <span className="text-[10px] text-slate-600 dark:text-slate-400">
+                              KES {note.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </div>
                         {paymentStatus !== "Paid" && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleMarkAsPaid(note._id || note.id)
+                              openRecordPaymentDialog(note)
                             }}
                             className="h-6 text-[10px] px-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
                           >
                             <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Mark Paid
+                            Record Payment
                           </Button>
                         )}
                       </div>
@@ -1444,13 +1550,13 @@ export default function DistributionPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              handleMarkAsPaid(viewingNote._id || viewingNote.id)
                               setViewingNote(null)
+                              openRecordPaymentDialog(viewingNote)
                             }}
                             className="h-7 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
                           >
                             <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Mark as Paid
+                            Record Payment
                           </Button>
                         )}
                       </div>
@@ -1492,6 +1598,109 @@ export default function DistributionPage() {
                 </div>
               )
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Record Payment Dialog */}
+        <Dialog
+          open={!!paymentDialogNote}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPaymentDialogNote(null)
+              setPaymentAmountInput("")
+              setPaymentReasonInput("")
+            }
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-emerald-600" />
+                Record Payment
+              </DialogTitle>
+              <DialogDescription>
+                Enter the paid amount and a payment note for <strong>{paymentDialogNote?.noteId}</strong> to improve payment reporting.
+              </DialogDescription>
+            </DialogHeader>
+            {paymentDialogNote && (
+              <div className="space-y-4 py-4">
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Invoice Total</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    KES {getNoteTotalCost(paymentDialogNote).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  {typeof paymentDialogNote.paymentAmount === "number" && paymentDialogNote.paymentAmount > 0 && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Previously recorded: KES {paymentDialogNote.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="payment-amount">Amount Paid (KES)</Label>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentAmountInput}
+                    onChange={(e) => setPaymentAmountInput(e.target.value)}
+                    placeholder="e.g. 15000"
+                  />
+                  {(() => {
+                    const parsedAmount = Number(paymentAmountInput)
+                    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return null
+                    const remaining = Math.max(0, getNoteTotalCost(paymentDialogNote) - parsedAmount)
+                    return (
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        Remaining after this update: KES {remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    )
+                  })()}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="payment-note">Payment Note / Reason</Label>
+                  <Textarea
+                    id="payment-note"
+                    value={paymentReasonInput}
+                    onChange={(e) => setPaymentReasonInput(e.target.value)}
+                    placeholder="e.g. Bank transfer reference, partial settlement for week 1 stock"
+                    className="min-h-[96px]"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setPaymentDialogNote(null)
+                      setPaymentAmountInput("")
+                      setPaymentReasonInput("")
+                    }}
+                    disabled={savingPayment}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleRecordPayment}
+                    disabled={savingPayment}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {savingPayment ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Payment"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 

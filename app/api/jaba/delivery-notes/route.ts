@@ -333,6 +333,8 @@ export async function PUT(request: Request) {
       id, 
       paymentStatus, 
       paymentDate, 
+      paymentAmount,
+      paymentReason,
       status,
       // Full update fields
       noteId,
@@ -437,13 +439,29 @@ export async function PUT(request: Request) {
         // Handle payment status update
         if (paymentStatus !== undefined) {
           updateData.paymentStatus = paymentStatus
-          if (paymentStatus === 'Paid' && !paymentDate) {
+          if ((paymentStatus === 'Paid' || paymentStatus === 'Partial') && !paymentDate) {
             updateData.paymentDate = new Date()
-          } else if (paymentStatus === 'Paid' && paymentDate) {
+          } else if ((paymentStatus === 'Paid' || paymentStatus === 'Partial') && paymentDate) {
             updateData.paymentDate = new Date(paymentDate)
-          } else if (paymentStatus !== 'Paid') {
+          } else if (paymentStatus === 'Unpaid') {
             updateData.paymentDate = undefined
           }
+        }
+
+        if (paymentAmount !== undefined) {
+          const parsedPaymentAmount = Number(paymentAmount)
+          if (!Number.isFinite(parsedPaymentAmount) || parsedPaymentAmount < 0) {
+            throw new ApiError('Payment amount must be a valid non-negative number', 400)
+          }
+          updateData.paymentAmount = roundMoneyKes(parsedPaymentAmount)
+        }
+
+        if (paymentReason !== undefined) {
+          const normalizedReason = String(paymentReason || '').trim()
+          if (normalizedReason.length === 0) {
+            throw new ApiError('Payment note is required', 400)
+          }
+          updateData.paymentReason = normalizedReason
         }
 
         if (status !== undefined) updateData.status = status
