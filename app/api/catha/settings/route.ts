@@ -116,10 +116,10 @@ const defaultSettings: Settings = {
     pickupAddress: 'Catha Lounge – Nairobi (exact address confirmed at order)',
     pickupDirectionsUrl: '',
     options: [
-      { value: 'deliver_to_my_location', label: 'Deliver to My Location', fee: 350, subtext: 'Delivery fee applies', enabled: true },
+      { value: 'deliver_to_my_location', label: 'Deliver to My Location', fee: 1000, subtext: 'Delivery fee applies', enabled: true },
       { value: 'collect_at_catha_lodge', label: 'Collect at Catha Lounge', fee: 0, subtext: 'No delivery fee', enabled: true },
-      { value: 'nairobi_cbd', label: 'Deliver within Nairobi CBD', fee: 200, subtext: 'KES 200 delivery', enabled: true },
-      { value: 'westlands', label: 'Deliver within Westlands', fee: 200, subtext: 'KES 200 delivery', enabled: true },
+      { value: 'nairobi_cbd', label: 'Deliver within Nairobi CBD', fee: 450, subtext: 'KES 450 delivery', enabled: true },
+      { value: 'westlands', label: 'Deliver within Westlands', fee: 350, subtext: 'KES 350 delivery', enabled: true },
       { value: 'kilimani', label: 'Deliver within Kilimani', fee: 200, subtext: 'KES 200 delivery', enabled: true },
     ],
   },

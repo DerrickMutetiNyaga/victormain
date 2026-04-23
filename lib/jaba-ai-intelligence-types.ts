@@ -172,6 +172,9 @@ export type JabaAiContext = {
     topFlavours: string[]
     distributorConcentrationTop1Pct: number
     productionVsDispatchNote: string
+    paymentSummaryNote: string
+    paymentStatusMix: string
+    paymentAgingNotes: string
   }
 }
 
@@ -180,6 +183,14 @@ export type AiAnswerPayload = {
   issuesFound: string[]
   recommendedActions: string[]
   dataSources: string[]
+  confidence?: 'low' | 'medium' | 'high'
+  followUpQuestions?: string[]
+  quickActions?: Array<{
+    id: string
+    label: string
+    path: string
+    reason: string
+  }>
 }
 
 /** Client-side comparison drill-down (labels only; metrics from context). */

@@ -36,11 +36,11 @@ function displayDigits(d: string) {
 
 /* ─────────────── delivery options ─────────────── */
 const DEFAULT_DELIVERY_OPTIONS = [
-  { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 350, icon: MapPin, subtext: "Nairobi & environs · KES 350" },
+  { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 1000, icon: MapPin, subtext: "Delivery fee applies" },
   { value: "collect_at_catha_lodge", label: "Collect at Catha Lounge", fee: 0, icon: Store, subtext: "Free · Pick up in-store" },
-  { value: "nairobi_cbd", label: "Nairobi CBD", fee: 200, icon: MapPin, subtext: "KES 200 delivery" },
-  { value: "westlands", label: "Westlands", fee: 200, icon: MapPin, subtext: "KES 200 delivery" },
-  { value: "kilimani", label: "Kilimani", fee: 200, icon: MapPin, subtext: "KES 200 delivery" },
+  { value: "nairobi_cbd", label: "Deliver within Nairobi CBD", fee: 450, icon: MapPin, subtext: "KES 450 delivery" },
+  { value: "westlands", label: "Deliver within Westlands", fee: 350, icon: MapPin, subtext: "KES 350 delivery" },
+  { value: "kilimani", label: "Deliver within Kilimani", fee: 200, icon: MapPin, subtext: "KES 200 delivery" },
 ] as const
 
 type DeliveryOption = { value: string; label: string; fee: number; subtext: string; icon: typeof MapPin }
@@ -73,7 +73,7 @@ export default function CheckoutPage() {
 
   /* ── Delivery ── */
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>(() =>
-    DEFAULT_DELIVERY_OPTIONS.map(o => ({ ...o, icon: o.value === "collect_at_catha_lodge" ? Store : MapPin }))
+    DEFAULT_DELIVERY_OPTIONS.map(o => ({ ...o, icon: o.value === "collect_at_catha_lodge" || o.value.startsWith("collect_") ? Store : MapPin }))
   )
   const [selectedDelivery, setSelectedDelivery] = useState("")
   const [locationNote, setLocationNote] = useState("")
@@ -135,7 +135,7 @@ export default function CheckoutPage() {
             if (d.options?.length) {
               setDeliveryOptions(
                 d.options.filter((o: any) => o.enabled !== false).map((o: any) => ({
-                  ...o, icon: o.value === "collect_at_catha_lodge" ? Store : MapPin,
+                  ...o, icon: o.value === "collect_at_catha_lodge" || String(o.value || "").startsWith("collect_") ? Store : MapPin,
                 }))
               )
             }

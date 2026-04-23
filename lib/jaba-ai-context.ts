@@ -152,6 +152,12 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
     deliveries: number
     items: number
   }>
+  const totalAmountInvoiced = num(distRep['totalAmountInvoiced'])
+  const totalAmountCollected = num(distRep['totalAmountCollected'])
+  const outstandingAmount = num(distRep['outstandingAmount'])
+  const paymentCollectionRate = num(distRep['paymentCollectionRate'])
+  const paymentStatusData = (distRep['paymentStatusData'] ?? []) as Array<{ status?: string; count?: number }>
+  const agingBuckets = (distRep['agingBuckets'] ?? []) as Array<{ bucket?: string; amount?: number }>
   const topDistributorsRaw = (distRep['topDistributors'] ?? []) as Array<{
     name: string
     totalItems: number
@@ -405,6 +411,16 @@ export async function buildJabaAiContext(request: Request): Promise<JabaAiContex
       topFlavours: charts.topFlavours.slice(0, 5).map((f) => f.flavor),
       distributorConcentrationTop1Pct,
       productionVsDispatchNote,
+      paymentSummaryNote:
+        `Collection ${Math.round(paymentCollectionRate)}% (${Math.round(totalAmountCollected)} / ${Math.round(totalAmountInvoiced)}). Outstanding ${Math.round(outstandingAmount)}.`,
+      paymentStatusMix: paymentStatusData
+        .filter((x) => x?.status)
+        .map((x) => `${String(x.status)}:${num(x.count)}`)
+        .join(', '),
+      paymentAgingNotes: agingBuckets
+        .filter((x) => x?.bucket)
+        .map((x) => `${String(x.bucket)}=${Math.round(num(x.amount))}`)
+        .join(', '),
     },
   }
 

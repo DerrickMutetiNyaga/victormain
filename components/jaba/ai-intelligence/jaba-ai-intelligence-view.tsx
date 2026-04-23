@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState, type ComponentType, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import type { JabaAiContext } from '@/lib/jaba-ai-intelligence-types'
 import { useJabaAiActionState } from '@/hooks/use-jaba-ai-action-state'
 import { JabaAiBusinessCommander } from '@/components/jaba/ai-intelligence/jaba-ai-commander'
@@ -167,6 +168,33 @@ const SUGGESTED_QUESTIONS = [
   'Which stock is slow-moving?',
   'Which distributor performs best?',
   'What is hurting profit most right now?',
+  'How is payment collection performing this month?',
+  'Which outstanding payments need urgent follow-up?',
+  'What are the top operational risks today?',
+  'What actions should I execute by end of day?',
+]
+
+type AskAiResult = {
+  summary: string
+  issuesFound: string[]
+  recommendedActions: string[]
+  dataSources: string[]
+  confidence?: 'low' | 'medium' | 'high'
+  followUpQuestions?: string[]
+  quickActions?: Array<{
+    id: string
+    label: string
+    path: string
+    reason: string
+  }>
+}
+
+const FULL_DIAGNOSTIC_QUERIES: Array<{ id: string; label: string; question: string }> = [
+  { id: 'ops-risk', label: 'Operational risk', question: 'What are the top operational risks today?' },
+  { id: 'throughput', label: 'Throughput', question: 'Why did throughput drop this week?' },
+  { id: 'inventory', label: 'Inventory risk', question: 'What raw materials and stock are at risk right now?' },
+  { id: 'distribution', label: 'Distribution', question: 'Which distributors need follow-up and why?' },
+  { id: 'payments', label: 'Payments', question: 'Which outstanding payments need urgent follow-up?' },
 ]
 
 export function JabaAiIntelligenceView({
@@ -180,17 +208,36 @@ export function JabaAiIntelligenceView({
   error: string | null
   onRefresh: () => void
 }) {
+  const router = useRouter()
   const [question, setQuestion] = useState('')
   const [askLoading, setAskLoading] = useState(false)
   const [askError, setAskError] = useState<string | null>(null)
-  const [askResult, setAskResult] = useState<{
+  const [askResult, setAskResult] = useState<AskAiResult | null>(null)
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false)
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null)
+  const [diagnosticResult, setDiagnosticResult] = useState<{
+    generatedAt: string
     summary: string
-    issuesFound: string[]
-    recommendedActions: string[]
-    dataSources: string[]
+    topIssues: string[]
+    topActions: string[]
+    followUps: string[]
+    quickActions: NonNullable<AskAiResult['quickActions']>
+    sources: string[]
+    queryBreakdown: Array<{ id: string; label: string; answer: AskAiResult }>
   } | null>(null)
 
   const actionState = useJabaAiActionState()
+
+  const queryAi = useCallback(async (q: string): Promise<AskAiResult> => {
+    const res = await fetch('/api/jaba/ai-intelligence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q }),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Request failed')
+    return json.answer as AskAiResult
+  }, [])
 
   const ask = useCallback(async () => {
     const q = question.trim()
@@ -198,20 +245,84 @@ export function JabaAiIntelligenceView({
     setAskLoading(true)
     setAskError(null)
     try {
-      const res = await fetch('/api/jaba/ai-intelligence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Request failed')
-      setAskResult(json.answer)
+      const answer = await queryAi(q)
+      setAskResult(answer)
     } catch (e: unknown) {
       setAskError(e instanceof Error ? e.message : 'Failed to get answer')
     } finally {
       setAskLoading(false)
     }
-  }, [question])
+  }, [question, queryAi])
+
+  const runFullDiagnostic = useCallback(async () => {
+    setDiagnosticLoading(true)
+    setDiagnosticError(null)
+    setDiagnosticResult(null)
+    try {
+      const responses = await Promise.all(
+        FULL_DIAGNOSTIC_QUERIES.map(async (query) => ({
+          id: query.id,
+          label: query.label,
+          answer: await queryAi(query.question),
+        }))
+      )
+
+      const issueMap = new Map<string, number>()
+      const actionMap = new Map<string, number>()
+      const followUps: string[] = []
+      const sources = new Set<string>()
+      const quickActionMap = new Map<string, NonNullable<AskAiResult['quickActions']>[number]>()
+
+      for (const entry of responses) {
+        for (const issue of entry.answer.issuesFound || []) {
+          issueMap.set(issue, (issueMap.get(issue) || 0) + 1)
+        }
+        for (const action of entry.answer.recommendedActions || []) {
+          actionMap.set(action, (actionMap.get(action) || 0) + 1)
+        }
+        for (const followUp of entry.answer.followUpQuestions || []) {
+          if (!followUps.includes(followUp)) followUps.push(followUp)
+        }
+        for (const source of entry.answer.dataSources || []) {
+          sources.add(source)
+        }
+        for (const quickAction of entry.answer.quickActions || []) {
+          if (!quickActionMap.has(quickAction.id)) {
+            quickActionMap.set(quickAction.id, quickAction)
+          }
+        }
+      }
+
+      const topIssues = [...issueMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([issue]) => issue)
+
+      const topActions = [...actionMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([action]) => action)
+
+      const summary =
+        `Full diagnostic completed across ${responses.length} intelligence lenses. ` +
+        `Priority now: execute top actions for material risk, throughput reliability, distribution follow-up, and collections.`
+
+      setDiagnosticResult({
+        generatedAt: new Date().toISOString(),
+        summary,
+        topIssues,
+        topActions,
+        followUps: followUps.slice(0, 6),
+        quickActions: [...quickActionMap.values()].slice(0, 6),
+        sources: [...sources],
+        queryBreakdown: responses,
+      })
+    } catch (e: unknown) {
+      setDiagnosticError(e instanceof Error ? e.message : 'Failed to run full diagnostic')
+    } finally {
+      setDiagnosticLoading(false)
+    }
+  }, [queryAi])
 
   const fmt = (n: number) =>
     n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`
@@ -613,6 +724,32 @@ export function JabaAiIntelligenceView({
         Actionable recommendations with explainability and tracking live in <strong>AI Business Commander → Actions</strong>.
       </p>
 
+      {/* AI capabilities */}
+      <Card className="border-slate-200/80 bg-white/95 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+        <CardHeader>
+          <CardTitle className="text-base">Expanded AI capabilities</CardTitle>
+          <CardDescription>Use AI for operations, risk, and commercial follow-through from live Jaba data.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="font-semibold text-slate-900 dark:text-white">Production diagnostics</p>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">Detect throughput drops, packaging bottlenecks, and day-to-day shifts.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="font-semibold text-slate-900 dark:text-white">Inventory and wastage risks</p>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">Highlight low stock, imbalance by bottle size, and variance signals.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="font-semibold text-slate-900 dark:text-white">Distribution intelligence</p>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">Analyze distributor concentration, demand shifts, and dispatch trends.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/40">
+            <p className="font-semibold text-slate-900 dark:text-white">Payment collection follow-up</p>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">Surface collection rate, outstanding aging, and where to follow up first.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Charts */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Analytics</h2>
@@ -768,13 +905,91 @@ export function JabaAiIntelligenceView({
             placeholder="Ask about throughput, materials, packaging, distributors…"
             className="min-h-[100px] resize-y rounded-xl border-slate-200 dark:border-slate-700"
           />
-          <Button onClick={ask} disabled={askLoading || !question.trim()} className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700">
-            {askLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Analyze
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={ask} disabled={askLoading || !question.trim()} className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700">
+              {askLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Analyze
+            </Button>
+            <Button
+              onClick={runFullDiagnostic}
+              disabled={diagnosticLoading}
+              variant="outline"
+              className="gap-2 rounded-xl border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+            >
+              {diagnosticLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              Run Full Diagnostic
+            </Button>
+          </div>
 
           {askError && (
             <p className="text-sm text-rose-600 dark:text-rose-400">{askError}</p>
+          )}
+          {diagnosticError && (
+            <p className="text-sm text-rose-600 dark:text-rose-400">{diagnosticError}</p>
+          )}
+
+          {diagnosticResult && (
+            <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300">
+                  Daily Action Brief
+                </Badge>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Generated {new Date(diagnosticResult.generatedAt).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed text-slate-800 dark:text-slate-100">{diagnosticResult.summary}</p>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top risk signals</p>
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700 dark:text-slate-200">
+                    {diagnosticResult.topIssues.map((issue, idx) => (
+                      <li key={`${issue}-${idx}`}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Priority actions</p>
+                  <ul className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-700 dark:text-slate-200">
+                    {diagnosticResult.topActions.map((action, idx) => (
+                      <li key={`${action}-${idx}`}>{action}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {diagnosticResult.quickActions.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Execute now</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {diagnosticResult.quickActions.map((a) => (
+                      <Button key={a.id} size="sm" variant="outline" className="h-8 text-xs" onClick={() => router.push(a.path)}>
+                        {a.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diagnosticResult.followUps.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommended follow-up questions</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {diagnosticResult.followUps.map((fq, idx) => (
+                      <button
+                        key={`${fq}-${idx}`}
+                        type="button"
+                        onClick={() => setQuestion(fq)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition-all hover:border-emerald-300 hover:bg-emerald-50/80 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/40"
+                      >
+                        {fq}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {askResult && (
@@ -810,7 +1025,58 @@ export function JabaAiIntelligenceView({
                     {s}
                   </Badge>
                 ))}
+                {askResult.confidence && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'text-[10px] font-normal',
+                      askResult.confidence === 'high' && 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300',
+                      askResult.confidence === 'medium' && 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300',
+                      askResult.confidence === 'low' && 'border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-300'
+                    )}
+                  >
+                    confidence: {askResult.confidence}
+                  </Badge>
+                )}
               </div>
+              {askResult.quickActions && askResult.quickActions.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick actions</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {askResult.quickActions.map((a) => (
+                      <Button
+                        key={a.id}
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        onClick={() => router.push(a.path)}
+                        title={a.reason}
+                      >
+                        {a.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {askResult.followUpQuestions && askResult.followUpQuestions.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Follow-up questions</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {askResult.followUpQuestions.map((fq, idx) => (
+                      <button
+                        key={`${fq}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setQuestion(fq)
+                        }}
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-left text-xs font-medium text-slate-700 transition-all hover:border-emerald-300 hover:bg-emerald-50/80 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/40"
+                      >
+                        {fq}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

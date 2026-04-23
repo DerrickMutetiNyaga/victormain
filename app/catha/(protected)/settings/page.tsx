@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
 import { staff } from "@/lib/dummy-data"
-import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock } from "lucide-react"
+import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock, Plus, Trash2 } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -91,6 +91,22 @@ interface Settings {
   ecommerceOpeningHours?: EcommerceOpeningHoursSettings
 }
 
+type DeliveryOption = {
+  value: string
+  label: string
+  fee: number
+  subtext: string
+  enabled: boolean
+}
+
+const DEFAULT_DELIVERY_OPTIONS: DeliveryOption[] = [
+  { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 1000, subtext: "Delivery fee applies", enabled: true },
+  { value: "collect_at_catha_lodge", label: "Collect at Catha Lounge", fee: 0, subtext: "No delivery fee", enabled: true },
+  { value: "nairobi_cbd", label: "Deliver within Nairobi CBD", fee: 450, subtext: "KES 450 delivery", enabled: true },
+  { value: "westlands", label: "Deliver within Westlands", fee: 350, subtext: "KES 350 delivery", enabled: true },
+  { value: "kilimani", label: "Deliver within Kilimani", fee: 200, subtext: "KES 200 delivery", enabled: true },
+]
+
 export default function SettingsPage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
@@ -142,13 +158,7 @@ export default function SettingsPage() {
   // Delivery / E-commerce checkout settings
   const [pickupAddress, setPickupAddress] = useState("Catha Lounge – Nairobi (exact address confirmed at order)")
   const [pickupDirectionsUrl, setPickupDirectionsUrl] = useState("")
-  const [deliveryOptions, setDeliveryOptions] = useState<Array<{ value: string; label: string; fee: number; subtext: string; enabled: boolean }>>([
-    { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 350, subtext: "Delivery fee applies", enabled: true },
-    { value: "collect_at_catha_lodge", label: "Collect at Catha Lodge", fee: 0, subtext: "No delivery fee", enabled: true },
-    { value: "nairobi_cbd", label: "Deliver within Nairobi CBD", fee: 200, subtext: "KES 200 delivery", enabled: true },
-    { value: "westlands", label: "Deliver within Westlands", fee: 200, subtext: "KES 200 delivery", enabled: true },
-    { value: "kilimani", label: "Deliver within Kilimani", fee: 200, subtext: "KES 200 delivery", enabled: true },
-  ])
+  const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>(DEFAULT_DELIVERY_OPTIONS)
 
   const [eoEnabled, setEoEnabled] = useState(false)
   const [eoOpenTime, setEoOpenTime] = useState("09:00")
@@ -612,6 +622,16 @@ export default function SettingsPage() {
   const saveDelivery = async () => {
     setSaving(true)
     try {
+      const cleanedOptions: DeliveryOption[] = deliveryOptions.map((opt, index) => {
+        const value = opt.value.trim() || `custom_option_${index + 1}`
+        return {
+          value,
+          label: opt.label.trim() || "Untitled option",
+          fee: Number.isFinite(opt.fee) ? Math.max(0, Number(opt.fee)) : 0,
+          subtext: opt.subtext.trim(),
+          enabled: !!opt.enabled,
+        }
+      })
       const response = await fetch('/api/catha/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -619,7 +639,7 @@ export default function SettingsPage() {
           delivery: {
             pickupAddress: pickupAddress.trim() || "Catha Lounge – Nairobi (exact address confirmed at order)",
             pickupDirectionsUrl: pickupDirectionsUrl.trim() || undefined,
-            options: deliveryOptions,
+            options: cleanedOptions,
           },
         }),
       })
@@ -670,6 +690,20 @@ export default function SettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const addDeliveryOption = () => {
+    const next = deliveryOptions.length + 1
+    setDeliveryOptions((prev) => [
+      ...prev,
+      {
+        value: `custom_option_${next}`,
+        label: "New Delivery Option",
+        fee: 0,
+        subtext: "Custom delivery option",
+        enabled: true,
+      },
+    ])
   }
 
   if (loading) {
@@ -1376,12 +1410,12 @@ export default function SettingsPage() {
                     <div className="space-y-4">
                       {deliveryOptions.map((opt, index) => (
                         <div
-                          key={opt.value}
+                          key={`${opt.value}-${index}`}
                           className="rounded-lg border border-border p-4 space-y-3 bg-muted/20"
                         >
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-2">
-                              {opt.value === 'collect_at_catha_lodge' ? (
+                              {opt.value === 'collect_at_catha_lodge' || opt.value.startsWith("collect_") ? (
                                 <Store className="h-4 w-4 text-muted-foreground" />
                               ) : (
                                 <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -1400,6 +1434,22 @@ export default function SettingsPage() {
                                 }}
                               />
                             </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Option key (internal ID)</Label>
+                            <Input
+                              value={opt.value}
+                              onChange={(e) =>
+                                setDeliveryOptions((prev) =>
+                                  prev.map((o, i) =>
+                                    i === index
+                                      ? { ...o, value: e.target.value.trim().toLowerCase().replace(/\s+/g, "_") }
+                                      : o
+                                  )
+                                )
+                              }
+                              placeholder="e.g. westlands"
+                            />
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-1">
@@ -1440,9 +1490,24 @@ export default function SettingsPage() {
                               placeholder="e.g. Delivery fee applies"
                             />
                           </div>
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDeliveryOptions((prev) => prev.filter((_, i) => i !== index))}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Remove
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
+                    <Button type="button" variant="outline" className="mt-4" onClick={addDeliveryOption}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add delivery option
+                    </Button>
                   </div>
 
                   <Button onClick={saveDelivery} disabled={saving}>
