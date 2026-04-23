@@ -18,6 +18,18 @@ export function roundMoneyKes(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100
 }
 
+/** Internal-safe money math: KES -> cents (integer), half-up. */
+export function kesToCents(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.round((n + Number.EPSILON) * 100)
+}
+
+/** Internal-safe money math: cents (integer) -> KES. */
+export function centsToKes(cents: number): number {
+  if (!Number.isFinite(cents)) return 0
+  return roundMoneyKes(cents / 100)
+}
+
 export type StaffDistributionLineInput = {
   flavor: string
   productType?: string
@@ -459,6 +471,7 @@ export function deriveFifoDeliveryNotePayload(args: {
 
   const items: FifoDerivedDeliveryItem[] = []
   const allocationTrace: FifoAllocationTraceLine[] = []
+  let totalCostCents = 0
 
   filtered.forEach((line, staffLineIndex) => {
     const seg = flavourSegFromStaffLine(line)
@@ -466,7 +479,8 @@ export function deriveFifoDeliveryNotePayload(args: {
     const gk = groupKey(seg, size)
     const groupSlots = byGroup.get(gk)
     const need = Number(line.quantity) || 0
-    const pricePerUnit = roundMoneyKes(Number(line.pricePerUnit) || 0)
+    const pricePerUnitCents = kesToCents(Number(line.pricePerUnit) || 0)
+    const pricePerUnit = centsToKes(pricePerUnitCents)
 
     if (!groupSlots || groupSlots.length === 0) {
       throw new JabaFifoAllocationError(
@@ -499,6 +513,8 @@ export function deriveFifoDeliveryNotePayload(args: {
       const productName =
         String(line.productName || '').trim() ||
         `${String(line.productType || slot.productType || 'Juice')} of ${String(line.flavor || slot.flavorLabel).trim()}`
+      const lineTotalCents = take * pricePerUnitCents
+      totalCostCents += lineTotalCents
 
       items.push({
         finishedGoodId: `${slot.packagingOutputId}|${size}`,
@@ -513,7 +529,7 @@ export function deriveFifoDeliveryNotePayload(args: {
         flavourLineId: slot.flavourLineId,
         quantity: take,
         pricePerUnit,
-        totalCost: roundMoneyKes(take * pricePerUnit),
+        totalCost: centsToKes(lineTotalCents),
       })
 
       slices.push({
@@ -545,7 +561,7 @@ export function deriveFifoDeliveryNotePayload(args: {
     })
   })
 
-  const totalCost = roundMoneyKes(items.reduce((s, it) => s + it.totalCost, 0))
+  const totalCost = centsToKes(totalCostCents)
 
   return { items, totalCost, allocationTrace }
 }
@@ -564,13 +580,14 @@ export function collapseNoteItemsToStaffLines(
   for (const raw of arr as Record<string, unknown>[]) {
     const qty = Number(raw.quantity) || 0
     if (!(qty > 0)) continue
-    const price = Number(raw.pricePerUnit) || 0
+    const priceCents = kesToCents(Number(raw.pricePerUnit) || 0)
+    const price = centsToKes(priceCents)
     const size = normalizeSize(String(raw.size || ''))
     const flavor = String(raw.flavor || '').trim()
     const productType = String(raw.productType || 'Juice')
     const productName = String(raw.productName || '').trim()
     const flavourLineId = raw.flavourLineId != null ? String(raw.flavourLineId) : undefined
-    const fk = `${flavourLineId || `fl:${normalizeFlavorName(flavor)}`}|${size}|${price}`
+    const fk = `${flavourLineId || `fl:${normalizeFlavorName(flavor)}`}|${size}|${priceCents}`
     const prev = map.get(fk)
     if (prev) {
       prev.qty += qty
