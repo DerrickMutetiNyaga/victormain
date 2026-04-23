@@ -4,6 +4,7 @@ import { randomBytes } from "crypto"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit-simple"
 import { sanitizeShopRedirect } from "@/lib/shop-auth-redirect"
 import { recordShopAuthHealthEvent } from "@/lib/shop-auth-health"
+import { signIn } from "@/lib/auth-ecommerce-oauth"
 
 const STATE_COOKIE = "shop_google_oauth_state"
 const LOCK_COOKIE = "shop_google_oauth_lock"
@@ -71,8 +72,7 @@ export async function GET(request: Request) {
   callbackUrl.searchParams.set("state", state)
   callbackUrl.searchParams.set("next", safeNext)
 
-  const googleSignIn = new URL("/api/ecommerce/oauth/signin/google", url.origin)
-  googleSignIn.searchParams.set("callbackUrl", callbackUrl.toString())
-
-  return NextResponse.redirect(googleSignIn)
+  return await signIn("google", {
+    redirectTo: callbackUrl.toString(),
+  })
 }
