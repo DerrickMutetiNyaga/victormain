@@ -11,6 +11,8 @@ export async function POST() {
       await deleteShopSession(sessionId)
     }
     cookieStore.delete(getShopSessionCookieName())
+    cookieStore.delete('shop.oauth-session-token')
+    cookieStore.delete('__Secure-shop.oauth-session-token')
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ success: false }, { status: 500 })

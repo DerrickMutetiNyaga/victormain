@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Phone } from "lucide-react"
-import { ShopPhoneOtpForm } from "@/components/ecommerce/shop-phone-otp-form"
+import { normalizeKenyaPhone } from "@/lib/phone-utils"
 
 interface CustomerNumberModalProps {
   open: boolean
@@ -20,6 +20,25 @@ export function CustomerNumberModal({
   open,
   onContinue,
 }: CustomerNumberModalProps) {
+  const [input, setInput] = useState("")
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (open) {
+      setInput("")
+      setError("")
+    }
+  }, [open])
+
+  const handleContinue = () => {
+    const normalized = normalizeKenyaPhone(input)
+    if (!normalized) {
+      setError("Use a valid Kenyan number, e.g. 0796030992 or +254796030992.")
+      return
+    }
+    onContinue(normalized)
+  }
+
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent className="sm:max-w-sm rounded-3xl border border-white/[0.08] bg-[#13131E] shadow-2xl shadow-black/60 p-0 overflow-hidden">
@@ -34,18 +53,32 @@ export function CustomerNumberModal({
               Welcome!
             </DialogTitle>
             <DialogDescription className="text-white/45 text-sm text-left mt-1">
-              Enter your phone number to receive a verification code by SMS. Then enter the code to track your orders.
+              Enter your phone number to track your table orders.
             </DialogDescription>
           </DialogHeader>
 
-          <ShopPhoneOtpForm
-            variant="menu"
-            establishSession={false}
-            resetKey={open}
-            onSuccess={(phone) => {
-              onContinue(phone)
-            }}
-          />
+          <div className="space-y-3">
+            <input
+              type="tel"
+              inputMode="tel"
+              autoFocus
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value)
+                if (error) setError("")
+              }}
+              placeholder="+254 7XX XXX XXX"
+              className="h-11 w-full rounded-xl border border-white/[0.1] bg-[#0F1020] px-3 text-sm text-white placeholder:text-white/35 outline-none focus:border-amber-400/45"
+            />
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <button
+              type="button"
+              onClick={handleContinue}
+              className="h-11 w-full rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-sm font-bold text-black transition-transform active:scale-[0.98]"
+            >
+              Continue
+            </button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

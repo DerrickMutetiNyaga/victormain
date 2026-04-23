@@ -11,16 +11,15 @@ import { Button } from "@/components/ui/button"
 import {
   Minus, Plus, Trash2, ShoppingBag, ArrowRight,
   Loader2, ShieldCheck, Sparkles,
-  Tag, Lock,
+  Tag, Lock, KeyRound,
 } from "lucide-react"
 import { calculateCartTotals } from "@/lib/ecommerce/pricing"
 import { toast } from "sonner"
-import { ShopPhoneOtpForm } from "@/components/ecommerce/shop-phone-otp-form"
 
 /* ══════════════════════════════════════════════════════════
    INLINE SIGN-IN PROMPT
 ══════════════════════════════════════════════════════════ */
-function InlineSignIn({ onSignedIn }: { onSignedIn: () => void }) {
+function InlineSignIn({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="relative rounded-3xl border border-[#d7d1c5] bg-gradient-to-b from-[#fffdf9] via-[#faf6ee] to-[#f3eee5] shadow-[0_26px_58px_rgba(28,22,16,0.22)] overflow-hidden w-full max-w-md mx-auto">
       <div className="h-1.5 bg-gradient-to-r from-[#435044] via-[#5a6a5a] to-[#3f4a40]" />
@@ -32,18 +31,16 @@ function InlineSignIn({ onSignedIn }: { onSignedIn: () => void }) {
           </div>
           <h2 className="text-[30px] leading-[1.08] sm:text-3xl font-black text-[#251f1a] tracking-tight mb-2">Access Your Cart</h2>
           <p className="text-[#5f5a53] text-sm sm:text-[15px] leading-relaxed max-w-[30ch]">
-            We will SMS a one-time code to your Kenya number to continue.
+            Continue securely with your Google account.
           </p>
         </div>
-
-        <ShopPhoneOtpForm
-          variant="cart"
-          establishSession
-          onSuccess={(_phone, meta) => {
-            toast.success(meta?.isNew ? "Account created! Welcome 🎉" : "Welcome back! 👋")
-            onSignedIn()
-          }}
-        />
+        <Button
+          onClick={onSignIn}
+          className="w-full h-12 rounded-xl bg-white text-[#2f241f] border border-[#d7d1c5] shadow-[0_10px_24px_rgba(40,24,14,0.16)] hover:bg-[#fbf7f0] font-semibold"
+        >
+          <KeyRound className="mr-2 h-4 w-4" />
+          Continue with Google
+        </Button>
       </div>
     </div>
   )
@@ -54,7 +51,7 @@ function InlineSignIn({ onSignedIn }: { onSignedIn: () => void }) {
 ══════════════════════════════════════════════════════════ */
 export default function CartPage() {
   const router = useRouter()
-  const { cart, session, updateQuantity, removeItem, loading, refresh } = useShopCart()
+  const { cart, session, updateQuantity, removeItem, loading } = useShopCart()
   const openLoginModal = useShopLoginModal()
 
   useEffect(() => { document.title = "Cart | Infusion Jaba" }, [])
@@ -84,7 +81,7 @@ export default function CartPage() {
       <div className="min-h-screen bg-gradient-to-br from-[#f8f4ec] via-[#f3ede3] to-[#ece6dc]">
         <EcommerceHeader cartCount={0} />
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 pb-[96px] md:pb-14">
-          <InlineSignIn onSignedIn={() => refresh()} />
+          <InlineSignIn onSignIn={() => openLoginModal()} />
           <div className="text-center mt-4 sm:mt-6">
             <Link href="/shop" className="text-sm text-[#7f786f] hover:text-[#3f4a40] transition-colors">
               ← Continue browsing the shop

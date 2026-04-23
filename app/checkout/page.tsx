@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 
 /* ─────────────── phone helpers ─────────────── */
 function localDigits(raw: string): string {
+  if (!/^\+?[0-9\s().-]+$/.test(raw.trim())) return ""
   let v = raw.trim().replace(/^\+/, "")
   if (v.startsWith("254")) v = v.slice(3)
   if (v.startsWith("0")) v = v.slice(1)
@@ -58,7 +59,7 @@ const DEFAULT_PICKUP = "Catha Lounge – Nairobi (exact address confirmed at ord
 ══════════════════════════════════════════════════════════ */
 export default function CheckoutPage() {
   const router = useRouter()
-  const { cart, clearCart, loading: cartLoading, refresh } = useShopCart()
+  const { cart, clearCart, loading: cartLoading } = useShopCart()
   const { session } = useShopSession()
   const openLoginModal = useShopLoginModal()
 
@@ -403,10 +404,10 @@ export default function CheckoutPage() {
             <h1 className="text-2xl font-black text-[#2a201b] mb-3">Sign in to checkout</h1>
             <p className="text-[#6f5d4f] mb-7">You need to be signed in to complete your order.</p>
             <Button
-              onClick={() => openLoginModal(async () => { await refresh(); router.push("/checkout") })}
+              onClick={() => openLoginModal()}
               className="w-full h-13 rounded-xl bg-gradient-to-r from-[#2f241e] via-[#3a2d24] to-[#281e18] text-[#f8ecd6] border border-[#7d5f37]/55 font-bold shadow-lg mb-3"
             >
-              <Phone className="mr-2 h-4 w-4" /> Sign In with Phone
+              <Phone className="mr-2 h-4 w-4" /> Continue with Google
             </Button>
             <Link href="/shop">
               <Button variant="outline" className="w-full rounded-xl">Continue Shopping</Button>

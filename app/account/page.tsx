@@ -7,6 +7,7 @@ import Image from "next/image"
 import { EcommerceHeader } from "@/components/ecommerce/header"
 import { useShopCart } from "@/hooks/use-shop-cart"
 import { useShopSession } from "@/components/providers/shop-session-provider"
+import { useShopLoginModal } from "@/components/providers/shop-login-modal-provider"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,7 +21,6 @@ import {
 import { toast } from "sonner"
 import { formatPhoneDisplay } from "@/lib/phone-utils"
 import { cn } from "@/lib/utils"
-import { ShopPhoneOtpForm } from "@/components/ecommerce/shop-phone-otp-form"
 
 /* ─────────────── types ─────────────── */
 interface OrderItem { productId?: string; name: string; quantity: number; price: number; image?: string; size?: string }
@@ -47,7 +47,7 @@ function statusColor(status: string) {
 /* ══════════════════════════════════════════════════════════
    SIGN-IN CARD (unauthenticated view)
 ══════════════════════════════════════════════════════════ */
-function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
+function SignInCard({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-3 sm:px-4 md:px-6 py-4 sm:py-8 md:py-10">
       <div className="w-full max-w-[22rem] sm:max-w-md md:max-w-xl">
@@ -70,7 +70,7 @@ function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
           </div>
           <h1 className="text-[30px] sm:text-[34px] md:text-[38px] font-black text-[#271d18] tracking-tight leading-[1.08] mb-2.5 sm:mb-3">Welcome Back</h1>
           <p className="text-[#6f5d4f] text-[14px] sm:text-[15px] leading-relaxed max-w-[34ch] sm:max-w-[42ch] mx-auto">
-            We will send a one-time code by SMS to sign you in.
+            Securely continue with your Google account.
           </p>
         </div>
 
@@ -79,16 +79,12 @@ function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
           <div className="h-1.5 bg-gradient-to-r from-[#6f4f25] via-[#b38749] to-[#5a3f20]" />
           <div className="pointer-events-none absolute -right-12 top-10 h-28 w-28 rounded-full bg-[#bb9358]/12 blur-2xl" />
           <div className="p-4 sm:p-6 md:p-8 space-y-3.5 sm:space-y-5">
-            <ShopPhoneOtpForm
-              variant="account"
-              establishSession
-              onSuccess={(_phone, meta) => {
-                toast.success(
-                  meta?.isNew ? "Account created! Welcome to Catha Lounge 🎉" : "Welcome back! 👋"
-                )
-                onSignedIn()
-              }}
-            />
+            <Button
+              onClick={onSignIn}
+              className="w-full h-12 rounded-xl bg-white text-[#2f241f] border border-[#d7d1c5] shadow-[0_10px_24px_rgba(40,24,14,0.16)] hover:bg-[#fbf7f0] font-semibold"
+            >
+              Continue with Google
+            </Button>
           </div>
         </div>
 
@@ -108,8 +104,11 @@ function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
 function AccountContent() {
   const searchParams = useSearchParams()
   const { cart } = useShopCart()
-  const { session, loading: sessionLoading, refreshSession, signOut } = useShopSession()
+  const { session, loading: sessionLoading, signOut } = useShopSession()
+  const openLoginModal = useShopLoginModal()
   const customerPhone = session.signedIn && session.customer?.phone ? session.customer.phone : null
+  const displayIdentity = customerPhone?.startsWith("+254") ? formatPhoneDisplay(customerPhone) : "Google account"
+  const profilePhone = customerPhone?.startsWith("+254") ? customerPhone : ""
 
   const [orders, setOrders] = useState<Order[]>([])
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -180,14 +179,14 @@ function AccountContent() {
             setProfile(fp); setTempProfile(fp)
           } else {
             const pr = await fetch("/api/ecommerce/profile")
-            if (pr.ok) { const d = await pr.json(); const p = d.profile || {}; const fp = { fullName: p.fullName || "", email: p.email || "", phone: customerPhone }; setProfile(fp); setTempProfile(fp) }
-            else { setProfile({ fullName: "", email: "", phone: customerPhone }); setTempProfile({ fullName: "", email: "", phone: customerPhone }) }
+            if (pr.ok) { const d = await pr.json(); const p = d.profile || {}; const fp = { fullName: p.fullName || "", email: p.email || "", phone: profilePhone }; setProfile(fp); setTempProfile(fp) }
+            else { setProfile({ fullName: "", email: "", phone: profilePhone }); setTempProfile({ fullName: "", email: "", phone: profilePhone }) }
           }
         } else {
           setOrders([])
           const pr = await fetch("/api/ecommerce/profile")
-          if (pr.ok) { const d = await pr.json(); const p = d.profile || {}; setProfile({ fullName: p.fullName || "", email: p.email || "", phone: customerPhone }); setTempProfile({ fullName: p.fullName || "", email: p.email || "", phone: customerPhone }) }
-          else { setProfile({ fullName: "", email: "", phone: customerPhone }); setTempProfile({ fullName: "", email: "", phone: customerPhone }) }
+          if (pr.ok) { const d = await pr.json(); const p = d.profile || {}; setProfile({ fullName: p.fullName || "", email: p.email || "", phone: profilePhone }); setTempProfile({ fullName: p.fullName || "", email: p.email || "", phone: profilePhone }) }
+          else { setProfile({ fullName: "", email: "", phone: profilePhone }); setTempProfile({ fullName: "", email: "", phone: profilePhone }) }
         }
       } catch (e: any) {
         toast.error("Failed to load account data")
@@ -195,7 +194,7 @@ function AccountContent() {
       } finally { setLoading(false) }
     }
     if (customerPhone) fetchData(); else setLoading(false)
-  }, [customerPhone, searchParams])
+  }, [customerPhone, profilePhone, searchParams])
 
   const saveProfile = async () => {
     try {
@@ -227,7 +226,7 @@ function AccountContent() {
       <div className="min-h-screen bg-gradient-to-br from-[#f6f1e8] via-[#f2ece2] to-[#ece4d8]">
         <EcommerceHeader cartCount={cartCount} />
         <main className="container mx-auto px-4 sm:px-6 md:px-8 pb-[92px] md:pb-8">
-          <SignInCard onSignedIn={() => refreshSession()} />
+          <SignInCard onSignIn={() => openLoginModal()} />
         </main>
       </div>
     )
@@ -254,7 +253,7 @@ function AccountContent() {
                   <div>
                     <h1 className="text-lg sm:text-2xl font-black text-[#2a201b] tracking-tight">My Account</h1>
                     {customerPhone && (
-                      <p className="text-[11px] sm:text-xs text-[#8a6330] font-semibold mt-0.5">{formatPhoneDisplay(customerPhone)}</p>
+                      <p className="text-[11px] sm:text-xs text-[#8a6330] font-semibold mt-0.5">{displayIdentity}</p>
                     )}
                   </div>
                 </div>

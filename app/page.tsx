@@ -72,17 +72,12 @@ export default function HomePage() {
   const handleAddToCart = useCallback(
     async (product: EcommerceProduct) => {
       if (!session.signedIn) {
-        openLoginModal(async () => {
-          await refresh()
-          // Yield so React can commit session + cart state before addItem runs
-          await new Promise((r) => setTimeout(r, 80))
-          await doAddToCart(product)
-        })
+        openLoginModal()
         return
       }
       await doAddToCart(product)
     },
-    [session.signedIn, doAddToCart, refresh, openLoginModal]
+    [session.signedIn, doAddToCart, openLoginModal]
   )
 
   // Fetch real products from MongoDB

@@ -371,28 +371,21 @@ export default function ProductPage() {
     }
     if (!product) return
     if (!session.signedIn) {
-      openLoginModal(async () => {
-        await refresh()
-        await doAddToCart()
-      })
+      openLoginModal()
       return
     }
     await doAddToCart()
-  }, [session.signedIn, product, selectedSizeData, doAddToCart, refresh, openLoginModal])
+  }, [session.signedIn, product, selectedSizeData, doAddToCart, openLoginModal])
 
   const handleBuyNow = useCallback(async () => {
     if (!selectedSizeData?.available || !product) return
     if (!session.signedIn) {
-      openLoginModal(async () => {
-        await refresh()
-        const ok = await doAddToCart()
-        if (ok) router.push("/cart")
-      })
+      openLoginModal()
       return
     }
     const ok = await doAddToCart()
     if (ok) router.push("/cart")
-  }, [session.signedIn, product, selectedSizeData, doAddToCart, router, refresh, openLoginModal])
+  }, [session.signedIn, product, selectedSizeData, doAddToCart, router, openLoginModal])
 
   const handleRelatedAddToCart = useCallback(
     async (p: EcommerceProduct) => {
@@ -400,22 +393,7 @@ export default function ProductPage() {
       const firstSize = p.sizes.find((s) => s.available) || p.sizes[0]
       if (!firstSize) return
       if (!session.signedIn) {
-        openLoginModal(async () => {
-          await refresh()
-          const ok = await addItem({
-            id: p.id,
-            name: p.name,
-            price: firstSize.price,
-            image: p.image,
-            quantity: 1,
-            size: firstSize.size,
-          })
-          if (ok) {
-            toast.success(`${p.name}${firstSize.size !== "Standard" ? ` (${firstSize.size})` : ""} added to cart`, { duration: 4000 })
-          } else {
-            toast.error(`Could not add ${p.name}. Try again.`)
-          }
-        })
+        openLoginModal()
         return
       }
       const ok = await addItem({
@@ -432,7 +410,7 @@ export default function ProductPage() {
         toast.error(`Could not add ${p.name}. Try again.`)
       }
     },
-    [session.signedIn, addItem, refresh, openLoginModal]
+    [session.signedIn, addItem, openLoginModal]
   )
 
   const handleShare = useCallback(

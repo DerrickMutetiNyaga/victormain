@@ -51,10 +51,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/ecommerce/cart", fetchOpts)
       if (res.status === 401) {
         setCart([])
-        openLoginModal(async () => {
-          await refreshSession()
-          await fetchCart()
-        })
+        openLoginModal()
         return
       }
       const data = await res.json()
@@ -68,7 +65,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setCart([])
     }
-  }, [openLoginModal, refreshSession])
+  }, [openLoginModal])
 
   const saveCart = useCallback(async (items: CartItem[], overwriteFromResponse = true): Promise<boolean> => {
     try {
@@ -79,10 +76,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ items }),
       })
       if (res.status === 401) {
-        openLoginModal(async () => {
-          await refreshSession()
-          await fetchCart()
-        })
+        openLoginModal()
         return false
       }
       if (res.ok) {
@@ -100,7 +94,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to save cart:", err)
       return false
     }
-  }, [openLoginModal, refreshSession, fetchCart])
+  }, [openLoginModal, fetchCart])
 
   useEffect(() => {
     let cancelled = false
@@ -162,10 +156,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ item: toAdd }),
         })
         if (res.status === 401) {
-          openLoginModal(async () => {
-            await refreshSession()
-            await fetchCart()
-          })
+          openLoginModal()
           return false
         }
         if (!res.ok) {
@@ -187,7 +178,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return false
       }
     },
-    [openLoginModal, refreshSession, fetchCart]
+    [openLoginModal, fetchCart]
   )
 
   const updateQuantity = useCallback(
@@ -252,10 +243,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (res.status === 401) {
-          openLoginModal(async () => {
-            await refreshSession()
-            await fetchCart()
-          })
+          openLoginModal()
           return
         }
         if (!res.ok) {
@@ -276,7 +264,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         await fetchCart()
       }
     },
-    [session.signedIn, getLineId, fetchCart, openLoginModal, refreshSession]
+    [session.signedIn, getLineId, fetchCart, openLoginModal]
   )
 
   const setCartAndSave = useCallback(

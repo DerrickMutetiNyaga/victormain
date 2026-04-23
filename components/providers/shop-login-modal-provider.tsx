@@ -1,71 +1,42 @@
 "use client"
 
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react"
-import { PhoneLoginModal } from "@/components/ecommerce/phone-login-modal"
-import { useShopSession } from "@/components/providers/shop-session-provider"
-
-type PendingAction = () => void | Promise<void>
+import React, { createContext, useContext, useCallback } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
+import { sanitizeShopRedirect } from "@/lib/shop-auth-redirect"
+import { trackShopAuthEvent } from "@/lib/shop-auth-analytics"
 
 interface ShopLoginModalContextValue {
-  openLoginModal: (onSuccess?: PendingAction) => void
+  openLoginModal: () => void
 }
 
 const ShopLoginModalContext = createContext<ShopLoginModalContextValue | null>(null)
 
 export function ShopLoginModalProvider({ children }: { children: React.ReactNode }) {
-  const { session, refreshSession } = useShopSession()
-  const [open, setOpen] = useState(false)
-  const pendingActionRef = useRef<PendingAction | null>(null)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  const openLoginModal = useCallback((onSuccess?: PendingAction) => {
-    pendingActionRef.current = onSuccess ?? null
-    setOpen(true)
-  }, [])
-
-  // If modal is open but user is ALREADY logged in (e.g. session just loaded), close modal and run pending action
-  useEffect(() => {
-    if (open && session.signedIn) {
-      setOpen(false)
-      const action = pendingActionRef.current
-      pendingActionRef.current = null
-      if (typeof action === "function") {
-        Promise.resolve(action()).catch(console.error)
-      }
+  const openLoginModal = useCallback(() => {
+    const query = searchParams.toString()
+    const candidate = pathname ? `${pathname}${query ? `?${query}` : ""}` : "/shop"
+    const next = sanitizeShopRedirect(candidate)
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("shop_auth_pending", "1")
+      sessionStorage.setItem("shop_auth_next", next)
+      sessionStorage.setItem("shop_auth_started_at", String(Date.now()))
+      trackShopAuthEvent("shop_auth_google_entry_click", { from_path: candidate, next })
+      window.location.assign(`/auth?next=${encodeURIComponent(next)}`)
     }
-  }, [open, session.signedIn])
-
-  const handleSuccess = useCallback(
-    async (_phone: string) => {
-      await refreshSession()
-      setOpen(false)
-      const action = pendingActionRef.current
-      pendingActionRef.current = null
-      if (typeof action === "function") {
-        Promise.resolve(action()).catch(console.error)
-      }
-    },
-    [refreshSession]
-  )
-
-  const handleOpenChange = useCallback((o: boolean) => {
-    if (!o) pendingActionRef.current = null
-    setOpen(o)
-  }, [])
+  }, [pathname, searchParams])
 
   return (
     <ShopLoginModalContext.Provider value={{ openLoginModal }}>
       {children}
-      <PhoneLoginModal
-        open={open}
-        onOpenChange={handleOpenChange}
-        onSuccess={handleSuccess}
-      />
     </ShopLoginModalContext.Provider>
   )
 }
 
 export function useShopLoginModal() {
   const ctx = useContext(ShopLoginModalContext)
-  return ctx?.openLoginModal ?? (() => {})
+  return ctx?.openLoginModal ?? (() => undefined)
 }
 

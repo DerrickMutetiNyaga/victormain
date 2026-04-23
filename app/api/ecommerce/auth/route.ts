@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server'
 
 /**
- * Phone sign-in now requires SMS verification.
- * Use POST /api/ecommerce/auth/send-otp then POST /api/ecommerce/auth/verify.
+ * E-commerce auth currently supports Google sign-in only.
  */
 export async function POST() {
   return NextResponse.json(
     {
       success: false,
-      error: 'Verification required. Request a code via /api/ecommerce/auth/send-otp, then complete sign-in at /api/ecommerce/auth/verify.',
-      code: 'OTP_REQUIRED',
+      error: 'Use Google sign-in via /auth.',
+      code: 'GOOGLE_SIGN_IN_REQUIRED',
     },
-    { status: 400 }
+    { status: 405 }
   )
 }

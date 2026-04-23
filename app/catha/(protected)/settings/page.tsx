@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Header } from "@/components/layout/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
 import { staff } from "@/lib/dummy-data"
-import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock, Plus, Trash2 } from "lucide-react"
+import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock, Plus, Trash2, Activity, AlertTriangle, RefreshCw } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -99,6 +99,36 @@ type DeliveryOption = {
   enabled: boolean
 }
 
+type AuthHealthResponse = {
+  success: boolean
+  summary: {
+    starts: number
+    success: number
+    successRate: number
+    busyLocks: number
+    stateMismatch: number
+    googleAccountMissing: number
+    rateLimited: number
+    sessionWaitTimeouts: number
+    timeoutRate: number
+    busyLockRate: number
+    stateMismatchRate: number
+    avgDurationMs: number | null
+    maxDurationMs: number | null
+  }
+  alerts: Array<{
+    code: string
+    severity: "info" | "warning" | "critical"
+    message: string
+    current: number
+    threshold: number
+  }>
+  daily: Array<{ day: string; type: string; count: number }>
+  failuresByReason: Array<{ reason: string; count: number }>
+  topReturnPaths: Array<{ path: string; count: number }>
+  deviceSplit: Array<{ device: string; count: number }>
+}
+
 const DEFAULT_DELIVERY_OPTIONS: DeliveryOption[] = [
   { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 1000, subtext: "Delivery fee applies", enabled: true },
   { value: "collect_at_catha_lodge", label: "Collect at Catha Lounge", fee: 0, subtext: "No delivery fee", enabled: true },
@@ -167,6 +197,12 @@ export default function SettingsPage() {
   const [eoCustomNotice, setEoCustomNotice] = useState("")
   const [eoBlockCheckout, setEoBlockCheckout] = useState(false)
 
+  // Auth health panel
+  const [authHealthDays, setAuthHealthDays] = useState("7")
+  const [authHealthLoading, setAuthHealthLoading] = useState(false)
+  const [authHealthError, setAuthHealthError] = useState("")
+  const [authHealth, setAuthHealth] = useState<AuthHealthResponse | null>(null)
+
   const eoPreview = useMemo(
     () =>
       evaluateEcommerceOpeningHours(
@@ -182,6 +218,26 @@ export default function SettingsPage() {
       ),
     [eoEnabled, eoOpenTime, eoCloseTime, eoOpenDays, eoCustomNotice, eoBlockCheckout]
   )
+
+  const fetchAuthHealth = useCallback(async (daysOverride?: string) => {
+    const days = daysOverride ?? authHealthDays
+    setAuthHealthLoading(true)
+    setAuthHealthError("")
+    try {
+      const response = await fetch(`/api/admin/auth-health?days=${encodeURIComponent(days)}`, {
+        cache: "no-store",
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to load auth health")
+      }
+      setAuthHealth(data)
+    } catch (error: any) {
+      setAuthHealthError(error.message || "Failed to load auth health")
+    } finally {
+      setAuthHealthLoading(false)
+    }
+  }, [authHealthDays])
 
   // Load settings on mount
   useEffect(() => {
@@ -282,6 +338,10 @@ export default function SettingsPage() {
     
     loadSettings()
   }, [toast])
+
+  useEffect(() => {
+    fetchAuthHealth()
+  }, [fetchAuthHealth])
 
   const saveBusinessInfo = async () => {
     setSaving(true)
@@ -706,6 +766,26 @@ export default function SettingsPage() {
     ])
   }
 
+  const authDailyRows = useMemo(() => {
+    if (!authHealth?.daily?.length) return []
+    const map = new Map<string, { day: string; start: number; success: number; timeout: number }>()
+    authHealth.daily.forEach((row) => {
+      if (!map.has(row.day)) {
+        map.set(row.day, { day: row.day, start: 0, success: 0, timeout: 0 })
+      }
+      const current = map.get(row.day)!
+      if (row.type === "start") current.start = row.count
+      if (row.type === "success") current.success = row.count
+      if (row.type === "session_wait_timeout") current.timeout = row.count
+    })
+    return Array.from(map.values()).sort((a, b) => a.day.localeCompare(b.day))
+  }, [authHealth])
+
+  const authDailyMax = useMemo(
+    () => Math.max(1, ...authDailyRows.map((r) => Math.max(r.start, r.success, r.timeout))),
+    [authDailyRows]
+  )
+
   if (loading) {
     return (
       <>
@@ -754,6 +834,10 @@ export default function SettingsPage() {
               <TabsTrigger value="ecommerce-hours" className="gap-2">
                 <Clock className="h-4 w-4" />
                 Opening hours
+              </TabsTrigger>
+              <TabsTrigger value="auth-health" className="gap-2">
+                <Activity className="h-4 w-4" />
+                Auth health
               </TabsTrigger>
             </TabsList>
 
@@ -1644,6 +1728,163 @@ export default function SettingsPage() {
                   <Button onClick={saveEcommerceOpeningHours} disabled={saving}>
                     {saving ? "Saving..." : "Save ecommerce opening hours"}
                   </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="auth-health" className="space-y-6">
+              <Card className="border-border bg-card">
+                <CardHeader>
+                  <CardTitle className="text-card-foreground flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    Auth health monitor
+                  </CardTitle>
+                  <CardDescription>
+                    Week-one auth stability dashboard with alert thresholds for success rate, timeout spikes, and duplicate-start locks.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Label htmlFor="auth-health-days">Window</Label>
+                    <Select
+                      value={authHealthDays}
+                      onValueChange={(value) => {
+                        setAuthHealthDays(value)
+                        fetchAuthHealth(value)
+                      }}
+                    >
+                      <SelectTrigger id="auth-health-days" className="w-[140px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Last 24h</SelectItem>
+                        <SelectItem value="7">Last 7 days</SelectItem>
+                        <SelectItem value="14">Last 14 days</SelectItem>
+                        <SelectItem value="30">Last 30 days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => fetchAuthHealth()}
+                      disabled={authHealthLoading}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${authHealthLoading ? "animate-spin" : ""}`} />
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {authHealthError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {authHealthError}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      { label: "Auth starts", value: authHealth?.summary.starts ?? 0 },
+                      { label: "Success rate", value: `${authHealth?.summary.successRate ?? 0}%` },
+                      { label: "Timeout rate", value: `${authHealth?.summary.timeoutRate ?? 0}%` },
+                      { label: "Busy lock rate", value: `${authHealth?.summary.busyLockRate ?? 0}%` },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg border border-border bg-muted/20 p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                        <p className="mt-1 text-2xl font-bold">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {authHealth?.alerts?.length ? (
+                    <div className="space-y-3">
+                      <Label className="font-semibold">Threshold alerts</Label>
+                      {authHealth.alerts.map((alert) => (
+                        <div
+                          key={alert.code}
+                          className={`rounded-lg border p-3 text-sm ${
+                            alert.severity === "critical"
+                              ? "border-red-300 bg-red-50 text-red-800"
+                              : "border-amber-300 bg-amber-50 text-amber-800"
+                          }`}
+                        >
+                          <p className="font-semibold flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            {alert.message}
+                          </p>
+                          <p className="mt-1">
+                            Current: {alert.current}% · Threshold: {alert.threshold}%
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                      No threshold alerts detected for this time window.
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <Label className="font-semibold">Daily auth trend</Label>
+                    <div className="space-y-2">
+                      {authDailyRows.map((row) => (
+                        <div key={row.day} className="rounded-lg border border-border p-3">
+                          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{row.day}</span>
+                            <span>Start {row.start} · Success {row.success} · Timeout {row.timeout}</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded bg-muted">
+                            <div
+                              className="h-2 bg-blue-500"
+                              style={{ width: `${(row.start / authDailyMax) * 100}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 h-2 w-full overflow-hidden rounded bg-muted">
+                            <div
+                              className="h-2 bg-emerald-500"
+                              style={{ width: `${(row.success / authDailyMax) * 100}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 h-2 w-full overflow-hidden rounded bg-muted">
+                            <div
+                              className="h-2 bg-amber-500"
+                              style={{ width: `${(row.timeout / authDailyMax) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div className="rounded-lg border border-border p-4">
+                      <Label className="font-semibold">Top return paths after auth</Label>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {(authHealth?.topReturnPaths ?? []).slice(0, 8).map((item) => (
+                          <div key={item.path} className="flex items-center justify-between gap-3">
+                            <span className="truncate text-muted-foreground">{item.path}</span>
+                            <Badge variant="secondary">{item.count}</Badge>
+                          </div>
+                        ))}
+                        {!(authHealth?.topReturnPaths?.length) && (
+                          <p className="text-muted-foreground">No return-path data yet.</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border p-4">
+                      <Label className="font-semibold">Failure reasons</Label>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {(authHealth?.failuresByReason ?? []).slice(0, 8).map((item) => (
+                          <div key={item.reason} className="flex items-center justify-between gap-3">
+                            <span className="truncate text-muted-foreground">{item.reason}</span>
+                            <Badge variant="secondary">{item.count}</Badge>
+                          </div>
+                        ))}
+                        {!(authHealth?.failuresByReason?.length) && (
+                          <p className="text-muted-foreground">No failure reasons captured in this range.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
