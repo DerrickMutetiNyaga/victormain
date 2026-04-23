@@ -1,4 +1,5 @@
 import type React from "react"
+import { Suspense } from "react"
 import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/sonner"
@@ -39,13 +40,15 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <SessionProvider>
           <ShopSessionProvider>
-            <ShopLoginModalProvider>
-              <CartProvider>
-                <OrderNotificationsProvider>
-                  {children}
-                </OrderNotificationsProvider>
-              </CartProvider>
-            </ShopLoginModalProvider>
+            <Suspense fallback={<>{children}</>}>
+              <ShopLoginModalProvider>
+                <CartProvider>
+                  <OrderNotificationsProvider>
+                    {children}
+                  </OrderNotificationsProvider>
+                </CartProvider>
+              </ShopLoginModalProvider>
+            </Suspense>
           </ShopSessionProvider>
         </SessionProvider>
         <GlobalErrorListener />
