@@ -33,6 +33,7 @@ import {
   cathaStaffOrderUpdateSchema,
   formatZodError,
 } from '@/lib/order-request-schemas'
+import { maybeSendCathaPaymentReceiptSms } from '@/lib/catha-payment-sms'
 
 function orderDocumentToJson(order: any) {
   const pay = formatCathaOrderForApi(order)
@@ -734,6 +735,14 @@ export async function PUT(request: Request) {
         { orderId: id },
         { $set: { status: 'cancelled', updatedAt: new Date() } }
       )
+    }
+
+    if (newStatus === 'completed') {
+      try {
+        await maybeSendCathaPaymentReceiptSms(db, id)
+      } catch (smsError) {
+        console.error('[Orders API] Failed to send payment receipt SMS:', smsError)
+      }
     }
     
     return noStoreJson({ success: true })

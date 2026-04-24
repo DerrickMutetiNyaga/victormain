@@ -16,6 +16,7 @@ import {
   buildAllocationTotalsForApi,
   listOrderIdsForTransaction,
 } from '@/lib/catha-mpesa-order-allocations'
+import { maybeSendCathaPaymentReceiptSms } from '@/lib/catha-payment-sms'
 
 export type AppendMpesaPaymentParams = {
   orderId: string
@@ -335,6 +336,11 @@ export async function appendMpesaPaymentToOrder(db: Db, params: AppendMpesaPayme
         },
       }
     )
+    try {
+      await maybeSendCathaPaymentReceiptSms(db, orderId)
+    } catch (smsError) {
+      console.error('[appendMpesaPaymentToOrder] Failed to send payment receipt SMS:', smsError)
+    }
   } else {
     await db.collection('menu_orders').updateOne(
       { orderId },
