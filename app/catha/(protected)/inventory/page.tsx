@@ -12,7 +12,8 @@ import { useCathaPermissions } from "@/hooks/use-catha-permissions"
 
 export default function BarInventoryPage() {
   const [isExporting, setIsExporting] = useState(false)
-  const { canView, canAdd } = useCathaPermissions("inventory")
+  const [isBackfillingVisibility, setIsBackfillingVisibility] = useState(false)
+  const { canView, canAdd, canEdit } = useCathaPermissions("inventory")
 
   const handleExport = async () => {
     try {
@@ -52,6 +53,32 @@ export default function BarInventoryPage() {
     }
   }
 
+  const handleBackfillVisibility = async () => {
+    try {
+      setIsBackfillingVisibility(true)
+      const response = await fetch('/api/catha/inventory/backfill-visibility', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to run visibility backfill')
+      }
+
+      toast.success('Product visibility backfill completed', {
+        description: `Matched ${data.matchedCount || 0}, updated ${data.modifiedCount || 0} products.`,
+      })
+      window.dispatchEvent(new CustomEvent('inventory-updated'))
+    } catch (error: any) {
+      console.error('Error backfilling visibility:', error)
+      toast.error('Visibility backfill failed', {
+        description: error.message || 'An error occurred. Please try again.',
+      })
+    } finally {
+      setIsBackfillingVisibility(false)
+    }
+  }
+
   return (
     <>
       <Header title="Inventory Management" subtitle="Track and manage your stock" />
@@ -66,6 +93,17 @@ export default function BarInventoryPage() {
             </p>
           </div>
           <div className="flex gap-3">
+            {canEdit && (
+              <Button
+                variant="outline"
+                className="gap-2 rounded-xl border-border/70 bg-background/60 hover:bg-background hover:border-primary/40 shadow-sm"
+                onClick={handleBackfillVisibility}
+                disabled={isBackfillingVisibility}
+              >
+                <Loader2 className={`h-4 w-4 ${isBackfillingVisibility ? 'animate-spin' : ''}`} />
+                {isBackfillingVisibility ? 'Backfilling...' : 'Backfill Visibility'}
+              </Button>
+            )}
             {canView && (
               <Button
                 variant="outline"
@@ -90,6 +128,18 @@ export default function BarInventoryPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-2 rounded-xl border-border/70 bg-white shadow-sm text-xs h-10"
+                onClick={handleBackfillVisibility}
+                disabled={isBackfillingVisibility}
+              >
+                <Loader2 className={`h-3.5 w-3.5 ${isBackfillingVisibility ? 'animate-spin' : ''}`} />
+                {isBackfillingVisibility ? 'Backfilling...' : 'Visibility'}
+              </Button>
+            )}
             {canView && (
               <Button
                 variant="outline"

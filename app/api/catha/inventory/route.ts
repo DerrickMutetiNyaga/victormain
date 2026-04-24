@@ -7,6 +7,7 @@ export const runtime = 'nodejs'
 
 // Cache configuration - Next.js will cache responses for 60 seconds
 export const revalidate = 60
+let visibilityDefaultsBackfilled = false
 
 async function dropLegacyNameUniqueIndexes(db: any) {
   const collection = db.collection('bar_inventory')
@@ -34,6 +35,20 @@ async function dropLegacyNameUniqueIndexes(db: any) {
   }
 }
 
+async function ensureVisibilityDefaults(db: any) {
+  if (visibilityDefaultsBackfilled) return
+  const collection = db.collection('bar_inventory')
+  try {
+    await collection.updateMany(
+      { type: 'bar', isVisible: { $exists: false } },
+      { $set: { isVisible: true, updatedAt: new Date() } },
+    )
+    visibilityDefaultsBackfilled = true
+  } catch (error: any) {
+    console.warn('[Bar Inventory API] Failed to backfill isVisible defaults:', error?.message || error)
+  }
+}
+
 // GET all bar inventory items - OPTIMIZED for high performance
 // Public: allows unauthenticated (shop, home, product listing). If logged in, requires pos/inventory view.
 export async function GET(request: Request) {
@@ -47,12 +62,18 @@ export async function GET(request: Request) {
     const category = searchParams.get('category')
     const search = searchParams.get('search')
     const stockStatus = searchParams.get('stockStatus') || 'all'
+    const visibleOnly = searchParams.get('visibleOnly') === 'true'
     const limit = parseInt(searchParams.get('limit') || '0') // 0 = no limit
     const skip = parseInt(searchParams.get('skip') || '0')
     const aiFilter = searchParams.get('aiFilter') || ''
 
     // Keep products visible at stock=0. Only hide archived/deleted items.
     let query: any = { type: 'bar', deleted: { $ne: true }, status: { $ne: 'archived' } }
+    if (visibleOnly) {
+      query.isVisible = { $ne: false }
+    }
+
+    await ensureVisibilityDefaults(db)
 
     if (category && category !== 'all') {
       query.category = category
@@ -84,6 +105,7 @@ export async function GET(request: Request) {
       barcode: 1,
       isJaba: 1,
       isFeatured: 1,
+      isVisible: 1,
       unit: 1,
       supplier: 1,
       batch: 1,
@@ -127,6 +149,7 @@ export async function GET(request: Request) {
       barcode: p.barcode || '',
       isJaba: p.isJaba || false,
       isFeatured: p.isFeatured || false,
+      isVisible: p.isVisible !== false,
       unit: p.unit || 'item',
       supplier: p.supplier || 'Unknown',
       batch: p.batch || '',
@@ -275,6 +298,7 @@ export async function POST(request: Request) {
       image,
       isJaba,
       isFeatured,
+      isVisible,
       status,
     } = body
     const requestedStatus = status === 'archived' || status === 'out_of_stock' || status === 'active' ? status : null
@@ -326,6 +350,7 @@ export async function POST(request: Request) {
       notes: notes?.trim() || '',
       isJaba: Boolean(isJaba),
       isFeatured: Boolean(isFeatured),
+      isVisible: isVisible !== false,
       status: requestedStatus || (Number(stock) > 0 ? 'active' : 'out_of_stock'),
       type: 'bar', // Specifically mark as bar inventory
       createdAt: new Date(),
@@ -398,6 +423,7 @@ export async function PUT(request: Request) {
       image,
       isJaba,
       isFeatured,
+      isVisible,
       status,
     } = body
     const requestedStatus = status === 'archived' || status === 'out_of_stock' || status === 'active' ? status : null
@@ -464,6 +490,7 @@ export async function PUT(request: Request) {
       notes: notes?.trim() || '',
       isJaba: Boolean(isJaba),
       isFeatured: Boolean(isFeatured),
+      isVisible: isVisible !== false,
       status: requestedStatus || (Number(stock) > 0 ? 'active' : 'out_of_stock'),
       updatedAt: new Date(),
     }

@@ -29,6 +29,12 @@ export async function GET(
     const client = await clientPromise
     const db = client.db('infusion_jaba')
     const collection = db.collection('bar_inventory')
+    const { searchParams } = new URL(request.url)
+    const visibleOnly = searchParams.get('visibleOnly') === 'true'
+    await collection.updateMany(
+      { type: 'bar', isVisible: { $exists: false } },
+      { $set: { isVisible: true, updatedAt: new Date() } },
+    )
 
     const projection = {
       _id: 1,
@@ -52,7 +58,12 @@ export async function GET(
         const objectId = new ObjectId(productId)
         console.log('[Bar Inventory API] Searching by ObjectId:', objectId.toString())
         firstProduct = await collection.findOne(
-          { _id: objectId, deleted: { $ne: true }, status: { $ne: 'archived' } },
+          {
+            _id: objectId,
+            deleted: { $ne: true },
+            status: { $ne: 'archived' },
+            ...(visibleOnly ? { isVisible: { $ne: false } } : {}),
+          },
           { projection }
         )
         console.log('[Bar Inventory API] Found by ObjectId:', !!firstProduct)
@@ -68,7 +79,12 @@ export async function GET(
         const safeName = decodedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         console.log('[Bar Inventory API] Searching by name:', safeName)
         firstProduct = await collection.findOne(
-          { name: { $regex: new RegExp(`^${safeName}$`, 'i') }, deleted: { $ne: true }, status: { $ne: 'archived' } },
+          {
+            name: { $regex: new RegExp(`^${safeName}$`, 'i') },
+            deleted: { $ne: true },
+            status: { $ne: 'archived' },
+            ...(visibleOnly ? { isVisible: { $ne: false } } : {}),
+          },
           { projection }
         )
         console.log('[Bar Inventory API] Found by name:', !!firstProduct)
@@ -92,7 +108,15 @@ export async function GET(
       // Get ALL variants with same name (including 0 stock)
       try {
         const allVariants = await collection
-          .find({ name: productName, deleted: { $ne: true }, status: { $ne: 'archived' } }, { projection })
+          .find(
+            {
+              name: productName,
+              deleted: { $ne: true },
+              status: { $ne: 'archived' },
+              ...(visibleOnly ? { isVisible: { $ne: false } } : {}),
+            },
+            { projection },
+          )
           .toArray()
         
         console.log('[Bar Inventory API] Found variants:', allVariants.length)

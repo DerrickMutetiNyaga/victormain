@@ -87,7 +87,7 @@ function ShopPageContent() {
       try {
         setLoading(true)
         // Use cache: 'force-cache' for initial load, then 'no-store' for updates
-        const response = await fetch('/api/catha/inventory', {
+        const response = await fetch('/api/catha/inventory?visibleOnly=true', {
           cache: 'force-cache',
           next: { revalidate: 60 } // Revalidate every 60 seconds
         })

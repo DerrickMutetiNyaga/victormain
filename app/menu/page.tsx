@@ -88,7 +88,7 @@ function MenuContent() {
 
   // Fetch real products from inventory
   useEffect(() => {
-    fetch("/api/catha/inventory")
+    fetch("/api/catha/inventory?visibleOnly=true")
       .then((r) => r.json())
       .then((data) => {
         if (!data.products) return

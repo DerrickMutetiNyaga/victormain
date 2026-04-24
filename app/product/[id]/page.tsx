@@ -114,7 +114,7 @@ export default function ProductPage() {
       let isRetrying = false
       try {
         setLoading(true)
-        const response = await fetch(`/api/catha/inventory/${params.id}`, {
+        const response = await fetch(`/api/catha/inventory/${params.id}?visibleOnly=true`, {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache" },
         })
@@ -235,7 +235,7 @@ export default function ProductPage() {
     if (!product?.category) return
     const fetchRelated = async () => {
       try {
-        const res = await fetch("/api/catha/inventory", { cache: "force-cache", next: { revalidate: 60 } })
+        const res = await fetch("/api/catha/inventory?visibleOnly=true", { cache: "force-cache", next: { revalidate: 60 } })
         if (!res.ok) return
         const data = await res.json()
         if (!data.success || !data.products) return
@@ -330,7 +330,7 @@ export default function ProductPage() {
     }
     return ok
     // Revalidate: refetch product so stock display can update
-    fetch(`/api/catha/inventory/${params.id}`, { cache: "no-store" })
+    fetch(`/api/catha/inventory/${params.id}?visibleOnly=true`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.products?.length > 0) {

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { type Transaction } from "@/lib/dummy-data"
-import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2, Truck, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2, Truck, RefreshCw, ChevronLeft, ChevronRight, CreditCard } from "lucide-react"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
 import { normalizeMpesaStatus } from "@/lib/mpesa-status"
 import { toast } from "sonner"
@@ -94,7 +94,7 @@ function PaymentBadge({ method }: { method: string | null }) {
     cash: { icon: <Banknote className="h-3 w-3" />, label: "Cash", bg: "bg-emerald-50", text: "text-emerald-700" },
     mpesa: { icon: <Smartphone className="h-3 w-3" />, label: "M-Pesa", bg: "bg-green-50", text: "text-green-700" },
     glovo: { icon: <Truck className="h-3 w-3" />, label: "Glovo", bg: "bg-orange-50", text: "text-orange-700" },
-    card: { icon: <Smartphone className="h-3 w-3" />, label: "Card", bg: "bg-blue-50", text: "text-blue-700" },
+    card: { icon: <CreditCard className="h-3 w-3" />, label: "Card", bg: "bg-blue-50", text: "text-blue-700" },
   }
   const cfg = config[method?.toLowerCase() || ""] || { icon: null, label: method || "—", bg: "bg-slate-50", text: "text-slate-600" }
   
@@ -217,9 +217,12 @@ export default function OrdersPage() {
   const [newItems, setNewItems] = useState<{ productId: string; quantity: number }[]>([])
   const [addItemsSearchQuery, setAddItemsSearchQuery] = useState("")
   const [processingPayment, setProcessingPayment] = useState<Transaction | null>(null)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"glovo" | "mpesa" | "">("")
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"glovo" | "card" | "mpesa" | "">("")
   const [glovoOrderNumber, setGlovoOrderNumber] = useState("")
   const [isProcessingGlovoPayment, setIsProcessingGlovoPayment] = useState(false)
+  const [showCardDialog, setShowCardDialog] = useState(false)
+  const [cardTransactionReference, setCardTransactionReference] = useState("")
+  const [isProcessingCardPayment, setIsProcessingCardPayment] = useState(false)
   const [mpesaFlowTab, setMpesaFlowTab] = useState<"link" | "request">("link")
   const [mpesaExactAmountSearch, setMpesaExactAmountSearch] = useState("")
   const [mpesaLinkCandidates, setMpesaLinkCandidates] = useState<any[]>([])
@@ -737,6 +740,8 @@ export default function OrdersPage() {
     setProcessingPayment(order)
     setSelectedPaymentMethod("")
     setGlovoOrderNumber("")
+    setCardTransactionReference("")
+    setShowCardDialog(false)
     setMpesaFlowTab("link")
     const hint = paySum.balanceDue > 0 ? paySum.balanceDue : paySum.orderTotal
     setMpesaExactAmountSearch(hint > 0 ? String(hint.toFixed(2)) : "")
@@ -754,7 +759,7 @@ export default function OrdersPage() {
     setMpesaPhoneNumber(value)
   }
 
-  const markOrderPaid = async (orderId: string, method: "glovo" | "mpesa", extra: Record<string, unknown> = {}) => {
+  const markOrderPaid = async (orderId: string, method: "glovo" | "card" | "mpesa", extra: Record<string, unknown> = {}) => {
     const payload: Record<string, unknown> = {
       id: orderId,
       paymentMethod: method,
@@ -762,12 +767,24 @@ export default function OrdersPage() {
       paymentStatus: "PAID",
       ...extra,
     }
-    await fetch('/api/catha/orders', {
+    const res = await fetch('/api/catha/orders', {
       method: 'PUT',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
+    if (!res.ok) {
+      let message = "Failed to update order payment"
+      try {
+        const data = await res.json()
+        if (typeof data?.error === "string" && data.error.trim()) {
+          message = data.error
+        }
+      } catch {
+        // ignore parse failure
+      }
+      throw new Error(message)
+    }
     // Sync menu order
     try {
       await fetch('/api/catha/menu-orders', {
@@ -906,6 +923,42 @@ export default function OrdersPage() {
     }
   }
 
+  const handleConfirmCardPayment = async () => {
+    if (!processingPayment || isProcessingCardPayment) return
+    const reference = cardTransactionReference.trim()
+    if (!reference) {
+      toast.error("Card transaction reference is required.")
+      return
+    }
+    setIsProcessingCardPayment(true)
+    try {
+      const phoneNorm =
+        normalizeKenyaPhone(paymentCustomerPhone.trim()) || normalizeKenyaPhone(mpesaPhoneNumber.trim())
+      const staffUser =
+        (session?.user as any)?.name ||
+        (session?.user as any)?.email ||
+        "System"
+      await markOrderPaid(processingPayment.id, "card", {
+        paymentReference: reference,
+        reference,
+        cardTransactionReference: reference,
+        paidAmount: Number(processingPayment.total || 0),
+        paidAt: new Date().toISOString(),
+        paidBy: String(staffUser),
+        ...(phoneNorm ? { customerPhone: phoneNorm } : {}),
+      })
+      toast.success(`Order ${processingPayment.id} paid via Card`)
+      setShowCardDialog(false)
+      setProcessingPayment(null)
+      setSelectedPaymentMethod("")
+      setCardTransactionReference("")
+    } catch {
+      toast.error("Failed to process Card payment.")
+    } finally {
+      setIsProcessingCardPayment(false)
+    }
+  }
+
   const handleProcessPayment = async () => {
     if (!processingPayment || !selectedPaymentMethod) {
       alert("Please select a payment method")
@@ -916,6 +969,10 @@ export default function OrdersPage() {
     if (selectedPaymentMethod === "mpesa") {
       setShowMpesaDialog(true)
       setMpesaFlowTab("request")
+      return
+    }
+    if (selectedPaymentMethod === "card") {
+      setShowCardDialog(true)
       return
     }
     await handleConfirmGlovoPayment()
@@ -2051,6 +2108,9 @@ export default function OrdersPage() {
                           paymentDetail = `#${tx.mpesaReceiptNumber}`
                         } else if (isPaid && tx.paymentMethod?.toLowerCase() === "glovo" && (tx as any).glovoOrderNumber) {
                           paymentDetail = `Glovo #${(tx as any).glovoOrderNumber}`
+                        } else if (isPaid && tx.paymentMethod?.toLowerCase() === "card" && ((tx as any).cardTransactionReference || (tx as any).paymentReference || (tx as any).reference)) {
+                          const ref = (tx as any).cardTransactionReference || (tx as any).paymentReference || (tx as any).reference
+                          paymentDetail = `Card #${String(ref)}`
                         } else if (isPartiallyPaid && cashAmount != null) {
                           paymentDetail = `Rec: KSh ${cashAmount.toFixed(2)} • Due: KSh ${(total - cashAmount).toFixed(2)}`
                         } else if (payStatus === "NOT_PAID") {
@@ -3195,7 +3255,7 @@ export default function OrdersPage() {
 
               <div className="space-y-3">
                 <Label className="text-sm font-semibold">Select Payment Method</Label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <button
                     onClick={() => {
                       setSelectedPaymentMethod("glovo")
@@ -3214,6 +3274,26 @@ export default function OrdersPage() {
                       </div>
                       <span className={`text-xs font-semibold ${selectedPaymentMethod === "glovo" ? "text-orange-700" : "text-gray-700"}`}>
                         Glovo
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedPaymentMethod("card")}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      selectedPaymentMethod === "card"
+                        ? "border-blue-500 bg-blue-50 shadow-md"
+                        : "border-gray-200 hover:border-gray-300 bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
+                        selectedPaymentMethod === "card" ? "bg-blue-100" : "bg-gray-100"
+                      }`}>
+                        <CreditCard className={`h-6 w-6 ${selectedPaymentMethod === "card" ? "text-blue-600" : "text-gray-600"}`} />
+                      </div>
+                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "card" ? "text-blue-700" : "text-gray-700"}`}>
+                        Card
                       </span>
                     </div>
                   </button>
@@ -3504,6 +3584,8 @@ export default function OrdersPage() {
                 setProcessingPayment(null)
                 setSelectedPaymentMethod("")
                 setGlovoOrderNumber("")
+                setCardTransactionReference("")
+                setShowCardDialog(false)
                 setPaymentCustomerPhone("")
                 setMpesaPhoneNumber("")
               }}>
@@ -3525,16 +3607,102 @@ export default function OrdersPage() {
               ) : (
                 <Button
                   onClick={handleProcessPayment}
-                  disabled={!selectedPaymentMethod || (selectedPaymentMethod === "glovo" && (!glovoOrderNumber.trim() || isProcessingGlovoPayment))}
+                  disabled={
+                    !selectedPaymentMethod ||
+                    (selectedPaymentMethod === "glovo" && (!glovoOrderNumber.trim() || isProcessingGlovoPayment))
+                  }
                   className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
                 >
                   {selectedPaymentMethod === "mpesa" ? (
                     <><Smartphone className="h-4 w-4 mr-2" />Send M-Pesa Request</>
+                  ) : selectedPaymentMethod === "card" ? (
+                    <><CreditCard className="h-4 w-4 mr-2" />Continue Card Payment</>
                   ) : (
                     <><Truck className="h-4 w-4 mr-2" />Confirm Glovo Payment</>
                   )}
                 </Button>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Card Payment Dialog */}
+      {showCardDialog && processingPayment && (
+        <Dialog
+          open={showCardDialog}
+          onOpenChange={(open) => {
+            if (!open && isProcessingCardPayment) return
+            if (!open) {
+              setShowCardDialog(false)
+              setCardTransactionReference("")
+            }
+          }}
+        >
+          <DialogContent className="w-[96vw] max-w-md sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+            <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b">
+              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                  <CreditCard className="h-6 w-6 text-blue-600" />
+                </div>
+                Card Payment
+              </DialogTitle>
+              <DialogDescription>
+                Enter card transaction details to complete this order payment.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total Amount:</span>
+                  <span className="font-bold text-primary">
+                    Ksh {processingPayment.total.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="card-transaction-reference">Card Transaction Reference</Label>
+                <Input
+                  id="card-transaction-reference"
+                  type="text"
+                  value={cardTransactionReference}
+                  onChange={(e) => setCardTransactionReference(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && cardTransactionReference.trim() && !isProcessingCardPayment) {
+                      handleConfirmCardPayment()
+                    }
+                  }}
+                  placeholder="Enter card transaction reference"
+                  autoFocus
+                  className="text-base font-medium"
+                />
+                {!cardTransactionReference.trim() && (
+                  <p className="text-xs text-red-600">Card transaction reference is required.</p>
+                )}
+              </div>
+            </div>
+            <div className="px-4 sm:px-6 py-3 border-t bg-background flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCardDialog(false)
+                  setCardTransactionReference("")
+                }}
+                disabled={isProcessingCardPayment}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmCardPayment}
+                disabled={!cardTransactionReference.trim() || isProcessingCardPayment}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isProcessingCardPayment ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing...</>
+                ) : (
+                  <><CreditCard className="h-4 w-4 mr-2" />Complete Payment</>
+                )}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

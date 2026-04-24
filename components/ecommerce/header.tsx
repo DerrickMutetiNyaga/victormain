@@ -59,7 +59,7 @@ function EcommerceHeaderContent({ cartCount = 0 }: HeaderProps) {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch('/api/catha/inventory', {
+        const response = await fetch('/api/catha/inventory?visibleOnly=true', {
           cache: 'force-cache',
           next: { revalidate: 60 }
         })

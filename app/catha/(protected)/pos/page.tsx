@@ -204,6 +204,8 @@ export default function POSPage() {
   const [mpesaSessionOrderId, setMpesaSessionOrderId] = useState<string | null>(null)
   const mpesaDraftOrderIdRef = useRef<string | null>(null)
   const mpesaPromptInFlightRef = useRef(false)
+  const orderSubmitInFlightRef = useRef(false)
+  const [isOrderSubmitting, setIsOrderSubmitting] = useState(false)
   const [showGlovoDialog, setShowGlovoDialog] = useState(false)
   const [glovoOrderNumber, setGlovoOrderNumber] = useState("")
   const [lastGlovoOrderNumber, setLastGlovoOrderNumber] = useState<string | null>(null)
@@ -1233,13 +1235,15 @@ export default function POSPage() {
   }
 
   const handleConfirmGlovoPayment = async () => {
-    if (isProcessingGlovoPayment) return
+    if (isProcessingGlovoPayment || orderSubmitInFlightRef.current) return
     const normalizedGlovoOrderNumber = glovoOrderNumber.trim()
     if (!normalizedGlovoOrderNumber) {
       toast.error("Glovo order number is required.")
       return
     }
 
+    orderSubmitInFlightRef.current = true
+    setIsOrderSubmitting(true)
     setIsProcessingGlovoPayment(true)
     const cartSnapshot = [...cart]
     const orderItems = mapCartToOrderLineItems(cartSnapshot)
@@ -1319,10 +1323,15 @@ export default function POSPage() {
       toast.error(error?.message || 'Failed to process Glovo payment. Please try again.')
     } finally {
       setIsProcessingGlovoPayment(false)
+      setIsOrderSubmitting(false)
+      orderSubmitInFlightRef.current = false
     }
   }
 
   const handleCheckout = async (method: string) => {
+    if ((method === "pay-later" || method === "cash" || method === "card") && orderSubmitInFlightRef.current) {
+      return
+    }
     const orderItems = mapCartToOrderLineItems(cart)
 
     // Handle M-Pesa STK Push
@@ -1387,6 +1396,8 @@ export default function POSPage() {
       total,
     })
 
+    orderSubmitInFlightRef.current = true
+    setIsOrderSubmitting(true)
     try {
       if (editingOrderId) {
         const response = await fetch('/api/catha/orders', {
@@ -1498,6 +1509,9 @@ export default function POSPage() {
     } catch (error: any) {
       console.error('Error saving order:', error)
       toast.error(error?.message || 'Failed to save order. Please try again.')
+    } finally {
+      setIsOrderSubmitting(false)
+      orderSubmitInFlightRef.current = false
     }
   }
 
@@ -2053,7 +2067,7 @@ export default function POSPage() {
                     handleCheckout("pay-later")
                     setShowCart(false)
                   }}
-                  disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable)}
+                  disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable) || isOrderSubmitting}
                   variant="outline"
                   className="flex-1 min-h-[48px] h-12 text-sm font-bold rounded-xl border border-border bg-card hover:bg-muted text-foreground touch-manipulation"
                 >
@@ -2078,7 +2092,7 @@ export default function POSPage() {
                     handleCheckout("glovo")
                     setShowCart(false)
                   }}
-                  disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable)}
+                  disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable) || isOrderSubmitting || isProcessingGlovoPayment}
                   className="flex-1 min-h-[48px] h-12 text-sm font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white touch-manipulation"
                 >
                   <Truck className="h-4 w-4 mr-1.5 shrink-0" />
@@ -2103,7 +2117,7 @@ export default function POSPage() {
                       handleCheckout("mpesa")
                       setShowCart(false)
                     }}
-                    disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable)}
+                    disabled={cart.length === 0 || (orderType === "INHOUSE" && !selectedTable) || isOrderSubmitting || mpesaProcessing}
                     className="flex-1 min-h-[48px] h-12 text-sm font-bold rounded-xl bg-blue-500 hover:bg-blue-600 text-white touch-manipulation"
                   >
                     <Smartphone className="h-4 w-4 mr-1.5 shrink-0" />
@@ -2565,7 +2579,7 @@ export default function POSPage() {
                     setGlovoOrderNumber(e.target.value)
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && glovoOrderNumber.trim()) {
+                    if (e.key === 'Enter' && glovoOrderNumber.trim() && !isProcessingGlovoPayment && !isOrderSubmitting) {
                       handleConfirmGlovoPayment()
                     }
                   }}
@@ -2582,7 +2596,7 @@ export default function POSPage() {
               <div className="flex gap-3">
                 <Button
                   onClick={handleConfirmGlovoPayment}
-                  disabled={!glovoOrderNumber.trim() || isProcessingGlovoPayment}
+                  disabled={!glovoOrderNumber.trim() || isProcessingGlovoPayment || isOrderSubmitting}
                   className="flex-1 h-12 text-base font-semibold bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isProcessingGlovoPayment ? (

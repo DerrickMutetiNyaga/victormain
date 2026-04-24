@@ -17,6 +17,10 @@ import { AddStockModal } from "./add-stock-modal"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
 import { useCathaPermissions } from "@/hooks/use-catha-permissions"
+import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 
 interface Product {
   _id: string
@@ -38,6 +42,7 @@ interface Product {
   isJaba?: boolean
   isFeatured?: boolean
   hasImage?: boolean
+  isVisible?: boolean
 }
 
 const SERVER_AI_FILTERS = new Set([
@@ -90,7 +95,14 @@ export function InventoryTable() {
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
+  const [togglingProductId, setTogglingProductId] = useState<string | null>(null)
+  const [restockingProduct, setRestockingProduct] = useState<Product | null>(null)
+  const [restockQuantity, setRestockQuantity] = useState<string>("")
+  const [restockNote, setRestockNote] = useState<string>("")
+  const [rememberRestockAmount, setRememberRestockAmount] = useState<boolean>(false)
+  const [isRestocking, setIsRestocking] = useState(false)
   const aiFilterRef = useRef<string | null>(null)
+  const QUICK_RESTOCK_MEMORY_KEY = "inventory.quickRestockAmount"
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -210,6 +222,108 @@ export function InventoryTable() {
       toast.error('Failed to delete product', {
         description: error.message || 'An error occurred. Please try again.',
       })
+    }
+  }
+
+  const handleVisibilityToggle = async (product: Product, nextValue: boolean) => {
+    const productId = product.id || product._id
+    if (!productId) return
+    setTogglingProductId(productId)
+    setProducts((prev) =>
+      prev.map((p) => (p.id === productId || p._id === productId ? { ...p, isVisible: nextValue } : p)),
+    )
+    try {
+      const response = await fetch('/api/catha/inventory', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...product,
+          id: productId,
+          isVisible: nextValue,
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data?.error || 'Failed to update product visibility')
+      }
+      toast.success(`Store visibility ${nextValue ? 'enabled' : 'disabled'} for ${product.name}`)
+    } catch (error: any) {
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId || p._id === productId ? { ...p, isVisible: product.isVisible !== false } : p,
+        ),
+      )
+      toast.error('Failed to update visibility', {
+        description: error?.message || 'Please try again.',
+      })
+    } finally {
+      setTogglingProductId(null)
+    }
+  }
+
+  const openQuickRestock = (product: Product) => {
+    const remembered = typeof window !== "undefined" ? localStorage.getItem(QUICK_RESTOCK_MEMORY_KEY) : null
+    setRestockingProduct(product)
+    setRestockQuantity(remembered || "")
+    setRememberRestockAmount(Boolean(remembered))
+    setRestockNote("")
+  }
+
+  const closeQuickRestock = () => {
+    setRestockingProduct(null)
+    setRestockQuantity("")
+    setRestockNote("")
+    setRememberRestockAmount(false)
+    setIsRestocking(false)
+  }
+
+  const handleQuickRestock = async () => {
+    if (!restockingProduct) return
+    const quantityNum = Number(restockQuantity)
+    if (!Number.isFinite(quantityNum) || quantityNum <= 0) {
+      toast.error("Please enter a valid quantity greater than 0")
+      return
+    }
+
+    setIsRestocking(true)
+    try {
+      const response = await fetch('/api/catha/inventory/restock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: restockingProduct.id || restockingProduct._id,
+          quantity: quantityNum,
+          note: restockNote,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to restock product')
+      }
+
+      if (typeof window !== "undefined") {
+        if (rememberRestockAmount) {
+          localStorage.setItem(QUICK_RESTOCK_MEMORY_KEY, String(quantityNum))
+        } else {
+          localStorage.removeItem(QUICK_RESTOCK_MEMORY_KEY)
+        }
+      }
+
+      setProducts((prev) =>
+        prev.map((p) =>
+          (p.id === restockingProduct.id || p._id === restockingProduct._id)
+            ? { ...p, stock: data.newStock }
+            : p,
+        ),
+      )
+      toast.success(`Restocked ${restockingProduct.name}`, {
+        description: `Added ${quantityNum}. New stock: ${data.newStock}.`,
+      })
+      closeQuickRestock()
+      window.dispatchEvent(new CustomEvent('inventory-updated'))
+    } catch (error: any) {
+      toast.error("Restock failed", { description: error?.message || "Please try again." })
+      setIsRestocking(false)
     }
   }
 
@@ -353,6 +467,14 @@ export function InventoryTable() {
                             {product.supplier}
                             {product.size && ` • ${product.size}`}
                           </p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground">Store</span>
+                            <Switch
+                              checked={product.isVisible !== false}
+                              onCheckedChange={(checked) => handleVisibilityToggle(product, checked)}
+                              disabled={!canEdit || togglingProductId === (product.id || product._id)}
+                            />
+                          </div>
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -442,6 +564,17 @@ export function InventoryTable() {
                       )}
                     </div>
                   </div>
+                  {canEdit && (
+                    <div className="mt-3">
+                      <Button
+                        size="sm"
+                        className="w-full rounded-lg"
+                        onClick={() => openQuickRestock(product)}
+                      >
+                        Add Stock
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )
             })
@@ -460,13 +593,15 @@ export function InventoryTable() {
                 <TableHead className="font-semibold uppercase text-xs tracking-wider text-right">Price</TableHead>
                 <TableHead className="font-semibold uppercase text-xs tracking-wider text-right">Stock</TableHead>
                 <TableHead className="font-semibold uppercase text-xs tracking-wider">Status</TableHead>
+                <TableHead className="font-semibold uppercase text-xs tracking-wider">Store</TableHead>
+                <TableHead className="font-semibold uppercase text-xs tracking-wider">Quick Supply</TableHead>
                 <TableHead className="font-semibold uppercase text-xs tracking-wider w-12"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
+                  <TableCell colSpan={10} className="text-center py-8">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Loading inventory...
@@ -475,7 +610,7 @@ export function InventoryTable() {
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-destructive">
+                  <TableCell colSpan={10} className="text-center py-8 text-destructive">
                     <div className="flex flex-col items-center gap-2">
                       <p>{error}</p>
                       <Button variant="outline" size="sm" onClick={fetchProducts}>
@@ -486,7 +621,7 @@ export function InventoryTable() {
                 </TableRow>
               ) : filteredProducts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     {hasActiveFilters ? "No products match your filters" : "No products found. Add your first inventory item!"}
                   </TableCell>
                 </TableRow>
@@ -585,6 +720,27 @@ export function InventoryTable() {
                           <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-xs font-medium">
                             In Stock
                           </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={product.isVisible !== false}
+                          onCheckedChange={(checked) => handleVisibilityToggle(product, checked)}
+                          disabled={!canEdit || togglingProductId === (product.id || product._id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {canEdit ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-lg"
+                            onClick={() => openQuickRestock(product)}
+                          >
+                            Restock
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -720,6 +876,79 @@ export function InventoryTable() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Quick Restock Dialog */}
+      <Dialog open={!!restockingProduct} onOpenChange={(open) => !open && closeQuickRestock()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Quick Restock / Supply</DialogTitle>
+            <DialogDescription>
+              Fast stock update without opening full edit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm">
+              <div className="font-semibold text-foreground">{restockingProduct?.name}</div>
+              <div className="text-muted-foreground mt-1">
+                Current stock: <span className="font-semibold text-foreground">{restockingProduct?.stock ?? 0}</span>
+              </div>
+              <div className="text-muted-foreground mt-1">
+                New stock after save:{" "}
+                <span className="font-semibold text-foreground">
+                  {(restockingProduct?.stock ?? 0) + (Number(restockQuantity) || 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quick-restock-quantity">Add stock</Label>
+              <Input
+                id="quick-restock-quantity"
+                type="number"
+                min="1"
+                step="1"
+                value={restockQuantity}
+                onChange={(e) => setRestockQuantity(e.target.value)}
+                placeholder="Enter quantity to add"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quick-restock-note">Supplier note / reason (optional)</Label>
+              <Textarea
+                id="quick-restock-note"
+                value={restockNote}
+                onChange={(e) => setRestockNote(e.target.value)}
+                placeholder="e.g. Restocked from weekly supplier delivery"
+                className="min-h-[84px]"
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border border-border/60 p-3">
+              <div>
+                <div className="text-sm font-medium">Remember this amount</div>
+                <div className="text-xs text-muted-foreground">Optional: prefill next restock.</div>
+              </div>
+              <Switch checked={rememberRestockAmount} onCheckedChange={setRememberRestockAmount} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeQuickRestock} disabled={isRestocking}>
+              Cancel
+            </Button>
+            <Button onClick={handleQuickRestock} disabled={isRestocking}>
+              {isRestocking ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Confirm Restock"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

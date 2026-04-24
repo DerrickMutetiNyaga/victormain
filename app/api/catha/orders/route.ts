@@ -52,6 +52,12 @@ function orderDocumentToJson(order: any) {
     linkedAt: order.linkedAt || null,
     linkedBy: order.linkedBy || null,
     glovoOrderNumber: order.glovoOrderNumber || null,
+    cardTransactionReference: order.cardTransactionReference || null,
+    paymentReference: order.paymentReference || null,
+    reference: order.reference || null,
+    paidAmount: order.paidAmount ?? null,
+    paidAt: order.paidAt || null,
+    paidBy: order.paidBy || null,
     cashAmount: order.cashAmount || null,
     cashBalance: order.cashBalance || null,
     changeGiven: order.changeGiven === true,
@@ -452,12 +458,50 @@ export async function PUT(request: Request) {
       const raw = updateData.glovoOrderNumber
       updateData.glovoOrderNumber = typeof raw === 'string' ? raw.trim() || null : null
     }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'cardTransactionReference')) {
+      const raw = updateData.cardTransactionReference
+      updateData.cardTransactionReference = typeof raw === 'string' ? raw.trim() || null : null
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'paymentReference')) {
+      const raw = updateData.paymentReference
+      updateData.paymentReference = typeof raw === 'string' ? raw.trim() || null : null
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'reference')) {
+      const raw = updateData.reference
+      updateData.reference = typeof raw === 'string' ? raw.trim() || null : null
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'paidAt') && updateData.paidAt) {
+      updateData.paidAt = new Date(updateData.paidAt as string | number | Date)
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'paidBy')) {
+      const raw = updateData.paidBy
+      updateData.paidBy = typeof raw === 'string' ? raw.trim() || null : null
+    }
     if (Object.prototype.hasOwnProperty.call(updateData, 'mpesaTransactionId')) {
       const raw = updateData.mpesaTransactionId
       updateData.mpesaTransactionId = raw ? String(raw).trim() : null
     }
     if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'glovo' && !Object.prototype.hasOwnProperty.call(updateData, 'glovoOrderNumber')) {
       updateData.glovoOrderNumber = null
+    }
+    if (updateData.paymentMethod && String(updateData.paymentMethod).toLowerCase() !== 'card') {
+      updateData.cardTransactionReference = null
+      updateData.paymentReference = null
+      updateData.reference = null
+    }
+    if (String(updateData.paymentMethod || '').toLowerCase() === 'card') {
+      const cardRefRaw =
+        updateData.cardTransactionReference ?? updateData.paymentReference ?? updateData.reference
+      const cardRef = typeof cardRefRaw === 'string' ? cardRefRaw.trim() : ''
+      if (!cardRef) {
+        return NextResponse.json(
+          { error: 'Card transaction reference is required for card payments.' },
+          { status: 400 }
+        )
+      }
+      updateData.cardTransactionReference = cardRef
+      updateData.paymentReference = cardRef
+      updateData.reference = cardRef
     }
 
     // Get existing order to check status change

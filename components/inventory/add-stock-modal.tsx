@@ -32,6 +32,7 @@ interface Product {
   notes?: string
   isJaba?: boolean
   isFeatured?: boolean
+  isVisible?: boolean
 }
 
 interface BarCategoryOption {
@@ -55,6 +56,7 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
   const [open, setOpen] = useState(false)
   const [isJaba, setIsJaba] = useState(product?.isJaba || false)
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured || false)
+  const [isVisible, setIsVisible] = useState(product?.isVisible !== false)
   const [isLoading, setIsLoading] = useState(false)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>(product?.image || "")
@@ -105,6 +107,7 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
       })
       setIsJaba(product.isJaba || false)
       setIsFeatured(product.isFeatured || false)
+      setIsVisible(product.isVisible !== false)
       setImagePreview(product.image || "")
       setImageUrl(product.image || "")
     }
@@ -264,6 +267,7 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
         supplier: supplierName, // Use supplier name instead of ID
         isJaba,
         isFeatured,
+        isVisible,
       }
 
       if (isEditMode && product) {
@@ -307,6 +311,7 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
   })
       setIsJaba(false)
       setIsFeatured(false)
+      setIsVisible(true)
       removeImage()
       setOpen(false)
       
@@ -352,6 +357,7 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
     })
     setIsJaba(false)
     setIsFeatured(false)
+    setIsVisible(true)
         removeImage()
         // Notify parent to close by calling onSuccess
         if (onSuccess) {
@@ -823,6 +829,22 @@ export function AddStockModal({ product, onSuccess }: AddStockModalProps) {
                   </div>
                 </div>
                 <Switch id="featured" checked={isFeatured} onCheckedChange={setIsFeatured} className="scale-110" />
+              </div>
+              <div className="flex items-center justify-between p-4 rounded-xl bg-white/60 border-2 border-sky-300/50">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-sky-500 to-cyan-500 flex items-center justify-center shadow-md">
+                    <Sparkles className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <Label htmlFor="visible" className="text-base font-bold text-foreground cursor-pointer">
+                      Product Visible On Store
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      When OFF, product is hidden from client-side e-commerce.
+                    </p>
+                  </div>
+                </div>
+                <Switch id="visible" checked={isVisible} onCheckedChange={setIsVisible} className="scale-110" />
               </div>
 
             </CardContent>
