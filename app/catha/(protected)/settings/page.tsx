@@ -24,6 +24,7 @@ import {
   validateEcommerceOpeningHoursPayload,
   type EcommerceOpeningHoursSettings,
 } from "@/lib/ecommerce-opening-hours"
+import { normalizeKenyaPhone } from "@/lib/phone-utils"
 
 const EO_DAY_DEFS: { value: number; label: string }[] = [
   { value: 1, label: "Mon" },
@@ -56,6 +57,7 @@ interface Settings {
     securitySmsAlertsEnabled?: boolean
     securityAlertNumbers?: string[]
     shiftNotificationPhones?: string[]
+    onlineOrderSmsPhones?: string[]
     securityDeniedBurstThreshold?: number
   }
   security?: {
@@ -167,6 +169,7 @@ export default function SettingsPage() {
   const [securitySmsAlertsEnabled, setSecuritySmsAlertsEnabled] = useState(false)
   const [securityAlertNumbersText, setSecurityAlertNumbersText] = useState("")
   const [shiftNotificationPhonesText, setShiftNotificationPhonesText] = useState("")
+  const [onlineOrderSmsPhonesText, setOnlineOrderSmsPhonesText] = useState("")
   const [securityDeniedBurstThreshold, setSecurityDeniedBurstThreshold] = useState(10)
   
   // Security State
@@ -297,6 +300,11 @@ export default function SettingsPage() {
             setShiftNotificationPhonesText(
               Array.isArray(settings.notifications.shiftNotificationPhones)
                 ? settings.notifications.shiftNotificationPhones.join(", ")
+                : ""
+            )
+            setOnlineOrderSmsPhonesText(
+              Array.isArray(settings.notifications.onlineOrderSmsPhones)
+                ? settings.notifications.onlineOrderSmsPhones.join(", ")
                 : ""
             )
             const threshold = Number(settings.notifications.securityDeniedBurstThreshold)
@@ -471,6 +479,21 @@ export default function SettingsPage() {
   }
 
   const saveNotifications = async () => {
+    const onlineOrderPhonesRaw = onlineOrderSmsPhonesText
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean)
+    const normalizedOnlineOrderPhones = onlineOrderPhonesRaw
+      .map((n) => normalizeKenyaPhone(n))
+      .filter((n): n is string => Boolean(n))
+    if (onlineOrderPhonesRaw.length !== normalizedOnlineOrderPhones.length) {
+      toast({
+        title: "Validation error",
+        description: "Online order SMS numbers must be valid Kenyan numbers in +254 format.",
+        variant: "destructive",
+      })
+      return
+    }
     setSaving(true)
     try {
       const response = await fetch('/api/catha/settings', {
@@ -491,6 +514,7 @@ export default function SettingsPage() {
               .split(",")
               .map((n) => n.trim())
               .filter(Boolean),
+            onlineOrderSmsPhones: normalizedOnlineOrderPhones,
             securityDeniedBurstThreshold: Math.max(3, Math.min(100, Math.round(Number(securityDeniedBurstThreshold) || 10))),
           },
         }),
@@ -1182,6 +1206,18 @@ export default function SettingsPage() {
                     />
                     <p className="text-xs text-muted-foreground">
                       Receives shift open/close SMS with timing summary.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="online-order-sms-phones">Online Order SMS Numbers</Label>
+                    <Input
+                      id="online-order-sms-phones"
+                      value={onlineOrderSmsPhonesText}
+                      onChange={(e) => setOnlineOrderSmsPhonesText(e.target.value)}
+                      placeholder="+254712345678, +254700000000"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Receives SMS alerts when new online orders are placed. Use comma-separated +254 numbers.
                     </p>
                   </div>
                   <Button onClick={saveNotifications} disabled={saving}>

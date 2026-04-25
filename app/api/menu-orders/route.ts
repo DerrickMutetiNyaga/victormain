@@ -4,6 +4,7 @@ import { pricingForMenuOrderLines, sanitizePublicMenuPaymentFields } from "@/lib
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit-simple"
 import { logOrderSecurityEvent } from "@/lib/order-security-audit"
 import { menuOrderCreateSchema, menuOrderPutSchema, formatZodError } from "@/lib/order-request-schemas"
+import { maybeSendOnlineOrderSms } from "@/lib/catha-online-order-sms"
 
 // Public-facing menu orders API used by /menu (QR + phone).
 // Writes into the same `menu_orders` collection that Catha staff see via /api/catha/menu-orders.
@@ -129,6 +130,7 @@ export async function POST(request: Request) {
     }
 
     await db.collection("menu_orders").insertOne(order)
+    await maybeSendOnlineOrderSms(db, order)
     return NextResponse.json(order, { status: 201 })
   } catch (error: any) {
     console.error("[menu-orders] POST error:", error)

@@ -3,6 +3,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
 import { normalizePhoneNumbers } from '@/lib/jaba-sms'
+import { normalizeKenyaPhone } from '@/lib/phone-utils'
 import {
   defaultEcommerceOpeningHours,
   validateEcommerceOpeningHoursPayload,
@@ -31,6 +32,7 @@ export interface Settings {
     securitySmsAlertsEnabled?: boolean
     securityAlertNumbers?: string[]
     shiftNotificationPhones?: string[]
+    onlineOrderSmsPhones?: string[]
     securityDeniedBurstThreshold?: number
   }
   security?: {
@@ -95,6 +97,7 @@ const defaultSettings: Settings = {
     securitySmsAlertsEnabled: false,
     securityAlertNumbers: [],
     shiftNotificationPhones: [],
+    onlineOrderSmsPhones: [],
     securityDeniedBurstThreshold: 10,
   },
   security: {
@@ -133,6 +136,18 @@ const defaultSettings: Settings = {
     ],
   },
   ecommerceOpeningHours: { ...defaultEcommerceOpeningHours },
+}
+
+function normalizeKenyaPhoneList(input: unknown): string[] {
+  const parsed = Array.isArray(input)
+    ? input.map((v) => String(v ?? ''))
+    : String(input ?? '')
+        .split(',')
+        .map((v) => v.trim())
+  const normalized = parsed
+    .map((n) => normalizeKenyaPhone(String(n || '')))
+    .filter((n): n is string => Boolean(n))
+  return [...new Set(normalized)]
 }
 
 export async function GET() {
@@ -248,6 +263,9 @@ export async function PUT(request: Request) {
       }
       if (Object.prototype.hasOwnProperty.call(notifications, 'shiftNotificationPhones')) {
         notifications.shiftNotificationPhones = normalizePhoneNumbers(notifications.shiftNotificationPhones ?? [])
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'onlineOrderSmsPhones')) {
+        notifications.onlineOrderSmsPhones = normalizeKenyaPhoneList(notifications.onlineOrderSmsPhones ?? [])
       }
       if (Object.prototype.hasOwnProperty.call(notifications, 'securityDeniedBurstThreshold')) {
         const n = Number(notifications.securityDeniedBurstThreshold)

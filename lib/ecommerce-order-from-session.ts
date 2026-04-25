@@ -2,6 +2,7 @@ import type { Db } from 'mongodb'
 import { filterInventoryStockLineItems } from '@/lib/catha-order-inventory-lines'
 import { ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION } from '@/lib/ecommerce-checkout-session-constants'
 import { logEcommerceRecoveryCritical } from '@/lib/ecommerce-stock-reservation'
+import { maybeSendOnlineOrderSms } from '@/lib/catha-online-order-sms'
 
 export type EcommerceCheckoutSessionSnapshot = {
   customerName: string
@@ -228,6 +229,13 @@ export async function createPaidEcommerceOrderFromCheckoutSession(
       },
     }
   )
+
+  await maybeSendOnlineOrderSms(db, {
+    id: orderId,
+    total: snap.total,
+    customerPhone: session.customerPhone,
+    tableNumber: snap.deliveryOption || 'E-commerce',
+  })
 
   console.log('[ecommerce-checkout] order created from paid session', {
     sessionId: session.id,

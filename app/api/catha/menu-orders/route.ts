@@ -6,6 +6,7 @@ import { pricingForMenuOrderLines, sanitizePublicMenuPaymentFields } from "@/lib
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit-simple"
 import { logOrderSecurityEvent } from "@/lib/order-security-audit"
 import { menuOrderCreateSchema, menuOrderPutSchema, formatZodError } from "@/lib/order-request-schemas"
+import { maybeSendOnlineOrderSms } from "@/lib/catha-online-order-sms"
 
 export async function GET() {
   const session = await auth()
@@ -185,6 +186,7 @@ export async function POST(request: Request) {
     }
 
     await db.collection("menu_orders").insertOne(order)
+    await maybeSendOnlineOrderSms(db, order)
     return NextResponse.json(order, { status: 201 })
   } catch (error: any) {
     console.error("Error creating menu order:", error)
