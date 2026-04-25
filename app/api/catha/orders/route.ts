@@ -69,6 +69,10 @@ function orderDocumentToJson(order: any) {
     waiter: order.waiter,
     customerName: order.customerName || null,
     customerPhone: order.customerPhone || null,
+    paymentReceiptSmsStatus: order.paymentReceiptSmsStatus || null,
+    paymentReceiptSmsSentAt: order.paymentReceiptSmsSentAt || null,
+    paymentReceiptSmsPhone: order.paymentReceiptSmsPhone || null,
+    paymentReceiptSmsLastError: order.paymentReceiptSmsLastError || null,
     timestamp: order.timestamp instanceof Date ? order.timestamp : new Date(order.timestamp),
     status: order.status,
   }

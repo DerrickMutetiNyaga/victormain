@@ -106,6 +106,42 @@ function PaymentBadge({ method }: { method: string | null }) {
   )
 }
 
+function getMessageDeliveryState(order: any): {
+  label: string
+  className: string
+  title: string
+} {
+  const status = String(order?.paymentReceiptSmsStatus || "").toUpperCase()
+  if (status === "SENT") {
+    return {
+      label: "Sent",
+      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      title: "Payment receipt message sent",
+    }
+  }
+  if (status === "SENDING") {
+    return {
+      label: "Sending",
+      className: "bg-amber-50 text-amber-700 border-amber-200",
+      title: "Payment receipt message is being sent",
+    }
+  }
+  if (status === "FAILED") {
+    return {
+      label: "Failed",
+      className: "bg-red-50 text-red-700 border-red-200",
+      title: order?.paymentReceiptSmsLastError
+        ? `Message failed: ${order.paymentReceiptSmsLastError}`
+        : "Payment receipt message failed",
+    }
+  }
+  return {
+    label: "Not sent",
+    className: "bg-slate-100 text-slate-600 border-slate-200",
+    title: "Payment receipt message not sent",
+  }
+}
+
 // Icon Button - Consistent action buttons
 function IconButton({ 
   icon, 
@@ -1439,6 +1475,8 @@ export default function OrdersPage() {
                   amountReceived:
                     (tx as any).totalLinkedPayments ?? (tx as any).cashAmount ?? (tx as any).amountReceived ?? null,
                   balanceDue: (tx as any).balanceDue ?? null,
+                  paymentReceiptSmsStatus: (tx as any).paymentReceiptSmsStatus ?? null,
+                  paymentReceiptSmsSentAt: (tx as any).paymentReceiptSmsSentAt ?? null,
                 }
                 // Accept only shows when not yet accepted (waiter still "Customer")
                 const isPendingMenuOrder = tx.status === "pending" && !!(tx as any).customerPhone && ((tx as any).waiter === "Customer" || !(tx as any).waiter)
@@ -2083,6 +2121,7 @@ export default function OrdersPage() {
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Service</TableHead>
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Staff</TableHead>
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Payment</TableHead>
+                        <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">Message</TableHead>
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-right">Total</TableHead>
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">Status</TableHead>
                         <TableHead className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</TableHead>
@@ -2099,6 +2138,7 @@ export default function OrdersPage() {
                         const cashAmount = (tx as any).cashAmount
                         const cashBalance = (tx as any).cashBalance
                         const total = tx.total ?? 0
+                        const messageDelivery = getMessageDeliveryState(tx as any)
                         
                         let paymentDetail = ""
                         if (isPaid && tx.paymentMethod?.toLowerCase() === "cash" && cashAmount != null) {
@@ -2201,6 +2241,16 @@ export default function OrdersPage() {
                                 )}
                               </div>
                             </TableCell>
+
+                            {/* Message delivery (receipt sms) */}
+                            <TableCell className="px-4 py-3 text-center">
+                              <span
+                                title={messageDelivery.title}
+                                className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium ${messageDelivery.className}`}
+                              >
+                                {messageDelivery.label}
+                              </span>
+                            </TableCell>
                             
                             {/* Total (biggest in row, right aligned) */}
                             <TableCell className="px-4 py-3 text-right">
@@ -2278,6 +2328,8 @@ export default function OrdersPage() {
                       server: tx.waiter ? { name: tx.waiter } : tx.cashier ? { name: tx.cashier } : null,
                       waiter: tx.waiter,
                       cashier: tx.cashier,
+                      paymentReceiptSmsStatus: (tx as any).paymentReceiptSmsStatus ?? null,
+                      paymentReceiptSmsSentAt: (tx as any).paymentReceiptSmsSentAt ?? null,
                     }
                     
                     // Accept only shows when not yet accepted (waiter still "Customer")

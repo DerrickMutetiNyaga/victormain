@@ -51,6 +51,8 @@ interface Order {
   amountReceived?: number | null
   /** From API: remaining balance for M-Pesa partial pay */
   balanceDue?: number | null
+  paymentReceiptSmsStatus?: string | null
+  paymentReceiptSmsSentAt?: Date | string | null
   receiptCode?: string | null
   server?: OrderServer | null
   waiter?: string
@@ -85,6 +87,8 @@ export function OrderCard<T = any>({
 }: OrderCardProps<T>) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const status = getStatusLabel(order.paymentStatus || order.status)
+  const messageStatus = String(order.paymentReceiptSmsStatus || "").toUpperCase()
+  const messageSent = messageStatus === "SENT"
   const serverName = order.server?.name || order.waiter || order.cashier || "—"
   const customerDisplay = order.customerPhone || order.customerName || "—"
   const displayItems = order.items.slice(0, 2)
@@ -200,6 +204,14 @@ export function OrderCard<T = any>({
           <OrderMetaRow
             left="Payment:"
             right={<PaymentBadge method={order.paymentMethod} />}
+          />
+          <OrderMetaRow
+            left="Message:"
+            right={
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${messageSent ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                {messageSent ? "Sent" : "Not sent"}
+              </span>
+            }
           />
           <OrderMetaRow
             left="Server:"

@@ -40,6 +40,7 @@ interface Order {
   orderSource?: "menu" | "pos" | "online" | null
   balanceDue?: number | null
   amountReceived?: number | null
+  paymentReceiptSmsStatus?: string | null
 }
 
 interface OrderCardMobileProps<T = any> {
@@ -98,6 +99,7 @@ export function OrderCardMobile<T = any>({
   const [moreOpen, setMoreOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const status = getStatusLabel(order.paymentStatus || order.status)
+  const messageSent = String(order.paymentReceiptSmsStatus || "").toUpperCase() === "SENT"
   const callbackOrder = (originalOrder ?? order) as T
   const customerDisplay = order.customerPhone || order.customerName || "Walk-in"
   const itemSummary = order.items
@@ -165,6 +167,11 @@ export function OrderCardMobile<T = any>({
             )}
           </div>
           <PaymentChip method={order.paymentMethod ?? null} />
+        </div>
+        <div className="px-4 pb-3">
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${messageSent ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+            Message: {messageSent ? "Sent" : "Not sent"}
+          </span>
         </div>
 
         <div className="h-px bg-[#e5e7eb]" />
