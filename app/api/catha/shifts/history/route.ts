@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { requireShiftSessionUser } from '@/lib/catha-shift-service'
+import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSessionUser } from '@/lib/catha-shift-service'
 import { listStaffShifts } from '@/lib/models/staff-shift'
+import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
+import { getShiftSettings } from '@/lib/models/shift-setting'
 
 function getRangeStart(range: string): Date | undefined {
   const now = new Date()
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
   const from = customFrom ? new Date(customFrom) : getRangeStart(range)
   const toRaw = url.searchParams.get('to')
   const to = toRaw ? new Date(toRaw) : undefined
+  const settings = await getShiftSettings()
 
   const canViewAll = auth.role === 'ADMIN' || auth.role === 'SUPER_ADMIN'
   const shifts = await listStaffShifts({
@@ -29,5 +32,30 @@ export async function GET(request: Request) {
     to,
     limit: 250,
   })
-  return NextResponse.json({ ok: true, shifts })
+  const emailsById = await getCathaUserEmailsByIds(shifts.map((s) => s.staffUserId))
+  const enrichedShifts = await Promise.all(
+    shifts.map(async (shift) => {
+      const liveStats = await aggregateShiftOrderStats(
+        shift.staffName,
+        shift.startedAt,
+        shift.endedAt ? new Date(shift.endedAt) : new Date(),
+        [emailsById[shift.staffUserId]],
+        shift.staffUserId
+      )
+      return {
+        ...shift,
+        metadata: {
+          ...(shift.metadata ?? {}),
+          latenessBand: computeShiftLatenessBand(shift.startedAt, settings.openingTime),
+        },
+        ordersServed: liveStats.ordersServed,
+        cashSales: liveStats.cashSales,
+        mpesaSales: liveStats.mpesaSales,
+        totalRevenue: liveStats.totalRevenue,
+        refunds: liveStats.refunds,
+        discounts: liveStats.discounts,
+      }
+    })
+  )
+  return NextResponse.json({ ok: true, shifts: enrichedShifts })
 }

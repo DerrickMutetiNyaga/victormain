@@ -162,6 +162,25 @@ export async function getAllCathaUsers(): Promise<CathaUser[]> {
   }))
 }
 
+export async function getCathaUserEmailsByIds(ids: string[]): Promise<Record<string, string>> {
+  const objectIds = ids
+    .map((id) => (ObjectId.isValid(id) ? new ObjectId(id) : null))
+    .filter((id): id is ObjectId => Boolean(id))
+  if (!objectIds.length) return {}
+  const client = await clientPromise
+  const docs = await client
+    .db(DB_NAME)
+    .collection(COLLECTION)
+    .find({ _id: { $in: objectIds } }, { projection: { email: 1 } })
+    .toArray()
+  const byId: Record<string, string> = {}
+  for (const doc of docs) {
+    if (!doc?._id) continue
+    byId[String(doc._id)] = String(doc.email || '').trim()
+  }
+  return byId
+}
+
 export async function ensureCathaUserIndexes(): Promise<void> {
   const client = await clientPromise
   const col = client.db(DB_NAME).collection(COLLECTION)

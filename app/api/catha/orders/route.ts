@@ -297,6 +297,8 @@ export async function POST(request: Request) {
       cashAmount: body.cashAmount ?? null,
       cashBalance: body.cashBalance ?? null,
       cashier: staffEmail || 'System',
+      cashierUserId: shiftGuard.userId || null,
+      cashierName: shiftGuard.user?.name || session.user.name || null,
       waiter: body.waiter ?? null,
       customerName: body.customerName ?? null,
       customerPhone: body.customerPhone ?? null,

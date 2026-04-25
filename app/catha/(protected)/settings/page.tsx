@@ -211,6 +211,8 @@ export default function SettingsPage() {
   const [authHealthLoading, setAuthHealthLoading] = useState(false)
   const [authHealthError, setAuthHealthError] = useState("")
   const [authHealth, setAuthHealth] = useState<AuthHealthResponse | null>(null)
+  const [shiftOpeningTime, setShiftOpeningTime] = useState("08:00")
+  const [shiftClosingTime, setShiftClosingTime] = useState("23:00")
   const [noShiftReminderMinutes, setNoShiftReminderMinutes] = useState(10)
   const [noShiftHardAlertMinutes, setNoShiftHardAlertMinutes] = useState(20)
 
@@ -366,6 +368,10 @@ export default function SettingsPage() {
         if (shiftSettingsData?.ok && shiftSettingsData?.settings) {
           const reminderMin = Number(shiftSettingsData.settings.noShiftReminderMinutes)
           const hardMin = Number(shiftSettingsData.settings.noShiftHardAlertMinutes)
+          const openAt = String(shiftSettingsData.settings.openingTime ?? "").trim()
+          const closeAt = String(shiftSettingsData.settings.closingTime ?? "").trim()
+          if (/^\d{2}:\d{2}$/.test(openAt)) setShiftOpeningTime(openAt)
+          if (/^\d{2}:\d{2}$/.test(closeAt)) setShiftClosingTime(closeAt)
           if (Number.isFinite(reminderMin)) setNoShiftReminderMinutes(Math.max(1, Math.round(reminderMin)))
           if (Number.isFinite(hardMin)) setNoShiftHardAlertMinutes(Math.max(2, Math.round(hardMin)))
         }
@@ -552,6 +558,17 @@ export default function SettingsPage() {
   const saveShiftReminderSettings = async () => {
     const reminder = Math.max(1, Math.round(Number(noShiftReminderMinutes) || 0))
     const hardAlert = Math.max(2, Math.round(Number(noShiftHardAlertMinutes) || 0))
+    const openingTime = shiftOpeningTime.trim()
+    const closingTime = shiftClosingTime.trim()
+    const hmRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
+    if (!hmRegex.test(openingTime) || !hmRegex.test(closingTime)) {
+      toast({
+        title: "Validation error",
+        description: "Shift opening/closing time must be in 24-hour HH:mm format.",
+        variant: "destructive",
+      })
+      return
+    }
     if (hardAlert <= reminder) {
       toast({
         title: "Validation error",
@@ -566,6 +583,8 @@ export default function SettingsPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          openingTime,
+          closingTime,
           noShiftReminderMinutes: reminder,
           noShiftHardAlertMinutes: hardAlert,
         }),
@@ -578,7 +597,7 @@ export default function SettingsPage() {
       setNoShiftHardAlertMinutes(hardAlert)
       toast({
         title: "Success",
-        description: "Shift reminder timing saved successfully",
+        description: "Shift timing and reminder settings saved successfully",
       })
     } catch (error: any) {
       console.error('Error saving shift reminder settings:', error)
@@ -1215,10 +1234,30 @@ export default function SettingsPage() {
                   <Separator />
                   <div className="space-y-3 rounded-lg border border-border p-4">
                     <div>
-                      <Label>Shift start reminders</Label>
+                      <Label>Shift timing and reminders</Label>
                       <p className="text-sm text-muted-foreground">
-                        Remind users without an active shift, and escalate after a hard limit.
+                        Set workforce clock-in schedule and reminder thresholds.
                       </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="shift-opening-time">Shift opening time (24h HH:mm)</Label>
+                        <Input
+                          id="shift-opening-time"
+                          type="time"
+                          value={shiftOpeningTime}
+                          onChange={(e) => setShiftOpeningTime(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="shift-closing-time">Shift closing time (24h HH:mm)</Label>
+                        <Input
+                          id="shift-closing-time"
+                          type="time"
+                          value={shiftClosingTime}
+                          onChange={(e) => setShiftClosingTime(e.target.value)}
+                        />
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-2">
@@ -1243,7 +1282,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <Button onClick={saveShiftReminderSettings} disabled={saving}>
-                      {saving ? "Saving..." : "Save Shift Reminder Timing"}
+                      {saving ? "Saving..." : "Save Shift Timing"}
                     </Button>
                   </div>
                   <Separator />

@@ -16,6 +16,7 @@ export async function requireShiftSessionUser() {
     session,
     user,
     userId: user._id.toString(),
+    email: user.email || session.user.email,
     role: String(user.role || '').toUpperCase(),
     name: user.name || session.user.name || session.user.email || 'Staff',
   }
@@ -105,14 +106,74 @@ export function getScheduleForNow(openingTime: string, closingTime: string) {
   }
 }
 
-export async function aggregateShiftOrderStats(staffName: string, startedAt: Date, endedAt: Date = new Date()) {
+export function computeShiftLatenessBand(startedAt: Date, openingTime: string) {
+  const scheduledStartAt = getScheduledEatDate(openingTime, startedAt)
+  return evaluateLateness(scheduledStartAt, startedAt)
+}
+
+function uniqueCashierKeys(keys: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      keys
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function extractOrderTime(row: Record<string, unknown>): Date | null {
+  const candidates = [
+    row.timestamp,
+    row.createdAt,
+    row.paidAt,
+    row.updatedAt,
+  ]
+  for (const value of candidates) {
+    if (!value) continue
+    const date = value instanceof Date ? value : new Date(String(value))
+    if (!Number.isNaN(date.getTime())) return date
+  }
+  return null
+}
+
+export async function aggregateShiftOrderStats(
+  staffName: string,
+  startedAt: Date,
+  endedAt: Date = new Date(),
+  extraCashierKeys: string[] = [],
+  staffUserId?: string
+) {
   const db = await getDatabase('infusion_jaba')
+  const cashierKeys = uniqueCashierKeys([staffName, ...extraCashierKeys])
+  const cashierMatchers = cashierKeys.map((key) => ({ cashier: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const cashierNameMatchers = cashierKeys.map((key) => ({ cashierName: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const waiterMatchers = cashierKeys.map((key) => ({ waiter: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const receivedByMatchers = cashierKeys.map((key) => ({ receivedBy: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const serverNameMatchers = cashierKeys.map((key) => ({ 'server.name': { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const userIdKey = String(staffUserId ?? '').trim()
+  const attributions: Array<Record<string, unknown>> = [
+    ...cashierMatchers,
+    ...cashierNameMatchers,
+    ...waiterMatchers,
+    ...receivedByMatchers,
+    ...serverNameMatchers,
+  ]
+  if (userIdKey) attributions.push({ cashierUserId: userIdKey })
+  if (!attributions.length) return calculateShiftOrderStatsFromRows([])
   const rows = await db
     .collection('orders')
     .find({
-      timestamp: { $gte: startedAt, $lte: endedAt },
-      cashier: staffName,
+      $or: attributions,
     })
     .toArray()
-  return calculateShiftOrderStatsFromRows(rows)
+  const rowsInShift = rows.filter((row) => {
+    const eventTime = extractOrderTime(row as Record<string, unknown>)
+    if (!eventTime) return false
+    return eventTime >= startedAt && eventTime <= endedAt
+  })
+  return calculateShiftOrderStatsFromRows(rowsInShift)
 }

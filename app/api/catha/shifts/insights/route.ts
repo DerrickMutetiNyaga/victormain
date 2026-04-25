@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { requireShiftSessionUser } from '@/lib/catha-shift-service'
+import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSessionUser } from '@/lib/catha-shift-service'
 import { listStaffShifts } from '@/lib/models/staff-shift'
 import { getShiftSettings } from '@/lib/models/shift-setting'
+import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
 
 function rangeStart(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
@@ -16,9 +17,34 @@ export async function GET() {
 
   const settings = await getShiftSettings()
   const shifts = await listStaffShifts({ from: rangeStart(60), limit: 2000 })
+  const emailsById = await getCathaUserEmailsByIds(shifts.map((s) => s.staffUserId))
+  const enrichedShifts = await Promise.all(
+    shifts.map(async (shift) => {
+      const liveStats = await aggregateShiftOrderStats(
+        shift.staffName,
+        shift.startedAt,
+        shift.endedAt ? new Date(shift.endedAt) : new Date(),
+        [emailsById[shift.staffUserId]],
+        shift.staffUserId
+      )
+      return {
+        ...shift,
+        metadata: {
+          ...(shift.metadata ?? {}),
+          latenessBand: computeShiftLatenessBand(shift.startedAt, settings.openingTime),
+        },
+        ordersServed: liveStats.ordersServed,
+        cashSales: liveStats.cashSales,
+        mpesaSales: liveStats.mpesaSales,
+        totalRevenue: liveStats.totalRevenue,
+        refunds: liveStats.refunds,
+        discounts: liveStats.discounts,
+      }
+    })
+  )
 
   const revenuePerCashier = Object.entries(
-    shifts.reduce<Record<string, number>>((acc, shift) => {
+    enrichedShifts.reduce<Record<string, number>>((acc, shift) => {
       acc[shift.staffName] = (acc[shift.staffName] ?? 0) + shift.totalRevenue
       return acc
     }, {})
@@ -28,7 +54,7 @@ export async function GET() {
     .slice(0, 10)
 
   const peakHoursMap = Array.from({ length: 24 }, (_, i) => ({ hour: `${String(i).padStart(2, '0')}:00`, count: 0 }))
-  for (const shift of shifts) {
+  for (const shift of enrichedShifts) {
     const h = new Date(shift.startedAt).getHours()
     peakHoursMap[h]!.count += 1
   }
@@ -40,7 +66,7 @@ export async function GET() {
     const key = d.toISOString().slice(0, 10)
     trendsMap[key] = { day: key, onTime: 0, total: 0 }
   }
-  for (const shift of shifts) {
+  for (const shift of enrichedShifts) {
     const key = new Date(shift.startedAt).toISOString().slice(0, 10)
     if (!trendsMap[key]) continue
     trendsMap[key].total += 1
@@ -52,7 +78,7 @@ export async function GET() {
   }))
 
   const lateByStaff = Object.entries(
-    shifts.reduce<Record<string, number>>((acc, shift) => {
+    enrichedShifts.reduce<Record<string, number>>((acc, shift) => {
       const band = String(shift.metadata?.latenessBand ?? '')
       if (['yellow', 'orange', 'red'].includes(band)) acc[shift.staffName] = (acc[shift.staffName] ?? 0) + 1
       return acc
@@ -63,7 +89,7 @@ export async function GET() {
     .slice(0, 10)
 
   const overtimeByStaff = Object.entries(
-    shifts.reduce<Record<string, number>>((acc, shift) => {
+    enrichedShifts.reduce<Record<string, number>>((acc, shift) => {
       if (!shift.endedAt) return acc
       const mins = Math.max(
         0,
@@ -80,7 +106,7 @@ export async function GET() {
   }))
 
   const shortagesTrendMap: Record<string, number> = {}
-  for (const shift of shifts) {
+  for (const shift of enrichedShifts) {
     if ((shift.drawerVariance ?? 0) >= 0) continue
     const key = new Date(shift.startedAt).toISOString().slice(0, 10)
     shortagesTrendMap[key] = (shortagesTrendMap[key] ?? 0) + Math.abs(Math.round(shift.drawerVariance ?? 0))
@@ -90,10 +116,10 @@ export async function GET() {
     .slice(-14)
     .map(([day, shortage]) => ({ day: day.slice(5), shortage }))
 
-  const productive = [...shifts].sort((a, b) => b.totalRevenue - a.totalRevenue)[0]
+  const productive = [...enrichedShifts].sort((a, b) => b.totalRevenue - a.totalRevenue)[0]
 
   const scoreboard = Object.entries(
-    shifts.reduce<Record<string, { revenue: number; onTime: number; total: number }>>((acc, shift) => {
+    enrichedShifts.reduce<Record<string, { revenue: number; onTime: number; total: number }>>((acc, shift) => {
       if (!acc[shift.staffName]) acc[shift.staffName] = { revenue: 0, onTime: 0, total: 0 }
       acc[shift.staffName].revenue += shift.totalRevenue
       acc[shift.staffName].total += 1

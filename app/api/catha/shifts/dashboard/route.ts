@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { requireShiftSessionUser } from '@/lib/catha-shift-service'
+import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSessionUser } from '@/lib/catha-shift-service'
 import { listStaffShifts } from '@/lib/models/staff-shift'
+import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
+import { getShiftSettings } from '@/lib/models/shift-setting'
 
 function getRangeStart(range: string): Date | undefined {
   const now = new Date()
@@ -21,15 +23,41 @@ export async function GET(request: Request) {
   const range = String(url.searchParams.get('range') ?? 'today')
   const staffUserId = url.searchParams.get('staffUserId') || undefined
   const from = getRangeStart(range)
+  const settings = await getShiftSettings()
   const shifts = await listStaffShifts({ from, staffUserId, limit: 500 })
-  const active = shifts.filter((s) => s.status === 'ACTIVE').length
-  const late = shifts.filter((s) => ['yellow', 'orange', 'red'].includes(String(s.metadata?.latenessBand ?? ''))).length
-  const earlyExit = shifts.filter((s) => s.status === 'EARLY_EXIT').length
-  const overtime = shifts.filter((s) => s.status === 'OVERTIME').length
-  const shortages = shifts.filter((s) => (s.drawerVariance ?? 0) < 0).length
-  const top = [...shifts].sort((a, b) => b.totalRevenue - a.totalRevenue)[0]
-  const totalSalesByCashier = shifts.reduce<Record<string, number>>((acc, shift) => {
-    acc[shift.staffName] = (acc[shift.staffName] ?? 0) + shift.totalRevenue
+  const emailsById = await getCathaUserEmailsByIds(shifts.map((s) => s.staffUserId))
+  const enrichedShifts = await Promise.all(
+    shifts.map(async (shift) => {
+      const liveStats = await aggregateShiftOrderStats(
+        shift.staffName,
+        shift.startedAt,
+        shift.endedAt ? new Date(shift.endedAt) : new Date(),
+        [emailsById[shift.staffUserId]],
+        shift.staffUserId
+      )
+      return {
+        ...shift,
+        metadata: {
+          ...(shift.metadata ?? {}),
+          latenessBand: computeShiftLatenessBand(shift.startedAt, settings.openingTime),
+        },
+        ordersServed: liveStats.ordersServed,
+        cashSales: liveStats.cashSales,
+        mpesaSales: liveStats.mpesaSales,
+        totalRevenue: liveStats.totalRevenue,
+        refunds: liveStats.refunds,
+        discounts: liveStats.discounts,
+      }
+    })
+  )
+  const active = enrichedShifts.filter((s) => s.status === 'ACTIVE').length
+  const late = enrichedShifts.filter((s) => ['yellow', 'orange', 'red'].includes(String(s.metadata?.latenessBand ?? ''))).length
+  const earlyExit = enrichedShifts.filter((s) => s.status === 'EARLY_EXIT').length
+  const overtime = enrichedShifts.filter((s) => s.status === 'OVERTIME').length
+  const shortages = enrichedShifts.filter((s) => (s.drawerVariance ?? 0) < 0).length
+  const top = [...enrichedShifts].sort((a, b) => b.totalRevenue - a.totalRevenue)[0]
+  const totalSalesByCashier = enrichedShifts.reduce<Record<string, number>>((acc, shift) => {
+    acc[shift.staffName] = (acc[shift.staffName] ?? 0) + Number(shift.totalRevenue || 0)
     return acc
   }, {})
   return NextResponse.json({
@@ -44,6 +72,6 @@ export async function GET(request: Request) {
       overtimeStaff: overtime,
       totalSalesByCashier,
     },
-    rows: shifts,
+    rows: enrichedShifts,
   })
 }

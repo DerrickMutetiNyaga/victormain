@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}))
   const now = new Date()
-  const stats = await aggregateShiftOrderStats(auth.name, shift.startedAt, now)
+  const stats = await aggregateShiftOrderStats(auth.name, shift.startedAt, now, [auth.email], auth.userId)
   const countedDrawerAmount = Number(body.countedDrawerAmount ?? shift.countedDrawerAmount ?? 0)
   if (!Number.isFinite(countedDrawerAmount) || countedDrawerAmount < 0 || countedDrawerAmount > 10_000_000) {
     return NextResponse.json({ error: 'Invalid counted drawer amount' }, { status: 400 })
