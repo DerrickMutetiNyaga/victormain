@@ -107,6 +107,10 @@ function statusMeta(row: ShiftRow | MyShift) {
   return { label: "Absent", className: "bg-rose-100 text-rose-700 border-rose-200", dotClass: "bg-rose-500", pulse: false }
 }
 
+function isLiveShift(row: ShiftRow | MyShift) {
+  return row.status === "ACTIVE" || !row.endedAt
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -482,13 +486,21 @@ export default function WorkforceHubPage() {
                               <div key={rowKey(row, "overview-mobile", index)} className="rounded-xl border border-slate-200 bg-white p-3">
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex min-w-0 items-center gap-2">
-                                    <Avatar className="h-8 w-8">
-                                      <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
-                                        {initials(row.staffName)}
-                                      </AvatarFallback>
-                                    </Avatar>
+                                    <div className="relative">
+                                      <Avatar className="h-8 w-8">
+                                        <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
+                                          {initials(row.staffName)}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      {isLiveShift(row) ? (
+                                        <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+                                      ) : null}
+                                    </div>
                                     <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-slate-900">{row.staffName}</p>
+                                      <div className="flex items-center gap-1.5">
+                                        <p className="truncate text-sm font-semibold text-slate-900">{row.staffName}</p>
+                                        {isLiveShift(row) ? <span className="text-[11px] font-semibold text-emerald-600">Active</span> : null}
+                                      </div>
                                       <p className="truncate text-xs text-slate-500">{row.role || "Team member"}</p>
                                     </div>
                                   </div>
@@ -527,12 +539,20 @@ export default function WorkforceHubPage() {
                                   <tr key={rowKey(row, "overview", index)} className="border-t border-slate-100 align-middle">
                                     <td className="px-3 py-2.5">
                                       <div className="flex items-center gap-2">
-                                        <Avatar className="h-8 w-8">
-                                          <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
-                                            {initials(row.staffName)}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                        <span className="font-medium text-slate-900">{row.staffName}</span>
+                                        <div className="relative">
+                                          <Avatar className="h-8 w-8">
+                                            <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
+                                              {initials(row.staffName)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          {isLiveShift(row) ? (
+                                            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+                                          ) : null}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="font-medium text-slate-900">{row.staffName}</p>
+                                          {isLiveShift(row) ? <p className="text-[11px] font-semibold text-emerald-600">Active</p> : null}
+                                        </div>
                                       </div>
                                     </td>
                                     <td className="px-3 py-2.5 text-slate-700">{row.role || "Team member"}</td>
