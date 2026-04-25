@@ -1,7 +1,9 @@
 import { ObjectId } from "mongodb"
 import { NextResponse } from "next/server"
 import { getDatabase } from "@/lib/mongodb"
-import { requireCathaPermission } from "@/lib/auth-catha"
+import { auth, requireCathaPermission } from "@/lib/auth-catha"
+import { requireActiveShiftForSessionUser } from "@/lib/catha-shift-service"
+import { queueCathaAuditLog } from "@/lib/catha-audit-log"
 
 const COLLECTION = "cash_payment_requests"
 
@@ -50,6 +52,35 @@ export async function POST(request: Request) {
   const { allowed, response } = await requireCathaPermission('sales.posSales', 'create')
   if (!allowed && response) return response
   if (response) return response
+  const session = await auth()
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = String((session.user as any)?.role || '').toUpperCase()
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: "SECURITY",
+      action: "CREATE_CASH_PAYMENT_REQUEST",
+      status: "DENIED",
+      reason: "denied_no_active_shift",
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: "/api/catha/cash-payment-requests",
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/cash-payment-requests',
+      action: 'POST',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
+  }
   try {
     const body = await request.json()
     const db = await getDatabase("infusion_jaba")
@@ -68,6 +99,16 @@ export async function POST(request: Request) {
       { $setOnInsert: doc },
       { upsert: true }
     )
+    queueCathaAuditLog({
+      type: "FINANCIAL",
+      action: "CREATE_CASH_PAYMENT_REQUEST",
+      status: "SUCCESS",
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: "/api/catha/cash-payment-requests",
+      payloadSummary: { orderId: doc.orderId, amount: doc.amount },
+    })
     return NextResponse.json({ success: true, id: doc.orderId }, { status: 201 })
   } catch (error: any) {
     console.error("[CashPaymentRequests] POST error:", error)
@@ -82,6 +123,35 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const { allowed, response } = await requireCathaPermission('sales.posSales', 'edit')
   if (!allowed && response) return response
+  const session = await auth()
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const role = String((session.user as any)?.role || '').toUpperCase()
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: "SECURITY",
+      action: "RESOLVE_CASH_PAYMENT_REQUEST",
+      status: "DENIED",
+      reason: "denied_no_active_shift",
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: "/api/catha/cash-payment-requests",
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/cash-payment-requests',
+      action: 'PATCH',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
+  }
   try {
     const body = await request.json()
     const orderId = body.orderId
@@ -93,6 +163,16 @@ export async function PATCH(request: Request) {
       { orderId },
       { $set: { resolved: true, resolvedAt: new Date() } }
     )
+    queueCathaAuditLog({
+      type: "FINANCIAL",
+      action: "RESOLVE_CASH_PAYMENT_REQUEST",
+      status: "SUCCESS",
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: "/api/catha/cash-payment-requests",
+      payloadSummary: { orderId },
+    })
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error("[CashPaymentRequests] PATCH error:", error)

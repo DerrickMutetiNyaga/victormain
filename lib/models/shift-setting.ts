@@ -5,6 +5,8 @@ export interface ShiftSettings {
   closingTime: string
   graceLatenessMinutes: number
   autoReminders: boolean
+  noShiftReminderMinutes: number
+  noShiftHardAlertMinutes: number
   requireFloat: boolean
   requireCashCount: boolean
   smsEnabled: boolean
@@ -24,6 +26,8 @@ export const DEFAULT_SHIFT_SETTINGS: ShiftSettings = {
   closingTime: '23:00',
   graceLatenessMinutes: 5,
   autoReminders: true,
+  noShiftReminderMinutes: 10,
+  noShiftHardAlertMinutes: 20,
   requireFloat: false,
   requireCashCount: false,
   smsEnabled: false,
@@ -47,6 +51,8 @@ export async function getShiftSettings(): Promise<ShiftSettings> {
     closingTime: doc.closingTime ?? DEFAULT_SHIFT_SETTINGS.closingTime,
     graceLatenessMinutes: Number(doc.graceLatenessMinutes ?? DEFAULT_SHIFT_SETTINGS.graceLatenessMinutes),
     autoReminders: Boolean(doc.autoReminders ?? DEFAULT_SHIFT_SETTINGS.autoReminders),
+    noShiftReminderMinutes: Number(doc.noShiftReminderMinutes ?? DEFAULT_SHIFT_SETTINGS.noShiftReminderMinutes),
+    noShiftHardAlertMinutes: Number(doc.noShiftHardAlertMinutes ?? DEFAULT_SHIFT_SETTINGS.noShiftHardAlertMinutes),
     requireFloat: Boolean(doc.requireFloat ?? DEFAULT_SHIFT_SETTINGS.requireFloat),
     requireCashCount: Boolean(doc.requireCashCount ?? DEFAULT_SHIFT_SETTINGS.requireCashCount),
     smsEnabled: Boolean(doc.smsEnabled ?? DEFAULT_SHIFT_SETTINGS.smsEnabled),

@@ -19,6 +19,11 @@ type Shift = {
   ordersServed: number
 }
 
+type ShiftReminderSettings = {
+  noShiftReminderMinutes: number
+  noShiftHardAlertMinutes: number
+}
+
 export function ShiftWidget({ cashierName }: { cashierName: string }) {
   const router = useRouter()
   const [shift, setShift] = useState<Shift | null>(null)
@@ -34,6 +39,13 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   const [showIssueDialog, setShowIssueDialog] = useState(false)
   const [showPendingDialog, setShowPendingDialog] = useState(false)
   const [reminderSnoozeUntil, setReminderSnoozeUntil] = useState<number>(0)
+  const [noShiftSinceMs, setNoShiftSinceMs] = useState<number | null>(null)
+  const [nextShiftReminderAtMs, setNextShiftReminderAtMs] = useState<number | null>(null)
+  const [lastOverdueAlertAtMs, setLastOverdueAlertAtMs] = useState<number>(0)
+  const [reminderSettings, setReminderSettings] = useState<ShiftReminderSettings>({
+    noShiftReminderMinutes: 10,
+    noShiftHardAlertMinutes: 20,
+  })
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/catha/shifts/active", { cache: "no-store" })
@@ -81,6 +93,22 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   }, [refresh])
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      refresh().catch(() => {})
+    }, 60_000)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh().catch(() => {})
+    }
+    window.addEventListener("focus", onVisible)
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener("focus", onVisible)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [refresh])
+
+  useEffect(() => {
     flushPending().catch(() => {})
     const onOnline = () => flushPending().catch(() => {})
     window.addEventListener("online", onOnline)
@@ -88,14 +116,78 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   }, [flushPending])
 
   useEffect(() => {
-    if (!loading && !shift) {
-      setShowClockInDialog(true)
-      const timer = setTimeout(() => {
-        toast.message("Shift reminder", { description: "You can start your shift anytime from the shift widget." })
-      }, 5 * 60 * 1000)
-      return () => clearTimeout(timer)
+    const loadReminderSettings = async () => {
+      try {
+        const response = await fetch("/api/catha/shift-settings", { cache: "no-store" })
+        const data = await response.json()
+        if (!response.ok || !data?.settings) return
+        const reminderMin = Number(data.settings.noShiftReminderMinutes)
+        const hardAlertMin = Number(data.settings.noShiftHardAlertMinutes)
+        if (!Number.isFinite(reminderMin) || !Number.isFinite(hardAlertMin)) return
+        setReminderSettings({
+          noShiftReminderMinutes: Math.max(1, Math.round(reminderMin)),
+          noShiftHardAlertMinutes: Math.max(Math.round(reminderMin) + 1, Math.round(hardAlertMin)),
+        })
+      } catch {
+        // Keep default reminder settings if loading fails.
+      }
     }
-  }, [loading, shift])
+    loadReminderSettings().catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (loading) return
+    if (shift) {
+      setNoShiftSinceMs(null)
+      setNextShiftReminderAtMs(null)
+      setLastOverdueAlertAtMs(0)
+      return
+    }
+
+    const reminderDelayMs = reminderSettings.noShiftReminderMinutes * 60 * 1000
+    const hardAlertDelayMs = reminderSettings.noShiftHardAlertMinutes * 60 * 1000
+    const now = Date.now()
+    if (noShiftSinceMs === null) {
+      setNoShiftSinceMs(now)
+      setShowClockInDialog(true)
+      setNextShiftReminderAtMs(now + reminderDelayMs)
+      return
+    }
+
+    const interval = setInterval(() => {
+      const tickNow = Date.now()
+      const elapsed = tickNow - noShiftSinceMs
+      const pastHardAlertLimit = elapsed >= hardAlertDelayMs
+
+      if (pastHardAlertLimit && !showClockInDialog) {
+        setShowClockInDialog(true)
+      }
+
+      if (!pastHardAlertLimit && nextShiftReminderAtMs && tickNow >= nextShiftReminderAtMs) {
+        setShowClockInDialog(true)
+        toast.message("Shift reminder", { description: "Start your shift to continue working." })
+        setNextShiftReminderAtMs(tickNow + reminderDelayMs)
+      }
+
+      if (pastHardAlertLimit && tickNow - lastOverdueAlertAtMs >= 2 * 60 * 1000) {
+        toast.error("Shift required", {
+          description: `You have been logged in for over ${reminderSettings.noShiftHardAlertMinutes} minutes without starting a shift.`,
+        })
+        setLastOverdueAlertAtMs(tickNow)
+      }
+    }, 60_000)
+
+    return () => clearInterval(interval)
+  }, [
+    loading,
+    shift,
+    noShiftSinceMs,
+    nextShiftReminderAtMs,
+    lastOverdueAlertAtMs,
+    showClockInDialog,
+    reminderSettings.noShiftReminderMinutes,
+    reminderSettings.noShiftHardAlertMinutes,
+  ])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -264,7 +356,16 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
         </div>
       )}
 
-      <Dialog open={showClockInDialog} onOpenChange={setShowClockInDialog}>
+      <Dialog
+        open={showClockInDialog}
+        onOpenChange={(open) => {
+          setShowClockInDialog(open)
+          if (!open && !shift) {
+            // Snooze manual dismissal based on configured reminder interval.
+            setNextShiftReminderAtMs(Date.now() + reminderSettings.noShiftReminderMinutes * 60 * 1000)
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="space-y-2">
             <DialogTitle className="text-xl font-semibold tracking-tight">Start shift</DialogTitle>

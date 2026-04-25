@@ -54,6 +54,29 @@ export async function getCathaUserByEmail(email: string): Promise<CathaUser | nu
   }
 }
 
+export async function getCathaUserById(id: string): Promise<CathaUser | null> {
+  if (!ObjectId.isValid(id)) return null
+  const client = await clientPromise
+  const doc = await client.db(DB_NAME).collection(COLLECTION).findOne({ _id: new ObjectId(id) })
+  if (!doc) return null
+  return {
+    _id: doc._id,
+    email: doc.email,
+    name: doc.name ?? '',
+    image: doc.image,
+    role: (doc.role ?? 'PENDING') as CathaUserRole,
+    status: (doc.status ?? 'PENDING') as CathaUserStatus,
+    permissions: normalizePermissions(doc.permissions),
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt : new Date(doc.createdAt),
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt : new Date(doc.updatedAt),
+    lastLogin: doc.lastLogin ? (doc.lastLogin instanceof Date ? doc.lastLogin : new Date(doc.lastLogin)) : undefined,
+    pinHash: doc.pinHash ?? null,
+    pinLookup: doc.pinLookup ?? null,
+    pinFailedAttempts: doc.pinFailedAttempts ?? 0,
+    pinLockedUntil: doc.pinLockedUntil ? (doc.pinLockedUntil instanceof Date ? doc.pinLockedUntil : new Date(doc.pinLockedUntil)) : null,
+  }
+}
+
 export async function createCathaUser(data: {
   email: string
   name: string

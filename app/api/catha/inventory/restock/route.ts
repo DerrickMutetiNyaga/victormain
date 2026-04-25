@@ -3,6 +3,8 @@ import { ObjectId } from 'mongodb'
 import clientPromise from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { requireActiveShiftForSessionUser } from '@/lib/catha-shift-service'
+import { queueCathaAuditLog } from '@/lib/catha-audit-log'
 
 export const runtime = 'nodejs'
 
@@ -16,6 +18,32 @@ export async function POST(request: Request) {
   const perms = normalizePermissions((session.user as any).permissions)
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'inventory', 'edit')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'RESTOCK_INVENTORY',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: '/api/catha/inventory/restock',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/inventory/restock',
+      action: 'POST',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
   }
 
   try {
@@ -81,6 +109,17 @@ export async function POST(request: Request) {
       createdAt: new Date(),
       timestamp: new Date(),
       source: 'quick-restock',
+    })
+
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'RESTOCK_INVENTORY',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/inventory/restock',
+      payloadSummary: { productId, quantity, previousStock, newStock },
     })
 
     return NextResponse.json({

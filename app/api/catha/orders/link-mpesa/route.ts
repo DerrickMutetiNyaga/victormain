@@ -3,6 +3,9 @@ import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { canManageOrderMpesaPayments, normalizePermissions } from '@/lib/catha-permissions-model'
 import { appendMpesaPaymentToOrder } from '@/lib/catha-append-mpesa-payment'
+import { requireActiveShiftForSessionUser } from '@/lib/catha-shift-service'
+import { logOrderSecurityEvent } from '@/lib/order-security-audit'
+import { queueCathaAuditLog } from '@/lib/catha-audit-log'
 
 export async function POST(request: Request) {
   try {
@@ -15,6 +18,32 @@ export async function POST(request: Request) {
     const perms = normalizePermissions((session.user as any).permissions)
     if (!canManageOrderMpesaPayments(perms, role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+    }
+    const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+      allowSuperAdmin: true,
+      allowedStatuses: ['ACTIVE'],
+    })
+    if (!shiftGuard.ok) {
+      logOrderSecurityEvent({
+        route: '/api/catha/orders/link-mpesa',
+        action: 'POST',
+        userId: (session.user as any)?.userId ?? session.user.email ?? null,
+        role: role ?? null,
+        rejected: true,
+        reason: 'denied_no_active_shift',
+        requestSummary: { message: shiftGuard.error },
+      })
+      queueCathaAuditLog({
+        type: 'SECURITY',
+        action: 'LINK_MPESA_PAYMENT',
+        status: 'DENIED',
+        reason: 'denied_no_active_shift',
+        userId: (session.user as any)?.userId ?? session.user.email ?? null,
+        role: role ?? null,
+        endpoint: '/api/catha/orders/link-mpesa',
+        payloadSummary: { message: shiftGuard.error },
+      })
+      return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
     }
 
     const body = await request.json()
@@ -67,6 +96,16 @@ export async function POST(request: Request) {
       customerName: orderAfter?.customerName ?? null,
     })
     res.headers.set('Cache-Control', 'no-store')
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'LINK_MPESA_PAYMENT',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role: role ?? null,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/orders/link-mpesa',
+      payloadSummary: { orderId, transactionId },
+    })
     return res
   } catch (error: any) {
     console.error('[Orders Link M-Pesa] Error:', error)

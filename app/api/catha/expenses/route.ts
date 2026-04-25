@@ -3,6 +3,8 @@ import clientPromise from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { NextRequest } from 'next/server'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { requireActiveShiftForSessionUser } from '@/lib/catha-shift-service'
+import { queueCathaAuditLog } from '@/lib/catha-audit-log'
 
 export const runtime = 'nodejs'
 
@@ -84,6 +86,32 @@ export async function POST(request: Request) {
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'expenses', 'add')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'CREATE_EXPENSE',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/expenses',
+      action: 'POST',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
+  }
   try {
     const body = await request.json()
     const {
@@ -139,6 +167,17 @@ export async function POST(request: Request) {
     
     console.log(`[Bar Expenses API] ✅ Expense created successfully: ${category} (ID: ${result.insertedId})`)
 
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'CREATE_EXPENSE',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { amount: Number(amount), category: String(category || ''), method: String(method || '') },
+    })
+
     return NextResponse.json({
       success: true,
       expense: {
@@ -169,6 +208,32 @@ export async function PUT(request: Request) {
   const perms = normalizePermissions((session.user as any).permissions)
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'expenses', 'edit')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'UPDATE_EXPENSE',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/expenses',
+      action: 'PUT',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
   }
   try {
     const body = await request.json()
@@ -234,6 +299,17 @@ export async function PUT(request: Request) {
       { _id: new ObjectId(id) },
       { $set: updateData }
     )
+
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'UPDATE_EXPENSE',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { expenseId: id, amount: Number(amount), category: String(category || '') },
+    })
     
     console.log(`[Bar Expenses API] ✅ Expense updated successfully: ${category} (ID: ${id})`)
 
@@ -271,6 +347,32 @@ export async function DELETE(request: Request) {
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'expenses', 'delete')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'DELETE_EXPENSE',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    console.warn('[security-shift] REJECTED', JSON.stringify({
+      route: '/api/catha/expenses',
+      action: 'DELETE',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      message: shiftGuard.error,
+      ts: new Date().toISOString(),
+    }))
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
+  }
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -303,6 +405,17 @@ export async function DELETE(request: Request) {
 
     // Delete expense
     await db.collection('bar_expenses').deleteOne({ _id: new ObjectId(id) })
+
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'DELETE_EXPENSE',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? session.user.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/expenses',
+      payloadSummary: { expenseId: id, category: String(existing.category || '') },
+    })
     
     console.log(`[Bar Expenses API] ✅ Expense deleted successfully: ${existing.category} (ID: ${id})`)
 

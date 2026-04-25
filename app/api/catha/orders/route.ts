@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { requireActiveShiftForSessionUser } from '@/lib/catha-shift-service'
 
 // Mutations (create/update/delete) must never be cached - money/stock changes
 function noStoreJson(data: unknown, init?: ResponseInit) {
@@ -34,6 +35,7 @@ import {
   formatZodError,
 } from '@/lib/order-request-schemas'
 import { maybeSendCathaPaymentReceiptSms } from '@/lib/catha-payment-sms'
+import { queueCathaAuditLog } from '@/lib/catha-audit-log'
 
 function orderDocumentToJson(order: any) {
   const pay = formatCathaOrderForApi(order)
@@ -179,6 +181,32 @@ export async function POST(request: Request) {
   const perms = normalizePermissions((session.user as any).permissions)
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'orders', 'add')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    logOrderSecurityEvent({
+      route: '/api/catha/orders',
+      action: 'POST',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      rejected: true,
+      reason: 'denied_no_active_shift',
+      requestSummary: { message: shiftGuard.error },
+    })
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'CREATE_ORDER',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
   }
   try {
     const ip = getClientIp(request)
@@ -416,6 +444,16 @@ export async function POST(request: Request) {
     }
 
     const orderAfterSms = await db.collection('orders').findOne({ id: order.id })
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'CREATE_ORDER',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { orderId: order.id, total: order.total, itemCount: order.items.length },
+    })
     return noStoreJson(orderAfterSms || savedOrder, { status: 201 })
   } catch (error: any) {
     console.error('[Orders API] POST exception:', error?.message, error?.stack)
@@ -435,6 +473,32 @@ export async function PUT(request: Request) {
   const perms = normalizePermissions((session.user as any).permissions)
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'orders', 'edit')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    logOrderSecurityEvent({
+      route: '/api/catha/orders',
+      action: 'PUT',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      rejected: true,
+      reason: 'denied_no_active_shift',
+      requestSummary: { message: shiftGuard.error },
+    })
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'UPDATE_ORDER',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
   }
   try {
     const ip = getClientIp(request)
@@ -760,6 +824,16 @@ export async function PUT(request: Request) {
       }
     }
     
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'UPDATE_ORDER',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { orderId: id, status: String(newStatus || '') },
+    })
     return noStoreJson({ success: true })
   } catch (error: any) {
     console.error('Error updating order:', error)
@@ -779,6 +853,32 @@ export async function DELETE(request: Request) {
   const perms = normalizePermissions((session.user as any).permissions)
   if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'orders', 'delete')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const shiftGuard = await requireActiveShiftForSessionUser(session.user, {
+    allowSuperAdmin: true,
+    allowedStatuses: ['ACTIVE'],
+  })
+  if (!shiftGuard.ok) {
+    logOrderSecurityEvent({
+      route: '/api/catha/orders',
+      action: 'DELETE',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      rejected: true,
+      reason: 'denied_no_active_shift',
+      requestSummary: { message: shiftGuard.error },
+    })
+    queueCathaAuditLog({
+      type: 'SECURITY',
+      action: 'DELETE_ORDER',
+      status: 'DENIED',
+      reason: 'denied_no_active_shift',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { message: shiftGuard.error },
+    })
+    return NextResponse.json({ error: shiftGuard.error }, { status: shiftGuard.status })
   }
   try {
     const { searchParams } = new URL(request.url)
@@ -836,6 +936,16 @@ export async function DELETE(request: Request) {
       { $set: { status: 'cancelled', updatedAt: new Date() } }
     )
     
+    queueCathaAuditLog({
+      type: 'FINANCIAL',
+      action: 'DELETE_ORDER',
+      status: 'SUCCESS',
+      userId: (session.user as any)?.userId ?? (session.user as any)?.email ?? null,
+      role,
+      shiftId: shiftGuard.shift?._id?.toString?.() ?? null,
+      endpoint: '/api/catha/orders',
+      payloadSummary: { orderId: id },
+    })
     return noStoreJson({ success: true })
   } catch (error: any) {
     console.error('Error deleting order:', error)

@@ -21,6 +21,7 @@ import {
   UserPlus2,
   Brain,
   Clock3,
+  ShieldCheck,
 } from 'lucide-react'
 import type { CanonicalPermissionKey } from './catha-access'
 
@@ -64,6 +65,7 @@ export const CATHA_NAV_ITEMS: CathaNavItem[] = [
  */
 export const CATHA_SUPER_ADMIN_NAV_ITEMS: { name: string; href: string; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
   { name: 'AI Intelligence', href: '/catha/ai-intelligence', icon: Brain, color: 'indigo' },
+  { name: 'Audit Logs', href: '/catha/audit-logs', icon: ShieldCheck, color: 'amber' },
 ]
 
 export const CATHA_NAV_SECTIONS: CathaNavSection[] = [

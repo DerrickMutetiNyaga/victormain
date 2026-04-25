@@ -52,6 +52,9 @@ interface Settings {
     dailySalesSummary: boolean
     newOrderNotifications: boolean
     supplierDeliveryReminders: boolean
+    securitySmsAlertsEnabled?: boolean
+    securityAlertNumbers?: string[]
+    securityDeniedBurstThreshold?: number
   }
   security?: {
     requirePinForVoids: boolean
@@ -159,6 +162,9 @@ export default function SettingsPage() {
   const [dailySalesSummary, setDailySalesSummary] = useState(true)
   const [newOrderNotifications, setNewOrderNotifications] = useState(false)
   const [supplierDeliveryReminders, setSupplierDeliveryReminders] = useState(true)
+  const [securitySmsAlertsEnabled, setSecuritySmsAlertsEnabled] = useState(false)
+  const [securityAlertNumbersText, setSecurityAlertNumbersText] = useState("")
+  const [securityDeniedBurstThreshold, setSecurityDeniedBurstThreshold] = useState(10)
   
   // Security State
   const [requirePinForVoids, setRequirePinForVoids] = useState(true)
@@ -202,6 +208,8 @@ export default function SettingsPage() {
   const [authHealthLoading, setAuthHealthLoading] = useState(false)
   const [authHealthError, setAuthHealthError] = useState("")
   const [authHealth, setAuthHealth] = useState<AuthHealthResponse | null>(null)
+  const [noShiftReminderMinutes, setNoShiftReminderMinutes] = useState(10)
+  const [noShiftHardAlertMinutes, setNoShiftHardAlertMinutes] = useState(20)
 
   const eoPreview = useMemo(
     () =>
@@ -243,8 +251,12 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const response = await fetch('/api/catha/settings')
-        const data = await response.json()
+        const [settingsRes, shiftSettingsRes] = await Promise.all([
+          fetch('/api/catha/settings'),
+          fetch('/api/catha/shift-settings'),
+        ])
+        const data = await settingsRes.json()
+        const shiftSettingsData = await shiftSettingsRes.json().catch(() => null)
         
         if (data.success && data.settings) {
           const settings = data.settings
@@ -271,6 +283,14 @@ export default function SettingsPage() {
             setDailySalesSummary(settings.notifications.dailySalesSummary ?? true)
             setNewOrderNotifications(settings.notifications.newOrderNotifications ?? false)
             setSupplierDeliveryReminders(settings.notifications.supplierDeliveryReminders ?? true)
+            setSecuritySmsAlertsEnabled(!!settings.notifications.securitySmsAlertsEnabled)
+            setSecurityAlertNumbersText(
+              Array.isArray(settings.notifications.securityAlertNumbers)
+                ? settings.notifications.securityAlertNumbers.join(", ")
+                : ""
+            )
+            const threshold = Number(settings.notifications.securityDeniedBurstThreshold)
+            setSecurityDeniedBurstThreshold(Number.isFinite(threshold) ? Math.max(3, Math.min(100, Math.round(threshold))) : 10)
           }
           
           // Security
@@ -323,6 +343,13 @@ export default function SettingsPage() {
             setEoCustomNotice(typeof eoh.customNotice === "string" ? eoh.customNotice : "")
             setEoBlockCheckout(!!eoh.blockCheckoutWhenClosed)
           }
+        }
+
+        if (shiftSettingsData?.ok && shiftSettingsData?.settings) {
+          const reminderMin = Number(shiftSettingsData.settings.noShiftReminderMinutes)
+          const hardMin = Number(shiftSettingsData.settings.noShiftHardAlertMinutes)
+          if (Number.isFinite(reminderMin)) setNoShiftReminderMinutes(Math.max(1, Math.round(reminderMin)))
+          if (Number.isFinite(hardMin)) setNoShiftHardAlertMinutes(Math.max(2, Math.round(hardMin)))
         }
       } catch (error) {
         console.error('Error loading settings:', error)
@@ -431,6 +458,12 @@ export default function SettingsPage() {
             dailySalesSummary,
             newOrderNotifications,
             supplierDeliveryReminders,
+            securitySmsAlertsEnabled,
+            securityAlertNumbers: securityAlertNumbersText
+              .split(",")
+              .map((n) => n.trim())
+              .filter(Boolean),
+            securityDeniedBurstThreshold: Math.max(3, Math.min(100, Math.round(Number(securityDeniedBurstThreshold) || 10))),
           },
         }),
       })
@@ -487,6 +520,49 @@ export default function SettingsPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to save security settings",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveShiftReminderSettings = async () => {
+    const reminder = Math.max(1, Math.round(Number(noShiftReminderMinutes) || 0))
+    const hardAlert = Math.max(2, Math.round(Number(noShiftHardAlertMinutes) || 0))
+    if (hardAlert <= reminder) {
+      toast({
+        title: "Validation error",
+        description: "Hard alert minutes must be greater than reminder minutes",
+        variant: "destructive",
+      })
+      return
+    }
+    setSaving(true)
+    try {
+      const response = await fetch('/api/catha/shift-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noShiftReminderMinutes: reminder,
+          noShiftHardAlertMinutes: hardAlert,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || 'Failed to save shift reminders')
+      }
+      setNoShiftReminderMinutes(reminder)
+      setNoShiftHardAlertMinutes(hardAlert)
+      toast({
+        title: "Success",
+        description: "Shift reminder timing saved successfully",
+      })
+    } catch (error: any) {
+      console.error('Error saving shift reminder settings:', error)
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to save shift reminder settings",
         variant: "destructive",
       })
     } finally {
@@ -1026,6 +1102,35 @@ export default function SettingsPage() {
                     </div>
                     <Switch checked={supplierDeliveryReminders} onCheckedChange={setSupplierDeliveryReminders} />
                   </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Security SMS alerts</Label>
+                      <p className="text-sm text-muted-foreground">Send SMS when denied-action spikes are detected.</p>
+                    </div>
+                    <Switch checked={securitySmsAlertsEnabled} onCheckedChange={setSecuritySmsAlertsEnabled} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="security-alert-numbers">Security alert numbers</Label>
+                    <Input
+                      id="security-alert-numbers"
+                      value={securityAlertNumbersText}
+                      onChange={(e) => setSecurityAlertNumbersText(e.target.value)}
+                      placeholder="+254712345678, +254700000000"
+                    />
+                    <p className="text-xs text-muted-foreground">Comma-separated phone numbers.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="security-alert-threshold">Denied burst threshold (5-minute window)</Label>
+                    <Input
+                      id="security-alert-threshold"
+                      type="number"
+                      min={3}
+                      max={100}
+                      value={securityDeniedBurstThreshold}
+                      onChange={(e) => setSecurityDeniedBurstThreshold(Number(e.target.value))}
+                    />
+                  </div>
                   <Button onClick={saveNotifications} disabled={saving}>
                     {saving ? "Saving..." : "Save Changes"}
                   </Button>
@@ -1072,6 +1177,40 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Extra security for admin accounts</p>
                     </div>
                     <Switch checked={twoFactorAuth} onCheckedChange={setTwoFactorAuth} />
+                  </div>
+                  <Separator />
+                  <div className="space-y-3 rounded-lg border border-border p-4">
+                    <div>
+                      <Label>Shift start reminders</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Remind users without an active shift, and escalate after a hard limit.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="no-shift-reminder-min">Reminder interval (minutes)</Label>
+                        <Input
+                          id="no-shift-reminder-min"
+                          type="number"
+                          min={1}
+                          value={noShiftReminderMinutes}
+                          onChange={(e) => setNoShiftReminderMinutes(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="no-shift-hard-min">Hard alert after (minutes)</Label>
+                        <Input
+                          id="no-shift-hard-min"
+                          type="number"
+                          min={2}
+                          value={noShiftHardAlertMinutes}
+                          onChange={(e) => setNoShiftHardAlertMinutes(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={saveShiftReminderSettings} disabled={saving}>
+                      {saving ? "Saving..." : "Save Shift Reminder Timing"}
+                    </Button>
                   </div>
                   <Separator />
                   <div className="space-y-2">

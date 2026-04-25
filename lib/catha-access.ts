@@ -215,6 +215,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, CanonicalPermissionKey | null>
   '/catha/users': 'system.userManagement',
   '/catha/distributor-requests': 'management.distributorRequests',
   '/catha/reports': 'system.reports',
+  '/catha/audit-logs': 'system.reports',
   '/catha/settings': 'system.settings',
   '/catha/login': null,
   '/catha/signup': null,

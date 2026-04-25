@@ -1,5 +1,6 @@
 import { getCathaSession } from '@/lib/catha-auth'
-import { getCathaUserByEmail } from '@/lib/models/catha-user'
+import { getCathaUserByEmail, getCathaUserById } from '@/lib/models/catha-user'
+import { getActiveStaffShiftByUserId } from '@/lib/models/staff-shift'
 import { getDatabase } from '@/lib/mongodb'
 import { EAT_TIME_ZONE, evaluateLateness, getEatBusinessDate, getScheduledEatDate, isEarlyExit, isOvertime } from '@/lib/catha-shift-time'
 import type { StaffShiftStatus } from '@/lib/models/staff-shift'
@@ -18,6 +19,58 @@ export async function requireShiftSessionUser() {
     role: String(user.role || '').toUpperCase(),
     name: user.name || session.user.name || session.user.email || 'Staff',
   }
+}
+
+export async function requireActiveShiftByEmail(email: string, options?: { allowSuperAdmin?: boolean }) {
+  const user = await getCathaUserByEmail(email)
+  if (!user?._id) return { ok: false as const, status: 404, error: 'User not found' }
+  const role = String(user.role || '').trim().toUpperCase()
+  if (options?.allowSuperAdmin && role === 'SUPER_ADMIN') {
+    return { ok: true as const, userId: user._id.toString(), role, shift: null, user }
+  }
+  const shift = await getActiveStaffShiftByUserId(user._id.toString())
+  if (!shift) {
+    return { ok: false as const, status: 403, error: 'Active shift required before performing this action.' }
+  }
+  return { ok: true as const, userId: user._id.toString(), role, shift, user }
+}
+
+type ShiftGuardOptions = {
+  allowSuperAdmin?: boolean
+  allowedStatuses?: StaffShiftStatus[]
+}
+
+export async function requireActiveShiftForSessionUser(
+  sessionUser: { email?: string | null; userId?: string | null; id?: string | null; _id?: string | null },
+  options?: ShiftGuardOptions
+) {
+  const idCandidate = String(sessionUser.userId || sessionUser.id || sessionUser._id || '').trim()
+  const email = String(sessionUser.email || '').trim()
+  const user =
+    (idCandidate ? await getCathaUserById(idCandidate) : null) ??
+    (email ? await getCathaUserByEmail(email) : null)
+
+  if (!user?._id) return { ok: false as const, status: 404, error: 'User not found' }
+
+  const role = String(user.role || '').trim().toUpperCase()
+  if (options?.allowSuperAdmin && role === 'SUPER_ADMIN') {
+    return { ok: true as const, userId: user._id.toString(), role, shift: null, user }
+  }
+
+  const shift = await getActiveStaffShiftByUserId(user._id.toString())
+  if (!shift) {
+    return { ok: false as const, status: 403, error: 'Active shift required before performing this action.' }
+  }
+  const allowedStatuses = options?.allowedStatuses ?? ['ACTIVE', 'PENDING_CLOSURE']
+  if (!allowedStatuses.includes(shift.status)) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: `Shift status ${shift.status} does not allow this action.`,
+    }
+  }
+
+  return { ok: true as const, userId: user._id.toString(), role, shift, user }
 }
 
 export function getDeviceFingerprint(headers: Headers): string {

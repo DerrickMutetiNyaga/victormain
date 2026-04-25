@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { normalizePhoneNumbers } from '@/lib/jaba-sms'
 import {
   defaultEcommerceOpeningHours,
   validateEcommerceOpeningHoursPayload,
@@ -27,6 +28,9 @@ export interface Settings {
     dailySalesSummary: boolean
     newOrderNotifications: boolean
     supplierDeliveryReminders: boolean
+    securitySmsAlertsEnabled?: boolean
+    securityAlertNumbers?: string[]
+    securityDeniedBurstThreshold?: number
   }
   security?: {
     requirePinForVoids: boolean
@@ -87,6 +91,9 @@ const defaultSettings: Settings = {
     dailySalesSummary: true,
     newOrderNotifications: false,
     supplierDeliveryReminders: true,
+    securitySmsAlertsEnabled: false,
+    securityAlertNumbers: [],
+    securityDeniedBurstThreshold: 10,
   },
   security: {
     requirePinForVoids: true,
@@ -233,7 +240,18 @@ export async function PUT(request: Request) {
       updateData.receipt = body.receipt
     }
     if (body.notifications !== undefined) {
-      updateData.notifications = body.notifications
+      const notifications = { ...body.notifications }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'securityAlertNumbers')) {
+        notifications.securityAlertNumbers = normalizePhoneNumbers(notifications.securityAlertNumbers ?? [])
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'securityDeniedBurstThreshold')) {
+        const n = Number(notifications.securityDeniedBurstThreshold)
+        notifications.securityDeniedBurstThreshold = Number.isFinite(n) ? Math.min(100, Math.max(3, Math.round(n))) : 10
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'securitySmsAlertsEnabled')) {
+        notifications.securitySmsAlertsEnabled = Boolean(notifications.securitySmsAlertsEnabled)
+      }
+      updateData.notifications = notifications
     }
     if (body.security !== undefined) {
       updateData.security = body.security
