@@ -54,9 +54,10 @@ export async function GET(
     }
 
     const summary = summarizeCathaOrderPayments(order as any)
-    const isSettled =
-      String(order.status || "").toLowerCase() === "completed" &&
-      (summary.paymentStatus === "PAID" || summary.paymentStatus === "OVERPAID")
+    const statusCompleted = String(order.status || "").toLowerCase() === "completed"
+    const computedSettled = summary.paymentStatus === "PAID" || summary.paymentStatus === "OVERPAID"
+    const explicitPaid = ["PAID", "OVERPAID"].includes(String(order.paymentStatus || "").toUpperCase())
+    const isSettled = statusCompleted && (computedSettled || explicitPaid)
 
     // Never expose pending/unsettled orders on public receipt route.
     if (!isSettled) {
