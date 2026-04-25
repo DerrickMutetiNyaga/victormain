@@ -87,6 +87,8 @@ const tabOptions = [
 
 type TabValue = (typeof tabOptions)[number]["id"]
 
+const kenyaTimeFormat: Intl.DateTimeFormatOptions = { timeZone: "Africa/Nairobi" }
+
 function statusMeta(row: ShiftRow | MyShift) {
   const isLate = ["yellow", "orange", "red"].includes(String(row.metadata?.latenessBand ?? ""))
   if (row.status === "OVERTIME") {
@@ -120,6 +122,25 @@ function hoursWorked(startedAt: string, endedAt?: string) {
   const hrs = Math.floor(mins / 60)
   const rem = mins % 60
   return `${hrs}h ${rem}m`
+}
+
+function formatDate(dateLike: string) {
+  const date = new Date(dateLike)
+  if (Number.isNaN(date.getTime())) return "-"
+  return date.toLocaleDateString("en-KE", kenyaTimeFormat)
+}
+
+function formatTime(dateLike?: string) {
+  if (!dateLike) return "-"
+  const date = new Date(dateLike)
+  if (Number.isNaN(date.getTime())) return "-"
+  return date.toLocaleTimeString("en-KE", kenyaTimeFormat)
+}
+
+function rowKey(row: ShiftRow | MyShift, scope: string, index: number) {
+  const id = String(row._id ?? "")
+  if (id) return `${scope}-${id}-${row.startedAt}`
+  return `${scope}-${row.startedAt}-${row.endedAt ?? "active"}-${index}`
 }
 
 export default function WorkforceHubPage() {
@@ -248,70 +269,84 @@ export default function WorkforceHubPage() {
     transition: { duration: 0.2 },
   }
 
+  const revenueTotal = useMemo(
+    () => dashboardRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0),
+    [dashboardRows]
+  )
+
   return (
-    <div className="min-h-screen bg-slate-50 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.12),_transparent_45%),radial-gradient(circle_at_top_right,_rgba(99,102,241,0.1),_transparent_40%)] p-4 md:p-6">
-      <div className="mx-auto max-w-[1720px] space-y-5 2xl:space-y-6">
-        <div className="sticky top-3 z-20 rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl md:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="space-y-1">
+    <div className="min-h-screen bg-slate-100/70 p-3 sm:p-4 lg:p-6">
+      <div className="mx-auto max-w-[1720px] space-y-4 lg:space-y-5">
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
+            <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Workforce Hub</h1>
-                <Badge className="rounded-full border border-emerald-200 bg-emerald-100 px-3 text-emerald-700">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">Workforce Hub</h1>
+                <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
                   <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                  Today Live Pulse
+                  Live Pulse
                 </Badge>
               </div>
-              <p className="text-sm text-slate-500">Live attendance, payroll & shift operations</p>
+              <p className="text-sm text-slate-600">Attendance, shift operations, and performance in one place.</p>
             </div>
-            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[280px_150px_140px_140px_auto_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search employee..."
-                  aria-label="Search employee"
-                  className="h-11 rounded-2xl border-slate-200 bg-white pl-9"
-                />
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+                Live staff: <span className="font-semibold text-slate-900">{Number(cards.activeShiftsNow ?? 0)}</span>
               </div>
-              <Select value={range} onValueChange={setRange}>
-                <SelectTrigger className="h-11 rounded-2xl border-slate-200 bg-white">
-                  <SelectValue placeholder="Range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-11 rounded-2xl border-slate-200 bg-white" />
-              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-11 rounded-2xl border-slate-200 bg-white" />
-              <Button variant="outline" onClick={exportCsv} className="h-11 rounded-2xl border-slate-200 bg-white">
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-              <Button className="h-11 rounded-2xl bg-emerald-500 text-white shadow-sm hover:bg-emerald-600">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Shift
-              </Button>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+                Revenue: <span className="font-semibold text-slate-900">KES {revenueTotal.toLocaleString()}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3 2xl:grid-cols-6">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(250px,1fr)_150px_150px_150px_auto_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search employee..."
+                aria-label="Search employee"
+                className="h-10 rounded-xl border-slate-200 bg-white pl-9"
+              />
+            </div>
+            <Select value={range} onValueChange={setRange}>
+              <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                <SelectValue placeholder="Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">This Week</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-xl border-slate-200 bg-white" />
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-xl border-slate-200 bg-white" />
+            <Button variant="outline" onClick={exportCsv} className="h-10 rounded-xl border-slate-200 bg-white">
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </Button>
+            <Button className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Shift
+            </Button>
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           {kpis.map((kpi) => (
-            <motion.div key={kpi.title} whileHover={{ y: -5 }} className="min-w-[250px] flex-1 snap-start sm:min-w-0">
-              <Card className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+            <motion.div key={kpi.title} whileHover={{ y: -3 }}>
+              <Card className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${kpi.tint}`} />
-                <CardContent className="p-5">
-                  <div className="mb-4 flex items-start justify-between">
+                <CardContent className="p-4">
+                  <div className="mb-3 flex items-start justify-between">
                     <span className="text-sm text-slate-500">{kpi.title}</span>
-                    <div className={`rounded-2xl bg-gradient-to-r p-2.5 text-white ${kpi.tint}`}>
+                    <div className={`rounded-xl bg-gradient-to-r p-2 text-white ${kpi.tint}`}>
                       <kpi.icon className="h-4 w-4" />
                     </div>
                   </div>
-                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-3xl font-bold tracking-tight text-slate-900">
+                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-2xl font-bold tracking-tight text-slate-900">
                     {kpi.value}
                   </motion.div>
                   <p className="mt-1 text-xs text-slate-500">{kpi.trend}</p>
@@ -321,10 +356,10 @@ export default function WorkforceHubPage() {
           ))}
         </div>
 
-        <Card className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-md">
-          <CardHeader className="pb-3">
+        <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <CardHeader className="pb-2">
             <div className="overflow-x-auto">
-              <div className="relative flex w-max min-w-full items-center gap-1 rounded-2xl bg-slate-100 p-1">
+              <div className="relative flex w-max min-w-full items-center gap-1 rounded-xl bg-slate-100 p-1">
                 {visibleTabs.map((tab) => {
                   const Icon = tab.icon
                   const active = activeTab === tab.id
@@ -333,7 +368,7 @@ export default function WorkforceHubPage() {
                       key={tab.id}
                       variant="ghost"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`relative h-10 overflow-hidden rounded-xl px-4 text-sm transition-all ${active ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}`}
+                      className={`relative h-9 overflow-hidden rounded-lg px-3 text-sm transition-all ${active ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}`}
                     >
                       {active ? (
                         <motion.span
@@ -355,68 +390,65 @@ export default function WorkforceHubPage() {
           <CardContent>
             <AnimatePresence mode="wait">
               {activeTab === "overview" && (
-                <motion.div key="overview" {...panelMotion} className="grid grid-cols-12 gap-4 xl:gap-5 2xl:gap-6">
-                  <div className="col-span-12 space-y-3 xl:col-span-8">
-                    <div className="space-y-3">
-                      {filteredTeamRows.slice(0, 12).map((row) => {
-                        const status = statusMeta(row)
-                        return (
-                          <motion.div key={row._id} whileHover={{ y: -2 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:shadow-md">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex min-w-[230px] items-center gap-3">
-                                <Avatar className="h-11 w-11">
-                                  <AvatarFallback className="bg-emerald-100 text-xs font-semibold text-emerald-700">
-                                    {initials(row.staffName)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-semibold text-slate-900">{row.staffName}</p>
-                                  <p className="text-xs text-slate-500">{row.role || "Team member"}</p>
-                                </div>
-                              </div>
-
-                              <div className="grid flex-1 grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
-                                <div>
-                                  <p className="text-xs text-slate-500">Clock In</p>
-                                  <p className="font-medium text-slate-800">{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-slate-500">Worked</p>
-                                  <p className="font-medium text-slate-800">{hoursWorked(row.startedAt, row.endedAt)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-slate-500">Orders</p>
-                                  <p className="font-medium text-slate-800">{row.ordersServed}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-slate-500">Revenue</p>
-                                  <p className="font-medium text-slate-800">KES {Number(row.totalRevenue || 0).toLocaleString()}</p>
-                                </div>
-                                <div className="flex items-end">
-                                  <Badge className={`border ${status.className}`}>
-                                    <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
-                                    {status.label}
-                                  </Badge>
-                                </div>
-                              </div>
-
-                              <div className="flex gap-2">
-                                <Button variant="outline" size="sm" className="rounded-xl border-slate-200">View</Button>
-                                <Button variant="outline" size="sm" className="rounded-xl border-slate-200">Edit</Button>
-                                <Button size="sm" className="rounded-xl bg-slate-900 text-white hover:bg-slate-800">End Shift</Button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )
-                      })}
-                      {!loading && filteredTeamRows.length === 0 && (
-                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
-                          No live shift records for this filter.
+                <motion.div key="overview" {...panelMotion} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                  <div className="space-y-3">
+                    <Card className="rounded-2xl border border-slate-200 shadow-none">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Live Team Snapshot</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-[920px] w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3 font-medium">Staff</th>
+                                <th className="px-4 py-3 font-medium">Role</th>
+                                <th className="px-4 py-3 font-medium">Clock In</th>
+                                <th className="px-4 py-3 font-medium">Worked</th>
+                                <th className="px-4 py-3 font-medium">Orders</th>
+                                <th className="px-4 py-3 font-medium">Revenue</th>
+                                <th className="px-4 py-3 font-medium">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredTeamRows.slice(0, 12).map((row, index) => {
+                                const status = statusMeta(row)
+                                return (
+                                  <tr key={rowKey(row, "overview", index)} className="border-t border-slate-100 align-middle">
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-2.5">
+                                        <Avatar className="h-9 w-9">
+                                          <AvatarFallback className="bg-emerald-100 text-xs font-semibold text-emerald-700">
+                                            {initials(row.staffName)}
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <span className="font-medium text-slate-900">{row.staffName}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-700">{row.role || "Team member"}</td>
+                                    <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
+                                    <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
+                                    <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
+                                    <td className="px-4 py-3">
+                                      <Badge className={`border ${status.className}`}>
+                                        <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                        {status.label}
+                                      </Badge>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                      )}
-                    </div>
+                        {!loading && filteredTeamRows.length === 0 && (
+                          <div className="px-4 py-8 text-center text-sm text-slate-500">No live shift records for this filter.</div>
+                        )}
+                      </CardContent>
+                    </Card>
                   </div>
-                  <div className="col-span-12 space-y-4 xl:col-span-4">
+                  <div className="space-y-4">
                     <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-0">
                         <CardTitle className="text-sm">Attendance Ring</CardTitle>
@@ -467,110 +499,136 @@ export default function WorkforceHubPage() {
                         {(insights.charts?.chronicLateness ?? []).length === 0 && <p className="text-slate-500">No late alerts.</p>}
                       </CardContent>
                     </Card>
-
-                    <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Upcoming Schedules</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2 text-sm">
-                        {filteredTeamRows.slice(0, 3).map((row) => (
-                          <div key={row._id} className="rounded-lg bg-slate-50 px-3 py-2">
-                            <div className="font-medium text-slate-900">{row.staffName}</div>
-                            <div className="text-slate-600">
-                              Next shift target: {new Date(row.startedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}
-                            </div>
-                          </div>
-                        ))}
-                        {filteredTeamRows.length === 0 && <p className="text-slate-500">No upcoming schedules.</p>}
-                      </CardContent>
-                    </Card>
                   </div>
                 </motion.div>
               )}
 
               {activeTab === "my-shifts" && (
-                <motion.div key="my-shifts" {...panelMotion} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {myRows.map((row) => {
-                    const status = statusMeta(row)
-                    return (
-                      <Card key={row._id} className="rounded-2xl border border-slate-200 shadow-sm">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-base text-slate-900">
-                            {new Date(row.startedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Clock In</span><span>{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Clock Out</span><span>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Hours</span><span>{hoursWorked(row.startedAt, row.endedAt)}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Revenue</span><span>KES {Number(row.totalRevenue || 0).toLocaleString()}</span></div>
-                          <Badge className={`border ${status.className}`}>
-                            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
-                            {status.label}
-                          </Badge>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                  {!loading && myRows.length === 0 && <div className="text-sm text-slate-500">No personal shifts found.</div>}
+                <motion.div key="my-shifts" {...panelMotion} className="space-y-3">
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="min-w-[860px] w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Date</th>
+                          <th className="px-4 py-3 font-medium">Clock In</th>
+                          <th className="px-4 py-3 font-medium">Clock Out</th>
+                          <th className="px-4 py-3 font-medium">Hours</th>
+                          <th className="px-4 py-3 font-medium">Revenue</th>
+                          <th className="px-4 py-3 font-medium">Orders</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myRows.map((row, index) => {
+                          const status = statusMeta(row)
+                          return (
+                            <tr key={rowKey(row, "my-shifts", index)} className="border-t border-slate-100">
+                              <td className="px-4 py-3 text-slate-900">{formatDate(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${status.className}`}>
+                                  <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                  {status.label}
+                                </Badge>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!loading && myRows.length === 0 && <div className="rounded-xl border border-slate-200 px-4 py-6 text-sm text-slate-500">No personal shifts found.</div>}
                 </motion.div>
               )}
 
               {activeTab === "team-shifts" && (
                 <motion.div key="team-shifts" {...panelMotion} className="space-y-3">
-                  {filteredTeamRows.map((row) => {
-                    const status = statusMeta(row)
-                    return (
-                      <div key={row._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900">{row.staffName}</p>
-                            <p className="text-xs text-slate-500">{row.role || "-"}</p>
-                          </div>
-                          <div className="grid min-w-[280px] grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div><p className="text-xs text-slate-500">Clock In</p><p>{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</p></div>
-                            <div><p className="text-xs text-slate-500">Clock Out</p><p>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</p></div>
-                            <div><p className="text-xs text-slate-500">Hours</p><p>{hoursWorked(row.startedAt, row.endedAt)}</p></div>
-                            <div><p className="text-xs text-slate-500">Revenue</p><p>KES {Number(row.totalRevenue || 0).toLocaleString()}</p></div>
-                          </div>
-                          <Badge className={`border ${status.className}`}>
-                            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
-                            {status.label}
-                          </Badge>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Staff</th>
+                          <th className="px-4 py-3 font-medium">Role</th>
+                          <th className="px-4 py-3 font-medium">Clock In</th>
+                          <th className="px-4 py-3 font-medium">Clock Out</th>
+                          <th className="px-4 py-3 font-medium">Hours</th>
+                          <th className="px-4 py-3 font-medium">Orders</th>
+                          <th className="px-4 py-3 font-medium">Revenue</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTeamRows.map((row, index) => {
+                          const status = statusMeta(row)
+                          return (
+                            <tr key={rowKey(row, "team-shifts", index)} className="border-t border-slate-100">
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.staffName}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.role || "-"}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
+                              <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${status.className}`}>
+                                  <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                  {status.label}
+                                </Badge>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!loading && filteredTeamRows.length === 0 && <div className="rounded-xl border border-slate-200 px-4 py-6 text-sm text-slate-500">No team shifts found.</div>}
                 </motion.div>
               )}
 
               {activeTab === "history" && (
-                <motion.div key="history" {...panelMotion} className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {historyRows.map((row) => {
-                    const status = statusMeta(row)
-                    return (
-                      <Card key={row._id} className="rounded-2xl border border-slate-200 shadow-sm">
-                        <CardContent className="space-y-2 p-4 text-sm">
-                          <div className="flex items-center justify-between">
-                            <p className="font-semibold text-slate-900">
-                              {new Date(row.startedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}
-                            </p>
-                            <Badge className={`border ${status.className}`}>
-                              <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
-                              {status.label}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Clock In</span><span>{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Clock Out</span><span>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Hours</span><span>{hoursWorked(row.startedAt, row.endedAt)}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Revenue</span><span>KES {Number(row.totalRevenue || 0).toLocaleString()}</span></div>
-                          <div className="flex items-center justify-between"><span className="text-slate-500">Orders</span><span>{row.ordersServed}</span></div>
-                          <div className="text-slate-600">{row.status}</div>
-                          <div className="text-slate-500">{(row as ShiftRow).notes || "No notes"}</div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                <motion.div key="history" {...panelMotion} className="space-y-3">
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Date</th>
+                          <th className="px-4 py-3 font-medium">Clock In</th>
+                          <th className="px-4 py-3 font-medium">Clock Out</th>
+                          <th className="px-4 py-3 font-medium">Hours</th>
+                          <th className="px-4 py-3 font-medium">Orders</th>
+                          <th className="px-4 py-3 font-medium">Revenue</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                          <th className="px-4 py-3 font-medium">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historyRows.map((row, index) => {
+                          const status = statusMeta(row)
+                          return (
+                            <tr key={rowKey(row, "history", index)} className="border-t border-slate-100">
+                              <td className="px-4 py-3 text-slate-900">{formatDate(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
+                              <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${status.className}`}>
+                                  <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                  {status.label}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{(row as ShiftRow).notes || "No notes"}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </motion.div>
               )}
 
@@ -622,8 +680,8 @@ export default function WorkforceHubPage() {
                     </CardContent>
                   </Card>
                   <Card className="rounded-2xl border border-slate-200 shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-base">Peak Shift Hours Heatmap</CardTitle></CardHeader>
-                    <CardContent className="grid grid-cols-6 gap-2">
+                    <CardHeader className="pb-2"><CardTitle className="text-base">Peak Shift Hours</CardTitle></CardHeader>
+                    <CardContent className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                       {(insights.charts?.peakHoursWorked ?? []).map((bucket) => {
                         const intensity = Math.min(0.85, Number(bucket.count || 0) / 10)
                         return (
