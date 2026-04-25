@@ -118,17 +118,17 @@ function formatMinuteDelta(minutes: number) {
   return `${rem}m`
 }
 
-function timingMeta(row: ShiftRow | MyShift) {
-  const scheduledStart = row.scheduledStartAt ? new Date(row.scheduledStartAt) : null
-  const started = new Date(row.startedAt)
-  if (!scheduledStart || Number.isNaN(scheduledStart.getTime()) || Number.isNaN(started.getTime())) {
+function timingFromSchedule(actualAt?: string, scheduledAt?: string, noDataLabel = "-") {
+  const scheduled = scheduledAt ? new Date(scheduledAt) : null
+  const actual = actualAt ? new Date(actualAt) : null
+  if (!scheduled || !actual || Number.isNaN(scheduled.getTime()) || Number.isNaN(actual.getTime())) {
     return {
       label: "No schedule",
-      detail: "-",
+      detail: noDataLabel,
       className: "bg-slate-100 text-slate-600 border-slate-200",
     }
   }
-  const diffMinutes = Math.round((started.getTime() - scheduledStart.getTime()) / 60000)
+  const diffMinutes = Math.round((actual.getTime() - scheduled.getTime()) / 60000)
   if (diffMinutes > 0) {
     return {
       label: "Late",
@@ -148,6 +148,25 @@ function timingMeta(row: ShiftRow | MyShift) {
     detail: "On time",
     className: "bg-emerald-100 text-emerald-700 border-emerald-200",
   }
+}
+
+function clockInTimingMeta(row: ShiftRow | MyShift) {
+  return timingFromSchedule(row.startedAt, row.scheduledStartAt)
+}
+
+function clockOutTimingMeta(row: ShiftRow | MyShift) {
+  if (!row.endedAt) {
+    return {
+      label: "Active",
+      detail: "Active",
+      className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    }
+  }
+  return timingFromSchedule(row.endedAt, row.scheduledEndAt)
+}
+
+function timingMeta(row: ShiftRow | MyShift) {
+  return clockInTimingMeta(row)
 }
 
 function initials(name: string) {
@@ -549,36 +568,39 @@ export default function WorkforceHubPage() {
                                   </Badge>
                                 </div>
                                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                                  <p className="text-slate-500">Clock In <span className="ml-1 font-medium text-slate-800">{formatTime(row.startedAt)}</span></p>
+                                  <p className="text-slate-500">
+                                    Clock In <span className="ml-1 font-medium text-slate-800">{formatTime(row.startedAt)} ({clockInTimingMeta(row).detail})</span>
+                                  </p>
+                                  <p className="text-slate-500">
+                                    Clock Out <span className="ml-1 font-medium text-slate-800">{formatTime(row.endedAt)} ({clockOutTimingMeta(row).detail})</span>
+                                  </p>
                                   <p className="text-slate-500">Worked <span className="ml-1 font-medium text-slate-800">{hoursWorked(row.startedAt, row.endedAt)}</span></p>
                                   <p className="text-slate-500">Orders <span className="ml-1 font-medium text-slate-800">{row.ordersServed}</span></p>
                                   <p className="text-slate-500">Revenue <span className="ml-1 font-medium text-slate-800">{formatCurrency(row.totalRevenue)}</span></p>
-                                  <p className="col-span-2 text-slate-500">
-                                    Timing <span className="ml-1 font-medium text-slate-800">{timingMeta(row).detail}</span>
-                                  </p>
                                 </div>
                               </div>
                             )
                           })}
                         </div>
                         <div className="hidden overflow-x-auto md:block">
-                          <table className="min-w-[880px] w-full text-sm">
+                          <table className="min-w-[980px] w-full text-sm">
                             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                               <tr>
                                 <th className="px-3 py-2.5 font-medium">Staff</th>
                                 <th className="px-3 py-2.5 font-medium">Role</th>
                                 <th className="px-3 py-2.5 font-medium">Clock In</th>
+                                <th className="px-3 py-2.5 font-medium">Clock Out</th>
                                 <th className="px-3 py-2.5 font-medium">Worked</th>
                                 <th className="px-3 py-2.5 font-medium">Orders</th>
                                 <th className="px-3 py-2.5 font-medium">Revenue</th>
-                                <th className="px-3 py-2.5 font-medium">Timing</th>
                                 <th className="px-3 py-2.5 font-medium">Status</th>
                               </tr>
                             </thead>
                             <tbody>
                               {filteredTeamRows.slice(0, 12).map((row, index) => {
                                 const status = statusMeta(row)
-                                const timing = timingMeta(row)
+                                const clockInTiming = clockInTimingMeta(row)
+                                const clockOutTiming = clockOutTimingMeta(row)
                                 return (
                                   <tr key={rowKey(row, "overview", index)} className="border-t border-slate-100 align-middle">
                                     <td className="px-3 py-2.5">
@@ -600,13 +622,21 @@ export default function WorkforceHubPage() {
                                       </div>
                                     </td>
                                     <td className="px-3 py-2.5 text-slate-700">{row.role || "Team member"}</td>
-                                    <td className="px-3 py-2.5 text-slate-700">{formatTime(row.startedAt)}</td>
+                                    <td className="px-3 py-2.5 text-slate-700">
+                                      <div className="flex flex-col gap-1">
+                                        <span>{formatTime(row.startedAt)}</span>
+                                        <Badge className={`w-fit border ${clockInTiming.className}`}>{clockInTiming.detail}</Badge>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2.5 text-slate-700">
+                                      <div className="flex flex-col gap-1">
+                                        <span>{formatTime(row.endedAt)}</span>
+                                        <Badge className={`w-fit border ${clockOutTiming.className}`}>{clockOutTiming.detail}</Badge>
+                                      </div>
+                                    </td>
                                     <td className="px-3 py-2.5 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
                                     <td className="px-3 py-2.5 text-slate-700">{row.ordersServed}</td>
                                     <td className="px-3 py-2.5 text-slate-700">{formatCurrency(row.totalRevenue)}</td>
-                                    <td className="px-3 py-2.5">
-                                      <Badge className={`border ${timing.className}`}>{timing.detail}</Badge>
-                                    </td>
                                     <td className="px-3 py-2.5">
                                       <Badge className={`border text-xs ${status.className}`}>
                                         <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
