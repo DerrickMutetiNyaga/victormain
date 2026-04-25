@@ -160,7 +160,13 @@ const categoryIconColors: Record<string, string> = {
 export default function POSPage() {
   const router = useRouter()
   const { data: session } = useSession()
-  const canManageOwnShift = session?.user?.role === "cashier_admin"
+  const role = String(session?.user?.role || "").trim().toUpperCase()
+  const canManageOwnShift =
+    role === "CASHIER" ||
+    role === "CASHIER_ADMIN" ||
+    role === "ADMIN" ||
+    role === "MANAGER_ADMIN" ||
+    role === "SUPER_ADMIN"
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const debouncedSearchQuery = useDebounce(searchQuery, 300) // Debounce search by 300ms
