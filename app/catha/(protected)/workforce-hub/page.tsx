@@ -87,7 +87,6 @@ const tabOptions = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "my-shifts", label: "My Shifts", icon: User },
   { id: "team-shifts", label: "Team", icon: Users },
-  { id: "timing", label: "Timing", icon: Clock3 },
   { id: "history", label: "History", icon: History },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
 ] as const
@@ -554,6 +553,9 @@ export default function WorkforceHubPage() {
                                   <p className="text-slate-500">Worked <span className="ml-1 font-medium text-slate-800">{hoursWorked(row.startedAt, row.endedAt)}</span></p>
                                   <p className="text-slate-500">Orders <span className="ml-1 font-medium text-slate-800">{row.ordersServed}</span></p>
                                   <p className="text-slate-500">Revenue <span className="ml-1 font-medium text-slate-800">{formatCurrency(row.totalRevenue)}</span></p>
+                                  <p className="col-span-2 text-slate-500">
+                                    Timing <span className="ml-1 font-medium text-slate-800">{timingMeta(row).detail}</span>
+                                  </p>
                                 </div>
                               </div>
                             )
@@ -569,12 +571,14 @@ export default function WorkforceHubPage() {
                                 <th className="px-3 py-2.5 font-medium">Worked</th>
                                 <th className="px-3 py-2.5 font-medium">Orders</th>
                                 <th className="px-3 py-2.5 font-medium">Revenue</th>
+                                <th className="px-3 py-2.5 font-medium">Timing</th>
                                 <th className="px-3 py-2.5 font-medium">Status</th>
                               </tr>
                             </thead>
                             <tbody>
                               {filteredTeamRows.slice(0, 12).map((row, index) => {
                                 const status = statusMeta(row)
+                                const timing = timingMeta(row)
                                 return (
                                   <tr key={rowKey(row, "overview", index)} className="border-t border-slate-100 align-middle">
                                     <td className="px-3 py-2.5">
@@ -600,6 +604,9 @@ export default function WorkforceHubPage() {
                                     <td className="px-3 py-2.5 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
                                     <td className="px-3 py-2.5 text-slate-700">{row.ordersServed}</td>
                                     <td className="px-3 py-2.5 text-slate-700">{formatCurrency(row.totalRevenue)}</td>
+                                    <td className="px-3 py-2.5">
+                                      <Badge className={`border ${timing.className}`}>{timing.detail}</Badge>
+                                    </td>
                                     <td className="px-3 py-2.5">
                                       <Badge className={`border text-xs ${status.className}`}>
                                         <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
@@ -771,6 +778,7 @@ export default function WorkforceHubPage() {
                           <th className="px-4 py-3 font-medium">Hours</th>
                           <th className="px-4 py-3 font-medium">Orders</th>
                           <th className="px-4 py-3 font-medium">Revenue</th>
+                          <th className="px-4 py-3 font-medium">Timing</th>
                           <th className="px-4 py-3 font-medium">Status</th>
                           <th className="px-4 py-3 font-medium">Notes</th>
                         </tr>
@@ -778,6 +786,7 @@ export default function WorkforceHubPage() {
                       <tbody>
                         {historyRows.map((row, index) => {
                           const status = statusMeta(row)
+                          const timing = timingMeta(row)
                           return (
                             <tr key={rowKey(row, "history", index)} className="border-t border-slate-100">
                               <td className="px-4 py-3 text-slate-900">{formatDate(row.startedAt)}</td>
@@ -786,6 +795,9 @@ export default function WorkforceHubPage() {
                               <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
                               <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
                               <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${timing.className}`}>{timing.detail}</Badge>
+                              </td>
                               <td className="px-4 py-3">
                                 <Badge className={`border ${status.className}`}>
                                   <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
@@ -799,49 +811,6 @@ export default function WorkforceHubPage() {
                       </tbody>
                     </table>
                   </div>
-                </motion.div>
-              )}
-
-              {activeTab === "timing" && (
-                <motion.div key="timing" {...panelMotion} className="space-y-3">
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                    <table className="min-w-[920px] w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3 font-medium">Staff</th>
-                          <th className="px-4 py-3 font-medium">Role</th>
-                          <th className="px-4 py-3 font-medium">Clock In</th>
-                          <th className="px-4 py-3 font-medium">Schedule Start</th>
-                          <th className="px-4 py-3 font-medium">Timing</th>
-                          <th className="px-4 py-3 font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredTeamRows.map((row, index) => {
-                          const timing = timingMeta(row)
-                          const status = statusMeta(row)
-                          return (
-                            <tr key={rowKey(row, "timing", index)} className="border-t border-slate-100">
-                              <td className="px-4 py-3 font-medium text-slate-900">{row.staffName}</td>
-                              <td className="px-4 py-3 text-slate-700">{row.role || "Team member"}</td>
-                              <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
-                              <td className="px-4 py-3 text-slate-700">{formatTime(row.scheduledStartAt)}</td>
-                              <td className="px-4 py-3">
-                                <Badge className={`border ${timing.className}`}>{timing.detail}</Badge>
-                              </td>
-                              <td className="px-4 py-3">
-                                <Badge className={`border ${status.className}`}>
-                                  <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
-                                  {status.label}
-                                </Badge>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!loading && filteredTeamRows.length === 0 && <div className="rounded-xl border border-slate-200 px-4 py-6 text-sm text-slate-500">No timing records found.</div>}
                 </motion.div>
               )}
 
