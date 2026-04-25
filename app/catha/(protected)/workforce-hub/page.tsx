@@ -7,7 +7,9 @@ import { format } from "date-fns"
 import {
   AlertTriangle,
   BarChart3,
+  ChevronDown,
   Clock3,
+  Filter,
   History,
   LayoutDashboard,
   Plus,
@@ -156,6 +158,7 @@ export default function WorkforceHubPage() {
   const [cards, setCards] = useState<Record<string, unknown>>({})
   const [insights, setInsights] = useState<InsightsResponse>({})
   const [loading, setLoading] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(String((session?.user as { role?: string } | undefined)?.role ?? "").toUpperCase())
 
@@ -274,32 +277,57 @@ export default function WorkforceHubPage() {
     [dashboardRows]
   )
 
+  function formatCurrency(value: number) {
+    return `KES ${Number(value || 0).toLocaleString()}`
+  }
+
+  function handleRangeChange(nextRange: string) {
+    setRange(nextRange)
+    if (nextRange !== "custom") {
+      setFiltersOpen(false)
+    }
+  }
+
+  function handleFromDateChange(nextFromDate: string) {
+    setFromDate(nextFromDate)
+    if (range !== "custom") {
+      setFiltersOpen(false)
+    }
+  }
+
+  function handleToDateChange(nextToDate: string) {
+    setToDate(nextToDate)
+    if (nextToDate) {
+      setFiltersOpen(false)
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-slate-100/70 p-3 sm:p-4 lg:p-6">
-      <div className="mx-auto max-w-[1720px] space-y-4 lg:space-y-5">
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
-            <div className="space-y-2">
+    <div className="min-h-screen bg-slate-100/70 p-2 sm:p-4 lg:p-6">
+      <div className="mx-auto max-w-[1600px] space-y-3 lg:space-y-4">
+        <section className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">Workforce Hub</h1>
-                <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
-                  <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                  Live Pulse
+                <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                  <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                  Today Live Pulse
                 </Badge>
               </div>
-              <p className="text-sm text-slate-600">Attendance, shift operations, and performance in one place.</p>
+              <p className="text-sm text-slate-600">Live attendance, payroll and shift operations.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
-                Live staff: <span className="font-semibold text-slate-900">{Number(cards.activeShiftsNow ?? 0)}</span>
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+                Active staff: <span className="font-semibold text-slate-900">{Number(cards.activeShiftsNow ?? 0)}</span>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
-                Revenue: <span className="font-semibold text-slate-900">KES {revenueTotal.toLocaleString()}</span>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+                Revenue: <span className="font-semibold text-slate-900">{formatCurrency(revenueTotal)}</span>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(250px,1fr)_150px_150px_150px_auto_auto]">
+          <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
@@ -310,46 +338,96 @@ export default function WorkforceHubPage() {
                 className="h-10 rounded-xl border-slate-200 bg-white pl-9"
               />
             </div>
-            <Select value={range} onValueChange={setRange}>
-              <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                <SelectValue placeholder="Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-xl border-slate-200 bg-white" />
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-xl border-slate-200 bg-white" />
-            <Button variant="outline" onClick={exportCsv} className="h-10 rounded-xl border-slate-200 bg-white">
+            <Button
+              variant="outline"
+              onClick={() => setFiltersOpen((prev) => !prev)}
+              className="h-10 rounded-xl border-slate-200 bg-white px-3"
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+              <ChevronDown className={`ml-2 h-4 w-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+            </Button>
+            <Button variant="outline" onClick={exportCsv} className="hidden h-10 rounded-xl border-slate-200 bg-white px-3 md:inline-flex">
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
-            <Button className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button className="hidden h-10 rounded-xl bg-emerald-600 px-4 text-white hover:bg-emerald-700 md:inline-flex">
               <Plus className="mr-2 h-4 w-4" />
               Add Shift
             </Button>
           </div>
+
+          <AnimatePresence initial={false}>
+            {filtersOpen ? (
+              <motion.div
+                key="filters-panel"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5 sm:p-3">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[160px_170px_170px_auto]">
+                    <Select value={range} onValueChange={handleRangeChange}>
+                      <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder="Range" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="today">Today</SelectItem>
+                        <SelectItem value="week">This Week</SelectItem>
+                        <SelectItem value="month">This Month</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => handleFromDateChange(e.target.value)}
+                      className="h-10 rounded-xl border-slate-200 bg-white"
+                    />
+                    <Input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => handleToDateChange(e.target.value)}
+                      className="h-10 rounded-xl border-slate-200 bg-white"
+                    />
+                    <div className="flex items-center text-xs text-slate-600">Use custom dates for deep history and payroll checks.</div>
+                  </div>
+                  <div className="mt-2 grid gap-2 md:hidden">
+                    <Button variant="outline" onClick={exportCsv} className="h-10 rounded-xl border-slate-200 bg-white px-3">
+                      <Download className="mr-2 h-4 w-4" />
+                      Export
+                    </Button>
+                    <Button className="h-10 rounded-xl bg-emerald-600 px-4 text-white hover:bg-emerald-700">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Shift
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </section>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {kpis.map((kpi) => (
-            <motion.div key={kpi.title} whileHover={{ y: -3 }}>
-              <Card className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${kpi.tint}`} />
-                <CardContent className="p-4">
-                  <div className="mb-3 flex items-start justify-between">
-                    <span className="text-sm text-slate-500">{kpi.title}</span>
-                    <div className={`rounded-xl bg-gradient-to-r p-2 text-white ${kpi.tint}`}>
+            <motion.div key={kpi.title} whileHover={{ y: -2 }}>
+              <Card className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${kpi.tint}`} />
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">{kpi.title}</p>
+                      <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mt-1 text-2xl font-semibold leading-none text-slate-900">
+                        {kpi.value}
+                      </motion.p>
+                      <p className="mt-1.5 truncate text-[11px] text-slate-500">{kpi.trend}</p>
+                    </div>
+                    <div className={`rounded-lg bg-gradient-to-r p-2 text-white shadow-sm ${kpi.tint}`}>
                       <kpi.icon className="h-4 w-4" />
                     </div>
                   </div>
-                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-2xl font-bold tracking-tight text-slate-900">
-                    {kpi.value}
-                  </motion.div>
-                  <p className="mt-1 text-xs text-slate-500">{kpi.trend}</p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -390,24 +468,56 @@ export default function WorkforceHubPage() {
           <CardContent>
             <AnimatePresence mode="wait">
               {activeTab === "overview" && (
-                <motion.div key="overview" {...panelMotion} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <motion.div key="overview" {...panelMotion} className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
                   <div className="space-y-3">
                     <Card className="rounded-2xl border border-slate-200 shadow-none">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-base">Live Team Snapshot</CardTitle>
                       </CardHeader>
                       <CardContent className="p-0">
-                        <div className="overflow-x-auto">
-                          <table className="min-w-[920px] w-full text-sm">
+                        <div className="space-y-2 p-3 md:hidden">
+                          {filteredTeamRows.slice(0, 12).map((row, index) => {
+                            const status = statusMeta(row)
+                            return (
+                              <div key={rowKey(row, "overview-mobile", index)} className="rounded-xl border border-slate-200 bg-white p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <Avatar className="h-8 w-8">
+                                      <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
+                                        {initials(row.staffName)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-slate-900">{row.staffName}</p>
+                                      <p className="truncate text-xs text-slate-500">{row.role || "Team member"}</p>
+                                    </div>
+                                  </div>
+                                  <Badge className={`border text-xs ${status.className}`}>
+                                    <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                    {status.label}
+                                  </Badge>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                                  <p className="text-slate-500">Clock In <span className="ml-1 font-medium text-slate-800">{formatTime(row.startedAt)}</span></p>
+                                  <p className="text-slate-500">Worked <span className="ml-1 font-medium text-slate-800">{hoursWorked(row.startedAt, row.endedAt)}</span></p>
+                                  <p className="text-slate-500">Orders <span className="ml-1 font-medium text-slate-800">{row.ordersServed}</span></p>
+                                  <p className="text-slate-500">Revenue <span className="ml-1 font-medium text-slate-800">{formatCurrency(row.totalRevenue)}</span></p>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="hidden overflow-x-auto md:block">
+                          <table className="min-w-[880px] w-full text-sm">
                             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                               <tr>
-                                <th className="px-4 py-3 font-medium">Staff</th>
-                                <th className="px-4 py-3 font-medium">Role</th>
-                                <th className="px-4 py-3 font-medium">Clock In</th>
-                                <th className="px-4 py-3 font-medium">Worked</th>
-                                <th className="px-4 py-3 font-medium">Orders</th>
-                                <th className="px-4 py-3 font-medium">Revenue</th>
-                                <th className="px-4 py-3 font-medium">Status</th>
+                                <th className="px-3 py-2.5 font-medium">Staff</th>
+                                <th className="px-3 py-2.5 font-medium">Role</th>
+                                <th className="px-3 py-2.5 font-medium">Clock In</th>
+                                <th className="px-3 py-2.5 font-medium">Worked</th>
+                                <th className="px-3 py-2.5 font-medium">Orders</th>
+                                <th className="px-3 py-2.5 font-medium">Revenue</th>
+                                <th className="px-3 py-2.5 font-medium">Status</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -415,23 +525,23 @@ export default function WorkforceHubPage() {
                                 const status = statusMeta(row)
                                 return (
                                   <tr key={rowKey(row, "overview", index)} className="border-t border-slate-100 align-middle">
-                                    <td className="px-4 py-3">
-                                      <div className="flex items-center gap-2.5">
-                                        <Avatar className="h-9 w-9">
-                                          <AvatarFallback className="bg-emerald-100 text-xs font-semibold text-emerald-700">
+                                    <td className="px-3 py-2.5">
+                                      <div className="flex items-center gap-2">
+                                        <Avatar className="h-8 w-8">
+                                          <AvatarFallback className="bg-emerald-100 text-[11px] font-semibold text-emerald-700">
                                             {initials(row.staffName)}
                                           </AvatarFallback>
                                         </Avatar>
                                         <span className="font-medium text-slate-900">{row.staffName}</span>
                                       </div>
                                     </td>
-                                    <td className="px-4 py-3 text-slate-700">{row.role || "Team member"}</td>
-                                    <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
-                                    <td className="px-4 py-3 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
-                                    <td className="px-4 py-3 text-slate-700">{row.ordersServed}</td>
-                                    <td className="px-4 py-3 text-slate-700">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
-                                    <td className="px-4 py-3">
-                                      <Badge className={`border ${status.className}`}>
+                                    <td className="px-3 py-2.5 text-slate-700">{row.role || "Team member"}</td>
+                                    <td className="px-3 py-2.5 text-slate-700">{formatTime(row.startedAt)}</td>
+                                    <td className="px-3 py-2.5 text-slate-700">{hoursWorked(row.startedAt, row.endedAt)}</td>
+                                    <td className="px-3 py-2.5 text-slate-700">{row.ordersServed}</td>
+                                    <td className="px-3 py-2.5 text-slate-700">{formatCurrency(row.totalRevenue)}</td>
+                                    <td className="px-3 py-2.5">
+                                      <Badge className={`border text-xs ${status.className}`}>
                                         <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
                                         {status.label}
                                       </Badge>
@@ -448,12 +558,12 @@ export default function WorkforceHubPage() {
                       </CardContent>
                     </Card>
                   </div>
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-0">
                         <CardTitle className="text-sm">Attendance Ring</CardTitle>
                       </CardHeader>
-                      <CardContent className="h-[180px]">
+                      <CardContent className="h-[160px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <RadialBarChart
                             innerRadius="65%"
@@ -480,7 +590,7 @@ export default function WorkforceHubPage() {
                         </div>
                         <div className="font-semibold text-slate-900">{insights.insights?.mostProductiveEmployee ?? "No data"}</div>
                         <div className="mt-1 text-slate-600">
-                          KES {Number(insights.insights?.mostProductiveRevenue ?? 0).toLocaleString()} generated
+                          {formatCurrency(Number(insights.insights?.mostProductiveRevenue ?? 0))} generated
                         </div>
                       </CardContent>
                     </Card>
