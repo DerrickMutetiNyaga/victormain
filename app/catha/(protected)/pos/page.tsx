@@ -160,6 +160,7 @@ const categoryIconColors: Record<string, string> = {
 export default function POSPage() {
   const router = useRouter()
   const { data: session } = useSession()
+  const canManageOwnShift = session?.user?.role === "cashier_admin"
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const debouncedSearchQuery = useDebounce(searchQuery, 300) // Debounce search by 300ms
@@ -1665,7 +1666,7 @@ export default function POSPage() {
               <span className="md:hidden">Cat</span>
             </Button>
 
-            <ShiftWidget cashierName={session?.user?.name || "Cashier"} />
+            {canManageOwnShift ? <ShiftWidget cashierName={session?.user?.name || "Cashier"} /> : null}
 
             {/* Search - compact */}
             <div className="relative flex-1 min-w-[140px] max-w-full md:max-w-md">

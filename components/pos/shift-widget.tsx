@@ -265,23 +265,49 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
       )}
 
       <Dialog open={showClockInDialog} onOpenChange={setShowClockInDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Start Shift?</DialogTitle>
-            <DialogDescription>Clock in now and optionally record opening float.</DialogDescription>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-xl font-semibold tracking-tight">Start shift</DialogTitle>
+            <DialogDescription className="text-sm">
+              Clock in now and optionally record your opening float.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Opening Float (optional)</Label>
-              <Input value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} placeholder="0" />
+          <div className="mt-2 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="opening-float">Opening Float (optional)</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  KES
+                </span>
+                <Input
+                  id="opening-float"
+                  type="number"
+                  min="0"
+                  inputMode="decimal"
+                  value={openingFloat}
+                  onChange={(e) => setOpeningFloat(e.target.value)}
+                  placeholder="0"
+                  className="h-11 pl-12"
+                />
+              </div>
             </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Busy night" />
+            <div className="space-y-2">
+              <Label htmlFor="clock-in-notes">Notes (optional)</Label>
+              <Input
+                id="clock-in-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Busy night"
+                className="h-11"
+              />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowClockInDialog(false)}>Cancel</Button>
-              <Button onClick={onClockIn}>Clock In Now</Button>
+            <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => setShowClockInDialog(false)}>
+                Cancel
+              </Button>
+              <Button className="sm:min-w-[132px]" onClick={onClockIn}>
+                Clock In Now
+              </Button>
             </div>
           </div>
         </DialogContent>
