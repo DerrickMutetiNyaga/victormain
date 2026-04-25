@@ -54,11 +54,11 @@ function DetailRow({
   valueClassName?: string
 }) {
   return (
-    <div className="flex items-start gap-2.5">
+    <div className="flex items-start gap-2 sm:gap-2.5">
       <div className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-700">{icon}</div>
       <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-        <p className={`mt-0.5 break-words text-[15px] font-semibold text-slate-900 ${valueClassName || ""}`}>{value}</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">{label}</p>
+        <p className={`mt-0.5 break-words text-sm font-semibold text-slate-900 sm:text-[15px] ${valueClassName || ""}`}>{value}</p>
       </div>
     </div>
   )
@@ -89,30 +89,30 @@ export default async function PublicReceiptPage({ params }: { params: Promise<{ 
   const paymentText = receipt.paymentMethod ? String(receipt.paymentMethod).toUpperCase() : "—"
 
   return (
-    <main className="min-h-screen bg-[#f5f7f9] px-3 py-5 sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-xl">
+    <main className="min-h-screen bg-[#f5f7f9] px-2 py-4 sm:px-4 sm:py-8 lg:px-6 lg:py-10">
+      <div className="mx-auto w-full max-w-xl sm:max-w-2xl">
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-          <div className="h-6 bg-[#166534]" />
-          <div className="px-5 pb-6 pt-5 sm:px-7 sm:pb-8 sm:pt-6">
+          <div className="h-4 bg-[#166534] sm:h-5" />
+          <div className="px-4 pb-5 pt-4 sm:px-6 sm:pb-7 sm:pt-5 lg:px-7 lg:pb-8 lg:pt-6">
             {/* Header */}
             <div className="text-center">
-              <div className="relative mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50">
-                <CircleCheckBig className="h-11 w-11 text-emerald-600" />
+              <div className="relative mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 sm:h-20 sm:w-20">
+                <CircleCheckBig className="h-9 w-9 text-emerald-600 sm:h-11 sm:w-11" />
                 <span className="absolute -left-1 top-2 h-2 w-2 rounded-full bg-emerald-500" />
                 <span className="absolute -right-0.5 top-5 h-1.5 w-1.5 rounded-full bg-amber-400" />
                 <span className="absolute -left-0.5 bottom-4 h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 <span className="absolute -right-1 bottom-3 h-2 w-2 rounded-full bg-emerald-500" />
               </div>
-              <div className="inline-flex items-center rounded-full bg-emerald-50 px-4 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+              <div className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 sm:px-4 sm:text-xs">
                 Payment Received
               </div>
-              <h1 className="mt-3 text-5xl font-extrabold tracking-tight text-slate-900 sm:text-6xl">{receipt.businessName}</h1>
-              <p className="mt-1 text-base text-slate-600">Thank you for your order!</p>
+              <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">{receipt.businessName}</h1>
+              <p className="mt-1 text-sm text-slate-600 sm:text-base">Thank you for your order!</p>
             </div>
 
             {/* Details */}
-            <div className="mt-5 rounded-2xl border border-emerald-100 bg-[#f9fffb] p-4 sm:p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-[#f9fffb] p-3.5 sm:mt-5 sm:p-5">
+              <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4">
                 <DetailRow
                   icon={<ReceiptText className="h-4 w-4" />}
                   label="Order ID"
@@ -150,67 +150,67 @@ export default async function PublicReceiptPage({ params }: { params: Promise<{ 
             </div>
 
             {/* Items */}
-            <div className="mt-6">
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-800">
+            <div className="mt-5 sm:mt-6">
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-800 sm:text-sm">
                 <ShoppingBag className="h-4 w-4 text-emerald-700" />
                 Order Items
               </h2>
-              <div className="mt-3 space-y-2.5">
+              <div className="mt-2.5 space-y-2.5 sm:mt-3">
                 {receipt.items.map((item, idx) => (
                   <div
                     key={`${item.name}-${idx}`}
-                    className="grid grid-cols-[56px_1fr_auto] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
+                    className="grid grid-cols-[48px_1fr_auto] items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-2.5 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)] sm:grid-cols-[56px_1fr_auto] sm:gap-3 sm:px-3 sm:py-3"
                   >
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                      <Package className="h-7 w-7" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 sm:h-14 sm:w-14">
+                      <Package className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-slate-900">{item.name}</p>
-                      <p className="mt-0.5 text-sm text-slate-500">
+                      <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{item.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
                         {item.quantity} x {formatMoney(item.price)}
                       </p>
                     </div>
-                    <p className="text-xl font-extrabold text-slate-900">{formatMoney(lineTotal(item.quantity, item.price))}</p>
+                    <p className="text-base font-extrabold text-slate-900 sm:text-xl">{formatMoney(lineTotal(item.quantity, item.price))}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Summary */}
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
-              <div className="flex items-center justify-between text-base text-slate-700">
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:p-4">
+              <div className="flex items-center justify-between text-sm text-slate-700 sm:text-base">
                 <span>Subtotal</span>
                 <span>{formatMoney(receipt.subtotal)}</span>
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-base text-slate-700">
+              <div className="mt-1.5 flex items-center justify-between text-sm text-slate-700 sm:text-base">
                 <span>VAT</span>
                 <span>{formatMoney(receipt.vat)}</span>
               </div>
               <div className="my-3 border-t border-dashed border-slate-300" />
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-emerald-700">Total Paid</span>
-                <span className="text-4xl font-extrabold tracking-tight text-emerald-700">{formatMoney(receipt.total)}</span>
+                <span className="text-lg font-bold text-emerald-700 sm:text-2xl">Total Paid</span>
+                <span className="text-2xl font-extrabold tracking-tight text-emerald-700 sm:text-4xl">{formatMoney(receipt.total)}</span>
               </div>
             </div>
 
             {/* Thank you */}
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-[#fbfdfc] p-5 text-center">
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm">
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-[#fbfdfc] p-4 text-center sm:p-5">
+              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm sm:h-11 sm:w-11">
                 <Heart className="h-5 w-5 fill-current" />
               </div>
-              <p className="text-[28px] font-bold text-slate-900">Thank you for visiting us!</p>
-              <p className="mx-auto mt-1 max-w-sm text-base text-slate-600">
+              <p className="text-xl font-bold text-slate-900 sm:text-[28px]">Thank you for visiting us!</p>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-slate-600 sm:text-base">
                 We appreciate your support and look forward to serving you again.
               </p>
             </div>
 
             {/* Branding */}
             <div className="mt-6 text-center">
-              <p className="inline-flex items-center gap-2 text-[28px] font-semibold text-slate-900">
-                <Leaf className="h-7 w-7 text-emerald-700" />
+              <p className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900 sm:text-[28px]">
+                <Leaf className="h-6 w-6 text-emerald-700 sm:h-7 sm:w-7" />
                 Catha Lodge
               </p>
-              <p className="mt-1 text-base text-slate-500">Good Food • Great Moments • Always</p>
+              <p className="mt-1 text-xs text-slate-500 sm:text-base">Good Food • Great Moments • Always</p>
             </div>
           </div>
         </section>
