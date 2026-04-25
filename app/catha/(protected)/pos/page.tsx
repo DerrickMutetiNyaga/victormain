@@ -7,7 +7,6 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 // Lazy load heavy modals - load only when needed for faster initial page load
 const ReceiptModal = dynamic(() => import("@/components/receipt").then((m) => ({ default: m.ReceiptModal })), { ssr: false })
 const TablePanel = dynamic(() => import("@/components/pos/table-panel").then((m) => ({ default: m.TablePanel })), { ssr: false })
-import { WaiterSelect } from "@/components/pos/waiter-select"
 import { ShiftWidget } from "@/components/pos/shift-widget"
 import { POSProductCard } from "@/components/pos/product-card"
 import { SegmentedToggle } from "@/components/pos/segmented-toggle"
@@ -1722,9 +1721,6 @@ export default function POSPage() {
               <span className="hidden md:inline">{selectedTable ? `Table ${selectedTable}` : "Select Table"}</span>
               <span className="md:hidden">{selectedTable ? `T${selectedTable}` : "Table"}</span>
             </Button>
-
-            {/* Waiter */}
-            <WaiterSelect value={waiterId} onValueChange={setWaiterId} extendedStaff={extendedStaff} />
 
             {/* Cart Toggle - only on small screens (≤768px); on md+ cart is in-flow column */}
             <Button
