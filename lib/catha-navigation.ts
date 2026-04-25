@@ -20,6 +20,7 @@ import {
   UserCircle2,
   UserPlus2,
   Brain,
+  Clock3,
 } from 'lucide-react'
 import type { CanonicalPermissionKey } from './catha-access'
 
@@ -51,6 +52,9 @@ export const CATHA_NAV_ITEMS: CathaNavItem[] = [
   { name: 'User Management', href: '/catha/users', icon: Users, color: 'amber', permissionKey: 'system.userManagement' },
   { name: 'Distributor Requests', href: '/catha/distributor-requests', icon: UserPlus2, color: 'violet', permissionKey: 'management.distributorRequests' },
   { name: 'Reports', href: '/catha/reports', icon: BarChart3, color: 'rose', permissionKey: 'system.reports' },
+  { name: 'Staff Shifts', href: '/catha/staff-shifts', icon: Clock3, color: 'emerald', permissionKey: 'system.reports' },
+  { name: 'My Shifts', href: '/catha/my-shifts', icon: Clock3, color: 'emerald', permissionKey: 'sales.posSales' },
+  { name: 'Shift History', href: '/catha/shift-history', icon: Clock3, color: 'indigo', permissionKey: 'sales.posSales' },
   { name: 'Settings', href: '/catha/settings', icon: Settings, color: 'slate', permissionKey: 'system.settings' },
 ]
 
@@ -87,6 +91,9 @@ export const CATHA_NAV_SECTIONS: CathaNavSection[] = [
       { name: 'M-Pesa Transactions', href: '/catha/mpesa-transactions', icon: Smartphone, permissionKey: 'financial.mpesaTransactions' },
       { name: 'Expenses', href: '/catha/expenses', icon: Wallet2, permissionKey: 'financial.expenses' },
       { name: 'Reports', href: '/catha/reports', icon: BarChart3, permissionKey: 'system.reports' },
+      { name: 'Staff Shifts', href: '/catha/staff-shifts', icon: Clock3, permissionKey: 'system.reports' },
+      { name: 'My Shifts', href: '/catha/my-shifts', icon: Clock3, permissionKey: 'sales.posSales' },
+      { name: 'Shift History', href: '/catha/shift-history', icon: Clock3, permissionKey: 'sales.posSales' },
     ],
   },
   {

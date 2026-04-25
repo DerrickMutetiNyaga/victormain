@@ -14,6 +14,7 @@ import {
   type CathaUserRole,
   type CathaUserStatus,
 } from '@/lib/models/catha-user'
+import { ensureCathaShiftInfrastructure } from '@/lib/catha-shift-bootstrap'
 import {
   CathaPermissions,
   CathaModuleKey,
@@ -58,7 +59,7 @@ function normalizeCathaStatus(status: string | undefined): CathaUserStatus {
 let cathaIndexesPromise: Promise<void> | null = null
 function ensureCathaIndexesOnce(): Promise<void> {
   if (!cathaIndexesPromise) {
-    cathaIndexesPromise = ensureCathaUserIndexes().catch((e: any) => {
+    cathaIndexesPromise = Promise.all([ensureCathaUserIndexes(), ensureCathaShiftInfrastructure()]).then(() => undefined).catch((e: any) => {
       console.warn('[Catha Auth] Index ensure failed (non-fatal):', e?.message)
     })
   }

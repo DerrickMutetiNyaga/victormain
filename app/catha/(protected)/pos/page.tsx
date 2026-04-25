@@ -8,6 +8,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 const ReceiptModal = dynamic(() => import("@/components/receipt").then((m) => ({ default: m.ReceiptModal })), { ssr: false })
 const TablePanel = dynamic(() => import("@/components/pos/table-panel").then((m) => ({ default: m.TablePanel })), { ssr: false })
 import { WaiterSelect } from "@/components/pos/waiter-select"
+import { ShiftWidget } from "@/components/pos/shift-widget"
 import { POSProductCard } from "@/components/pos/product-card"
 import { SegmentedToggle } from "@/components/pos/segmented-toggle"
 import { CartItemRow } from "@/components/pos/cart-item-row"
@@ -1663,6 +1664,8 @@ export default function POSPage() {
               <span className="hidden md:inline">Categories</span>
               <span className="md:hidden">Cat</span>
             </Button>
+
+            <ShiftWidget cashierName={session?.user?.name || "Cashier"} />
 
             {/* Search - compact */}
             <div className="relative flex-1 min-w-[140px] max-w-full md:max-w-md">

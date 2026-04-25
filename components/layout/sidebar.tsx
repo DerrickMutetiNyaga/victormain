@@ -181,6 +181,22 @@ export function Sidebar() {
 
   const handleSignOut = async () => {
     if (isCatha) {
+      try {
+        const res = await fetch('/api/catha/shifts/active', { cache: 'no-store' })
+        const data = await res.json()
+        if (data?.shift) {
+          const shouldClose = window.confirm('You still have an active shift.\n\nOK = Close Shift & Logout\nCancel = Logout Only')
+          if (shouldClose) {
+            await fetch('/api/catha/shifts/close', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ countedDrawerAmount: 0, notes: 'Closed on logout' }),
+            })
+          } else {
+            await fetch('/api/catha/shifts/clock-out', { method: 'POST' })
+          }
+        }
+      } catch {}
       window.location.href = '/api/auth/catha/signout?callbackUrl=' + encodeURIComponent('/catha/login')
       return
     }
