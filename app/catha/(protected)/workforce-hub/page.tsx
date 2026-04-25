@@ -4,7 +4,22 @@ import { useEffect, useMemo, useState } from "react"
 import { useSession } from "next-auth/react"
 import { motion, AnimatePresence } from "framer-motion"
 import { format } from "date-fns"
-import { CalendarDays, Download, Plus, Search, TrendingUp, Users, AlertTriangle, Clock3 } from "lucide-react"
+import {
+  AlertTriangle,
+  BarChart3,
+  Clock3,
+  History,
+  LayoutDashboard,
+  Plus,
+  Search,
+  ShieldCheck,
+  TimerReset,
+  TrendingUp,
+  User,
+  Users,
+  Trophy,
+  Download,
+} from "lucide-react"
 import {
   CartesianGrid,
   Line,
@@ -22,7 +37,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -64,26 +78,29 @@ type InsightsResponse = {
 }
 
 const tabOptions = [
-  { id: "overview", label: "Overview" },
-  { id: "my-shifts", label: "My Shifts" },
-  { id: "team-shifts", label: "Team Shifts" },
-  { id: "history", label: "History" },
-  { id: "analytics", label: "Analytics" },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "my-shifts", label: "My Shifts", icon: User },
+  { id: "team-shifts", label: "Team", icon: Users },
+  { id: "history", label: "History", icon: History },
+  { id: "analytics", label: "Analytics", icon: BarChart3 },
 ] as const
 
 type TabValue = (typeof tabOptions)[number]["id"]
 
 function statusMeta(row: ShiftRow | MyShift) {
   const isLate = ["yellow", "orange", "red"].includes(String(row.metadata?.latenessBand ?? ""))
-  if (row.status === "ACTIVE") {
+  if (row.status === "OVERTIME") {
+    return { label: "Overtime", className: "bg-sky-100 text-sky-700 border-sky-200", dotClass: "bg-sky-500", pulse: false }
+  }
+  if (row.status === "ACTIVE" || !row.endedAt) {
     return isLate
-      ? { label: "Late", className: "bg-orange-100 text-orange-700 border-orange-200" }
-      : { label: "Active", className: "bg-emerald-100 text-emerald-700 border-emerald-200" }
+      ? { label: "Active (Late)", className: "bg-orange-100 text-orange-700 border-orange-200", dotClass: "bg-orange-500", pulse: true }
+      : { label: "Active", className: "bg-emerald-100 text-emerald-700 border-emerald-200", dotClass: "bg-emerald-500", pulse: true }
   }
   if (row.endedAt || row.status === "COMPLETED" || row.status === "AUTO_CLOSED") {
-    return { label: "Clocked Out", className: "bg-slate-100 text-slate-700 border-slate-200" }
+    return { label: "Clocked Out", className: "bg-slate-100 text-slate-700 border-slate-200", dotClass: "bg-slate-400", pulse: false }
   }
-  return { label: "Absent", className: "bg-rose-100 text-rose-700 border-rose-200" }
+  return { label: "Absent", className: "bg-rose-100 text-rose-700 border-rose-200", dotClass: "bg-rose-500", pulse: false }
 }
 
 function initials(name: string) {
@@ -164,7 +181,7 @@ export default function WorkforceHubPage() {
 
   const kpis = useMemo(
     () => [
-      { title: "Active Staff Today", value: Number(cards.activeShiftsNow ?? 0), icon: Users },
+      { title: "Active Staff", value: Number(cards.activeShiftsNow ?? 0), icon: Users, tint: "from-emerald-500 to-green-400", trend: "+2 from yesterday" },
       {
         title: "Hours Worked",
         value: `${(
@@ -174,18 +191,24 @@ export default function WorkforceHubPage() {
           ) / 3_600_000
         ).toFixed(1)}h`,
         icon: Clock3,
+        tint: "from-sky-500 to-cyan-400",
+        trend: "Across all live shifts",
       },
       {
         title: "Revenue Today",
         value: `KES ${dashboardRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0).toLocaleString()}`,
         icon: TrendingUp,
+        tint: "from-indigo-500 to-violet-500",
+        trend: "Live service revenue",
       },
-      { title: "Late Arrivals", value: Number(cards.lateArrivalsToday ?? 0), icon: AlertTriangle },
-      { title: "Attendance Score", value: `${attendanceScore}%`, icon: CalendarDays },
+      { title: "Late Arrivals", value: Number(cards.lateArrivalsToday ?? 0), icon: AlertTriangle, tint: "from-amber-500 to-orange-500", trend: "Needs immediate review" },
+      { title: "Attendance Score", value: `${attendanceScore}%`, icon: ShieldCheck, tint: "from-teal-500 to-emerald-500", trend: "On-time consistency today" },
       {
         title: "Pending Clock-outs",
         value: dashboardRows.filter((r) => r.status === "ACTIVE" && !r.endedAt).length,
-        icon: Clock3,
+        icon: TimerReset,
+        tint: "from-slate-500 to-slate-400",
+        trend: "Awaiting shift closure",
       },
     ],
     [cards, dashboardRows, attendanceScore]
@@ -226,43 +249,49 @@ export default function WorkforceHubPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-6">
-      <div className="space-y-6">
-        <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm md:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A] md:text-3xl">Workforce Hub</h1>
-              <p className="mt-1 text-sm text-slate-600 md:text-base">
-                Manage attendance, live shifts, team performance & payroll
-              </p>
+    <div className="min-h-screen bg-slate-50 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.12),_transparent_45%),radial-gradient(circle_at_top_right,_rgba(99,102,241,0.1),_transparent_40%)] p-4 md:p-6">
+      <div className="mx-auto max-w-[1720px] space-y-5 2xl:space-y-6">
+        <div className="sticky top-3 z-20 rounded-3xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-xl md:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Workforce Hub</h1>
+                <Badge className="rounded-full border border-emerald-200 bg-emerald-100 px-3 text-emerald-700">
+                  <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                  Today Live Pulse
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-500">Live attendance, payroll & shift operations</p>
             </div>
-            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-[260px_130px_130px_130px_auto_auto]">
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[280px_150px_140px_140px_auto_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search employee..."
-                  className="h-10 rounded-xl border-slate-200 pl-9"
+                  aria-label="Search employee"
+                  className="h-11 rounded-2xl border-slate-200 bg-white pl-9"
                 />
               </div>
               <Select value={range} onValueChange={setRange}>
-                <SelectTrigger className="h-10 rounded-xl border-slate-200">
+                <SelectTrigger className="h-11 rounded-2xl border-slate-200 bg-white">
                   <SelectValue placeholder="Range" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="today">Today</SelectItem>
                   <SelectItem value="week">This Week</SelectItem>
                   <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
-              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-xl border-slate-200" />
-              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-xl border-slate-200" />
-              <Button variant="outline" onClick={exportCsv} className="h-10 rounded-xl border-slate-200">
+              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-11 rounded-2xl border-slate-200 bg-white" />
+              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-11 rounded-2xl border-slate-200 bg-white" />
+              <Button variant="outline" onClick={exportCsv} className="h-11 rounded-2xl border-slate-200 bg-white">
                 <Download className="mr-2 h-4 w-4" />
                 Export
               </Button>
-              <Button className="h-10 rounded-xl bg-[#10B981] text-white hover:bg-emerald-500">
+              <Button className="h-11 rounded-2xl bg-emerald-500 text-white shadow-sm hover:bg-emerald-600">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Shift
               </Button>
@@ -270,100 +299,127 @@ export default function WorkforceHubPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3 2xl:grid-cols-6">
           {kpis.map((kpi) => (
-            <motion.div key={kpi.title} whileHover={{ y: -3, scale: 1.01 }}>
-              <Card className="rounded-[24px] border border-slate-200/80 bg-white shadow-sm transition-all">
-                <CardContent className="p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">{kpi.title}</span>
-                    <kpi.icon className="h-4 w-4 text-[#10B981]" />
+            <motion.div key={kpi.title} whileHover={{ y: -5 }} className="min-w-[250px] flex-1 snap-start sm:min-w-0">
+              <Card className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md">
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${kpi.tint}`} />
+                <CardContent className="p-5">
+                  <div className="mb-4 flex items-start justify-between">
+                    <span className="text-sm text-slate-500">{kpi.title}</span>
+                    <div className={`rounded-2xl bg-gradient-to-r p-2.5 text-white ${kpi.tint}`}>
+                      <kpi.icon className="h-4 w-4" />
+                    </div>
                   </div>
-                  <div className="text-xl font-semibold text-[#0F172A]">{kpi.value}</div>
+                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-3xl font-bold tracking-tight text-slate-900">
+                    {kpi.value}
+                  </motion.div>
+                  <p className="mt-1 text-xs text-slate-500">{kpi.trend}</p>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
         </div>
 
-        <Card className="rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)}>
-              <TabsList className="h-auto w-full flex-wrap justify-start rounded-2xl bg-slate-100/80 p-1">
-                {visibleTabs.map((tab) => (
-                  <TabsTrigger
-                    key={tab.id}
-                    value={tab.id}
-                    className="rounded-xl data-[state=active]:bg-white data-[state=active]:text-[#0F172A]"
-                  >
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+        <Card className="rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-md">
+          <CardHeader className="pb-3">
+            <div className="overflow-x-auto">
+              <div className="relative flex w-max min-w-full items-center gap-1 rounded-2xl bg-slate-100 p-1">
+                {visibleTabs.map((tab) => {
+                  const Icon = tab.icon
+                  const active = activeTab === tab.id
+                  return (
+                    <Button
+                      key={tab.id}
+                      variant="ghost"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`relative h-10 overflow-hidden rounded-xl px-4 text-sm transition-all ${active ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}`}
+                    >
+                      {active ? (
+                        <motion.span
+                          layoutId="workforce-segment-active-pill"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                          className="absolute inset-0 rounded-xl bg-white shadow-sm"
+                        />
+                      ) : null}
+                      <Icon className="relative z-10 mr-2 h-4 w-4" />
+                      <span className="relative z-10 flex items-center">
+                        {tab.label}
+                      </span>
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <AnimatePresence mode="wait">
               {activeTab === "overview" && (
-                <motion.div key="overview" {...panelMotion} className="grid grid-cols-1 gap-4 xl:grid-cols-10">
-                  <div className="xl:col-span-7">
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-slate-50 text-slate-500">
-                          <tr>
-                            {["Avatar", "Name", "Clock In", "Hours Worked", "Orders", "Revenue", "Status", "Actions"].map((h) => (
-                              <th key={h} className="px-3 py-3 text-left font-medium">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredTeamRows.slice(0, 12).map((row) => {
-                            const status = statusMeta(row)
-                            return (
-                              <tr key={row._id} className="border-t transition-colors hover:bg-slate-50">
-                                <td className="px-3 py-3">
-                                  <Avatar className="h-8 w-8">
-                                    <AvatarFallback className="bg-emerald-100 text-xs text-emerald-700">
-                                      {initials(row.staffName)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                </td>
-                                <td className="px-3 py-3 font-medium text-slate-900">{row.staffName}</td>
-                                <td className="px-3 py-3 text-slate-600">
-                                  {new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}
-                                </td>
-                                <td className="px-3 py-3 text-slate-600">{hoursWorked(row.startedAt, row.endedAt)}</td>
-                                <td className="px-3 py-3">{row.ordersServed}</td>
-                                <td className="px-3 py-3">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
-                                <td className="px-3 py-3">
+                <motion.div key="overview" {...panelMotion} className="grid grid-cols-12 gap-4 xl:gap-5 2xl:gap-6">
+                  <div className="col-span-12 space-y-3 xl:col-span-8">
+                    <div className="space-y-3">
+                      {filteredTeamRows.slice(0, 12).map((row) => {
+                        const status = statusMeta(row)
+                        return (
+                          <motion.div key={row._id} whileHover={{ y: -2 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-300 hover:shadow-md">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex min-w-[230px] items-center gap-3">
+                                <Avatar className="h-11 w-11">
+                                  <AvatarFallback className="bg-emerald-100 text-xs font-semibold text-emerald-700">
+                                    {initials(row.staffName)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-semibold text-slate-900">{row.staffName}</p>
+                                  <p className="text-xs text-slate-500">{row.role || "Team member"}</p>
+                                </div>
+                              </div>
+
+                              <div className="grid flex-1 grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
+                                <div>
+                                  <p className="text-xs text-slate-500">Clock In</p>
+                                  <p className="font-medium text-slate-800">{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-slate-500">Worked</p>
+                                  <p className="font-medium text-slate-800">{hoursWorked(row.startedAt, row.endedAt)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-slate-500">Orders</p>
+                                  <p className="font-medium text-slate-800">{row.ordersServed}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-slate-500">Revenue</p>
+                                  <p className="font-medium text-slate-800">KES {Number(row.totalRevenue || 0).toLocaleString()}</p>
+                                </div>
+                                <div className="flex items-end">
                                   <Badge className={`border ${status.className}`}>
-                                    {status.label === "Active" ? <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" /> : null}
+                                    <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
                                     {status.label}
                                   </Badge>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <Button variant="outline" size="sm" className="rounded-lg border-slate-200">
-                                    View
-                                  </Button>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                          {!loading && filteredTeamRows.length === 0 && (
-                            <tr>
-                              <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
-                                No live shift records for this filter.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <Button variant="outline" size="sm" className="rounded-xl border-slate-200">View</Button>
+                                <Button variant="outline" size="sm" className="rounded-xl border-slate-200">Edit</Button>
+                                <Button size="sm" className="rounded-xl bg-slate-900 text-white hover:bg-slate-800">End Shift</Button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                      {!loading && filteredTeamRows.length === 0 && (
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                          No live shift records for this filter.
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="space-y-4 xl:col-span-3">
-                    <Card className="rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="col-span-12 space-y-4 xl:col-span-4">
+                    <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-0">
-                        <CardTitle className="text-sm">Attendance</CardTitle>
+                        <CardTitle className="text-sm">Attendance Ring</CardTitle>
                       </CardHeader>
                       <CardContent className="h-[180px]">
                         <ResponsiveContainer width="100%" height="100%">
@@ -374,7 +430,7 @@ export default function WorkforceHubPage() {
                             startAngle={90}
                             endAngle={-270}
                           >
-                            <RadialBar dataKey="value" cornerRadius={12} />
+                            <RadialBar dataKey="value" cornerRadius={12} fill="#10B981" />
                             <Tooltip formatter={(v: number) => `${v}%`} />
                           </RadialBarChart>
                         </ResponsiveContainer>
@@ -382,11 +438,14 @@ export default function WorkforceHubPage() {
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border border-slate-200 shadow-sm">
+                    <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Top Performer</CardTitle>
                       </CardHeader>
                       <CardContent className="text-sm">
+                        <div className="mb-2 inline-flex rounded-full bg-amber-100 p-2 text-amber-600">
+                          <Trophy className="h-4 w-4" />
+                        </div>
                         <div className="font-semibold text-slate-900">{insights.insights?.mostProductiveEmployee ?? "No data"}</div>
                         <div className="mt-1 text-slate-600">
                           KES {Number(insights.insights?.mostProductiveRevenue ?? 0).toLocaleString()} generated
@@ -394,7 +453,7 @@ export default function WorkforceHubPage() {
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border border-slate-200 shadow-sm">
+                    <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Late Alerts</CardTitle>
                       </CardHeader>
@@ -409,7 +468,7 @@ export default function WorkforceHubPage() {
                       </CardContent>
                     </Card>
 
-                    <Card className="rounded-2xl border border-slate-200 shadow-sm">
+                    <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Upcoming Schedules</CardTitle>
                       </CardHeader>
@@ -445,7 +504,10 @@ export default function WorkforceHubPage() {
                           <div className="flex items-center justify-between"><span className="text-slate-500">Clock Out</span><span>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</span></div>
                           <div className="flex items-center justify-between"><span className="text-slate-500">Hours</span><span>{hoursWorked(row.startedAt, row.endedAt)}</span></div>
                           <div className="flex items-center justify-between"><span className="text-slate-500">Revenue</span><span>KES {Number(row.totalRevenue || 0).toLocaleString()}</span></div>
-                          <Badge className={`border ${status.className}`}>{status.label}</Badge>
+                          <Badge className={`border ${status.className}`}>
+                            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                            {status.label}
+                          </Badge>
                         </CardContent>
                       </Card>
                     )
@@ -455,33 +517,30 @@ export default function WorkforceHubPage() {
               )}
 
               {activeTab === "team-shifts" && (
-                <motion.div key="team-shifts" {...panelMotion} className="overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
-                      <tr>
-                        {["Name", "Role", "Clock In", "Clock Out", "Hours", "Orders", "Revenue", "Status"].map((h) => (
-                          <th key={h} className="px-3 py-3 text-left font-medium">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTeamRows.map((row) => {
-                        const status = statusMeta(row)
-                        return (
-                          <tr key={row._id} className="border-t transition-colors hover:bg-slate-50">
-                            <td className="px-3 py-3 font-medium">{row.staffName}</td>
-                            <td className="px-3 py-3">{row.role || "-"}</td>
-                            <td className="px-3 py-3">{new Date(row.startedAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })}</td>
-                            <td className="px-3 py-3">{row.endedAt ? new Date(row.endedAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</td>
-                            <td className="px-3 py-3">{hoursWorked(row.startedAt, row.endedAt)}</td>
-                            <td className="px-3 py-3">{row.ordersServed}</td>
-                            <td className="px-3 py-3">KES {Number(row.totalRevenue || 0).toLocaleString()}</td>
-                            <td className="px-3 py-3"><Badge className={`border ${status.className}`}>{status.label}</Badge></td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <motion.div key="team-shifts" {...panelMotion} className="space-y-3">
+                  {filteredTeamRows.map((row) => {
+                    const status = statusMeta(row)
+                    return (
+                      <div key={row._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{row.staffName}</p>
+                            <p className="text-xs text-slate-500">{row.role || "-"}</p>
+                          </div>
+                          <div className="grid min-w-[280px] grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                            <div><p className="text-xs text-slate-500">Clock In</p><p>{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</p></div>
+                            <div><p className="text-xs text-slate-500">Clock Out</p><p>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</p></div>
+                            <div><p className="text-xs text-slate-500">Hours</p><p>{hoursWorked(row.startedAt, row.endedAt)}</p></div>
+                            <div><p className="text-xs text-slate-500">Revenue</p><p>KES {Number(row.totalRevenue || 0).toLocaleString()}</p></div>
+                          </div>
+                          <Badge className={`border ${status.className}`}>
+                            <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                            {status.label}
+                          </Badge>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </motion.div>
               )}
 
@@ -496,7 +555,10 @@ export default function WorkforceHubPage() {
                             <p className="font-semibold text-slate-900">
                               {new Date(row.startedAt).toLocaleDateString("en-KE", { timeZone: "Africa/Nairobi" })}
                             </p>
-                            <Badge className={`border ${status.className}`}>{status.label}</Badge>
+                            <Badge className={`border ${status.className}`}>
+                              <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                              {status.label}
+                            </Badge>
                           </div>
                           <div className="flex items-center justify-between"><span className="text-slate-500">Clock In</span><span>{new Date(row.startedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" })}</span></div>
                           <div className="flex items-center justify-between"><span className="text-slate-500">Clock Out</span><span>{row.endedAt ? new Date(row.endedAt).toLocaleTimeString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</span></div>
