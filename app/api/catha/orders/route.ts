@@ -404,8 +404,19 @@ export async function POST(request: Request) {
     }
     
     console.log('[Orders API] CREATE persisted new order document:', order.id, 'MongoDB ID:', insertResult.insertedId, 'paymentStatus:', savedOrder.paymentStatus)
-    
-    return noStoreJson(savedOrder, { status: 201 })
+
+    // Send payment receipt SMS for paid/completed orders created directly from POS/Orders.
+    // (PUT and M-Pesa append flows already trigger this separately.)
+    if (String(savedOrder.status || '').toLowerCase() === 'completed') {
+      try {
+        await maybeSendCathaPaymentReceiptSms(db, order.id)
+      } catch (smsError) {
+        console.error('[Orders API] Failed to send payment receipt SMS on create:', smsError)
+      }
+    }
+
+    const orderAfterSms = await db.collection('orders').findOne({ id: order.id })
+    return noStoreJson(orderAfterSms || savedOrder, { status: 201 })
   } catch (error: any) {
     console.error('[Orders API] POST exception:', error?.message, error?.stack)
     return NextResponse.json(

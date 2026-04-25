@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb'
 import { normalizePhoneNumbers, sendJabaSmsStrict } from '@/lib/jaba-sms'
+import { summarizeCathaOrderPayments } from '@/lib/catha-order-payments'
 
 function buildCathaPaymentReceiptMessage(orderId: string): string {
   const receiptLink =
@@ -10,14 +11,19 @@ function buildCathaPaymentReceiptMessage(orderId: string): string {
 
 export async function maybeSendCathaPaymentReceiptSms(
   db: Db,
-  orderId: string
+  orderId: string,
+  options?: { force?: boolean }
 ): Promise<{ sent: boolean; reason?: string }> {
+  const force = options?.force === true
   const order = await db.collection('orders').findOne({ id: orderId })
   if (!order) return { sent: false, reason: 'order_not_found' }
 
   const status = String(order.status || '').toLowerCase()
   const paymentStatus = String(order.paymentStatus || '').toUpperCase()
-  const isSettled = status === 'completed' && (paymentStatus === 'PAID' || paymentStatus === 'OVERPAID')
+  const summary = summarizeCathaOrderPayments(order as any)
+  const explicitPaid = paymentStatus === 'PAID' || paymentStatus === 'OVERPAID'
+  const computedPaid = summary.paymentStatus === 'PAID' || summary.paymentStatus === 'OVERPAID'
+  const isSettled = status === 'completed' && (explicitPaid || computedPaid)
   if (!isSettled) return { sent: false, reason: 'order_not_settled' }
 
   const normalized = normalizePhoneNumbers(order.customerPhone ?? '')
@@ -25,7 +31,17 @@ export async function maybeSendCathaPaymentReceiptSms(
   if (!targetPhone) return { sent: false, reason: 'no_valid_customer_phone' }
 
   const claim = await db.collection('orders').updateOne(
-    { id: orderId, paymentReceiptSmsSentAt: { $exists: false } },
+    force
+      ? {
+          id: orderId,
+          // Force resend still avoids duplicate concurrent send.
+          paymentReceiptSmsStatus: { $ne: 'SENDING' },
+        }
+      : {
+          id: orderId,
+          // Do not send duplicates while in-progress/sent, but allow retry from legacy/null/failed states.
+          paymentReceiptSmsStatus: { $nin: ['SENDING', 'SENT'] },
+        },
     {
       $set: {
         paymentReceiptSmsSentAt: new Date(),

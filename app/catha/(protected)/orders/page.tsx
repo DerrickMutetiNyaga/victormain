@@ -176,12 +176,14 @@ function RowActionMenu({
   onPay,
   onEdit,
   onAddItems,
+  onResendSms,
   onDelete,
 }: { 
   order: Transaction;
   onPay?: () => void;
   onEdit?: () => void;
   onAddItems?: () => void;
+  onResendSms?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -213,7 +215,13 @@ function RowActionMenu({
             <span>Add Items</span>
           </DropdownMenuItem>
         )}
-        {(onPay || onEdit || onAddItems) && <DropdownMenuSeparator />}
+        {onResendSms && (
+          <DropdownMenuItem onClick={onResendSms} className="cursor-pointer">
+            <RefreshCw className="h-4 w-4 mr-2 text-indigo-600" />
+            <span>Resend SMS</span>
+          </DropdownMenuItem>
+        )}
+        {(onPay || onEdit || onAddItems || onResendSms) && <DropdownMenuSeparator />}
         <DropdownMenuItem onClick={onDelete} variant="destructive" className="cursor-pointer">
           <Trash2 className="h-4 w-4 mr-2" />
           <span>Delete Order</span>
@@ -1304,6 +1312,32 @@ export default function OrdersPage() {
     }
   }
 
+  const handleResendReceiptSms = async (order: Transaction) => {
+    try {
+      toast.loading(`Resending receipt SMS for ${order.id}...`, { id: `resend-sms-${order.id}` })
+      const res = await fetch("/api/catha/orders/resend-receipt-sms", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.success !== true) {
+        throw new Error(data?.reason || data?.error || "Failed to resend receipt SMS")
+      }
+
+      if (data?.order) {
+        const next = mapOrderRow(data.order) as Transaction
+        setOrders((prev) => prev.map((o) => (o.id === next.id ? next : o)))
+      } else {
+        await fetchOrders()
+      }
+      toast.success(`Receipt SMS sent for ${order.id}`, { id: `resend-sms-${order.id}` })
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to resend receipt SMS", { id: `resend-sms-${order.id}` })
+    }
+  }
+
   const handleDeleteOrder = async (order: Transaction) => {
     if (!confirm(`Are you sure you want to delete order ${order.id}? This action cannot be undone.`)) {
       return
@@ -1509,6 +1543,7 @@ export default function OrdersPage() {
                       onPay={tx.status !== "completed" ? handlePaymentClick : undefined}
                       onEdit={canEdit && tx.status !== "completed" ? handleEditClick : undefined}
                       onAddItems={canEdit && tx.status === "pending" ? handleAddItemsClick : undefined}
+                      onResendMessage={tx.status === "completed" && Boolean((tx as any).customerPhone) ? handleResendReceiptSms : undefined}
                     />
                   </div>
                 )
@@ -2287,6 +2322,7 @@ export default function OrdersPage() {
                                   onPay={tx.status !== "completed" ? () => handlePaymentClick(tx) : undefined}
                                   onEdit={tx.status !== "completed" ? () => handleEditClick(tx) : undefined}
                                   onAddItems={tx.status === "pending" ? () => handleAddItemsClick(tx) : undefined}
+                                  onResendSms={tx.status === "completed" && Boolean((tx as any).customerPhone) ? () => handleResendReceiptSms(tx) : undefined}
                                   onDelete={() => handleDeleteOrder(tx)}
                                 />
                               </div>
@@ -2365,6 +2401,7 @@ export default function OrdersPage() {
                           onPay={tx.status !== "completed" ? handlePaymentClick : undefined}
                           onEdit={canEdit && tx.status !== "completed" ? handleEditClick : undefined}
                           onAddItems={canEdit && tx.status === "pending" ? handleAddItemsClick : undefined}
+                          onResendMessage={tx.status === "completed" && Boolean((tx as any).customerPhone) ? handleResendReceiptSms : undefined}
                         />
                       </div>
                     )

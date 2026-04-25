@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { CheckSquare, Square, Eye, Printer, Trash2, Wallet2, Edit2, Plus, MoreVertical } from "lucide-react"
+import { CheckSquare, Square, Eye, Printer, Trash2, Wallet2, Edit2, Plus, MoreVertical, RefreshCw } from "lucide-react"
 import { StatusBadge } from "./status-badge"
 import { PaymentBadge } from "./payment-badge"
 import { ActionButton } from "./action-button"
@@ -71,6 +71,7 @@ interface OrderCardProps<T = any> {
   onPay?: (order: T) => void
   onEdit?: (order: T) => void
   onAddItems?: (order: T) => void
+  onResendMessage?: (order: T) => void
 }
 
 export function OrderCard<T = any>({
@@ -84,6 +85,7 @@ export function OrderCard<T = any>({
   onPay,
   onEdit,
   onAddItems,
+  onResendMessage,
 }: OrderCardProps<T>) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const status = getStatusLabel(order.paymentStatus || order.status)
@@ -292,6 +294,12 @@ export function OrderCard<T = any>({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {onResendMessage && (
+                    <DropdownMenuItem onClick={() => onResendMessage(callbackOrder)}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Resend SMS
+                    </DropdownMenuItem>
+                  )}
                   {onEdit && (
                     <DropdownMenuItem onClick={() => onEdit(callbackOrder)}>
                       <Edit2 className="h-4 w-4 mr-2" />

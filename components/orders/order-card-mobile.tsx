@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Printer, MoreVertical, Wallet2, Eye, Edit2, Plus, Trash2 } from "lucide-react"
+import { Printer, MoreVertical, Wallet2, Eye, Edit2, Plus, Trash2, RefreshCw } from "lucide-react"
 import { formatMoneyKsh, formatTime, getStatusLabel } from "@/lib/order-utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -52,6 +52,7 @@ interface OrderCardMobileProps<T = any> {
   onPay?: (order: T) => void
   onEdit?: (order: T) => void
   onAddItems?: (order: T) => void
+  onResendMessage?: (order: T) => void
 }
 
 function PaymentChip({ method }: { method: string | null }) {
@@ -95,6 +96,7 @@ export function OrderCardMobile<T = any>({
   onPay,
   onEdit,
   onAddItems,
+  onResendMessage,
 }: OrderCardMobileProps<T>) {
   const [moreOpen, setMoreOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -258,6 +260,19 @@ export function OrderCardMobile<T = any>({
               >
                 <Edit2 className="h-4 w-4" />
                 Edit order
+              </Button>
+            )}
+            {onResendMessage && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12 text-[#0f172a]"
+                onClick={() => {
+                  setMoreOpen(false)
+                  onResendMessage(callbackOrder)
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Resend SMS
               </Button>
             )}
             {onAddItems && (
