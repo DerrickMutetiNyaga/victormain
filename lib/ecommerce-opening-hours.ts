@@ -20,9 +20,9 @@ export type EcommerceOpeningHoursSettings = {
 
 export const defaultEcommerceOpeningHours: EcommerceOpeningHoursSettings = {
   enabled: false,
-  openingTime: '09:00',
-  closingTime: '18:00',
-  openDays: [1, 2, 3, 4, 5],
+  openingTime: '08:00',
+  closingTime: '11:00',
+  openDays: [0, 1, 2, 3, 4, 5, 6],
   customNotice: '',
   blockCheckoutWhenClosed: false,
 }

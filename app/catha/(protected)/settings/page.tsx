@@ -19,6 +19,7 @@ import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, T
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  defaultEcommerceOpeningHours,
   evaluateEcommerceOpeningHours,
   validateEcommerceOpeningHoursPayload,
   type EcommerceOpeningHoursSettings,
@@ -199,9 +200,9 @@ export default function SettingsPage() {
   const [deliveryOptions, setDeliveryOptions] = useState<DeliveryOption[]>(DEFAULT_DELIVERY_OPTIONS)
 
   const [eoEnabled, setEoEnabled] = useState(false)
-  const [eoOpenTime, setEoOpenTime] = useState("09:00")
-  const [eoCloseTime, setEoCloseTime] = useState("18:00")
-  const [eoOpenDays, setEoOpenDays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [eoOpenTime, setEoOpenTime] = useState(defaultEcommerceOpeningHours.openingTime)
+  const [eoCloseTime, setEoCloseTime] = useState(defaultEcommerceOpeningHours.closingTime)
+  const [eoOpenDays, setEoOpenDays] = useState<number[]>([...defaultEcommerceOpeningHours.openDays])
   const [eoCustomNotice, setEoCustomNotice] = useState("")
   const [eoBlockCheckout, setEoBlockCheckout] = useState(false)
 
@@ -342,13 +343,23 @@ export default function SettingsPage() {
           const eoh = settings.ecommerceOpeningHours
           if (eoh) {
             setEoEnabled(!!eoh.enabled)
-            setEoOpenTime(typeof eoh.openingTime === "string" ? eoh.openingTime : "09:00")
-            setEoCloseTime(typeof eoh.closingTime === "string" ? eoh.closingTime : "18:00")
+            setEoOpenTime(
+              typeof eoh.openingTime === "string" ? eoh.openingTime : defaultEcommerceOpeningHours.openingTime
+            )
+            setEoCloseTime(
+              typeof eoh.closingTime === "string" ? eoh.closingTime : defaultEcommerceOpeningHours.closingTime
+            )
             if (Array.isArray(eoh.openDays) && eoh.openDays.length) {
               setEoOpenDays([...new Set(eoh.openDays.map((n: number) => Number(n)).filter((n) => n >= 0 && n <= 6))].sort((a, b) => a - b))
+            } else {
+              setEoOpenDays([...defaultEcommerceOpeningHours.openDays])
             }
             setEoCustomNotice(typeof eoh.customNotice === "string" ? eoh.customNotice : "")
             setEoBlockCheckout(!!eoh.blockCheckoutWhenClosed)
+          } else {
+            setEoOpenTime(defaultEcommerceOpeningHours.openingTime)
+            setEoCloseTime(defaultEcommerceOpeningHours.closingTime)
+            setEoOpenDays([...defaultEcommerceOpeningHours.openDays])
           }
         }
 
