@@ -4,6 +4,7 @@ import { createShiftEvent } from '@/lib/models/shift-event'
 import { getShiftSettings } from '@/lib/models/shift-setting'
 import { getDeviceFingerprint, getScheduleForNow, requireShiftSessionUser } from '@/lib/catha-shift-service'
 import { sendShiftNotification } from '@/lib/catha-shift-sms'
+import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
 
 export async function POST(request: Request) {
   const auth = await requireShiftSessionUser()
@@ -70,8 +71,21 @@ export async function POST(request: Request) {
   })
   await sendShiftNotification(
     'CLOCK_IN',
-    `${auth.name} started shift at ${now.toLocaleTimeString('en-KE', { timeZone: 'Africa/Nairobi' })}. Device: ${shift.deviceFingerprint}`,
-    shift._id!.toString()
+    (() => {
+      const timing = analyzeShiftTiming({
+        scheduledStartTime: scheduledStartAt,
+        actualStartTime: now,
+      })
+      const timingLine =
+        timing.openStatus === 'ON_TIME'
+          ? 'Timing: On Time'
+          : `${timing.openStatus === 'EARLY' ? 'Timing: Early' : 'Timing: Late'} (${formatSignedTimingForSms(
+              timing.openDiffMs
+            )})`
+      return `[SHIFT OPEN]\nUser: ${auth.name}\n${timingLine}`
+    })(),
+    shift._id!.toString(),
+    { dedupeKey: requestId || `shift-open:${shift._id!.toString()}` }
   )
 
   return NextResponse.json({ ok: true, shift })

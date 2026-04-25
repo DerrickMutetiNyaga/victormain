@@ -54,6 +54,7 @@ interface Settings {
     supplierDeliveryReminders: boolean
     securitySmsAlertsEnabled?: boolean
     securityAlertNumbers?: string[]
+    shiftNotificationPhones?: string[]
     securityDeniedBurstThreshold?: number
   }
   security?: {
@@ -164,6 +165,7 @@ export default function SettingsPage() {
   const [supplierDeliveryReminders, setSupplierDeliveryReminders] = useState(true)
   const [securitySmsAlertsEnabled, setSecuritySmsAlertsEnabled] = useState(false)
   const [securityAlertNumbersText, setSecurityAlertNumbersText] = useState("")
+  const [shiftNotificationPhonesText, setShiftNotificationPhonesText] = useState("")
   const [securityDeniedBurstThreshold, setSecurityDeniedBurstThreshold] = useState(10)
   
   // Security State
@@ -287,6 +289,11 @@ export default function SettingsPage() {
             setSecurityAlertNumbersText(
               Array.isArray(settings.notifications.securityAlertNumbers)
                 ? settings.notifications.securityAlertNumbers.join(", ")
+                : ""
+            )
+            setShiftNotificationPhonesText(
+              Array.isArray(settings.notifications.shiftNotificationPhones)
+                ? settings.notifications.shiftNotificationPhones.join(", ")
                 : ""
             )
             const threshold = Number(settings.notifications.securityDeniedBurstThreshold)
@@ -460,6 +467,10 @@ export default function SettingsPage() {
             supplierDeliveryReminders,
             securitySmsAlertsEnabled,
             securityAlertNumbers: securityAlertNumbersText
+              .split(",")
+              .map((n) => n.trim())
+              .filter(Boolean),
+            shiftNotificationPhones: shiftNotificationPhonesText
               .split(",")
               .map((n) => n.trim())
               .filter(Boolean),
@@ -1130,6 +1141,18 @@ export default function SettingsPage() {
                       value={securityDeniedBurstThreshold}
                       onChange={(e) => setSecurityDeniedBurstThreshold(Number(e.target.value))}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shift-notification-phones">Shift Notification Numbers</Label>
+                    <Input
+                      id="shift-notification-phones"
+                      value={shiftNotificationPhonesText}
+                      onChange={(e) => setShiftNotificationPhonesText(e.target.value)}
+                      placeholder="+254712345678, +254700000000"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Receives shift open/close SMS with timing summary.
+                    </p>
                   </div>
                   <Button onClick={saveNotifications} disabled={saving}>
                     {saving ? "Saving..." : "Save Changes"}

@@ -30,6 +30,7 @@ export interface Settings {
     supplierDeliveryReminders: boolean
     securitySmsAlertsEnabled?: boolean
     securityAlertNumbers?: string[]
+    shiftNotificationPhones?: string[]
     securityDeniedBurstThreshold?: number
   }
   security?: {
@@ -93,6 +94,7 @@ const defaultSettings: Settings = {
     supplierDeliveryReminders: true,
     securitySmsAlertsEnabled: false,
     securityAlertNumbers: [],
+    shiftNotificationPhones: [],
     securityDeniedBurstThreshold: 10,
   },
   security: {
@@ -243,6 +245,9 @@ export async function PUT(request: Request) {
       const notifications = { ...body.notifications }
       if (Object.prototype.hasOwnProperty.call(notifications, 'securityAlertNumbers')) {
         notifications.securityAlertNumbers = normalizePhoneNumbers(notifications.securityAlertNumbers ?? [])
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'shiftNotificationPhones')) {
+        notifications.shiftNotificationPhones = normalizePhoneNumbers(notifications.shiftNotificationPhones ?? [])
       }
       if (Object.prototype.hasOwnProperty.call(notifications, 'securityDeniedBurstThreshold')) {
         const n = Number(notifications.securityDeniedBurstThreshold)

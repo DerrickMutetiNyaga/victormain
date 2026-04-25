@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { analyzeShiftTiming, formatDurationCompact, formatSignedTiming } from "@/lib/catha-shift-timing-analysis"
 
 type Row = {
   _id: string
@@ -14,6 +15,8 @@ type Row = {
   role: string
   startedAt: string
   endedAt?: string
+  scheduledStartAt?: string
+  scheduledEndAt?: string
   ordersServed: number
   totalRevenue: number
   cashSales: number
@@ -33,6 +36,7 @@ export default function StaffShiftsPage() {
   const [staffQuery, setStaffQuery] = useState("")
   const [loading, setLoading] = useState(true)
   const [insights, setInsights] = useState<any>(null)
+  const [liveNow, setLiveNow] = useState(() => new Date())
 
   useEffect(() => {
     const role = String((session?.user as any)?.role || "").toUpperCase()
@@ -55,6 +59,11 @@ export default function StaffShiftsPage() {
       .catch(() => {})
   }, [range, session])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setLiveNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const filteredRows = useMemo(() => {
     const q = staffQuery.trim().toLowerCase()
     if (!q) return rows
@@ -68,6 +77,40 @@ export default function StaffShiftsPage() {
     if (status === "OVERTIME") return "bg-violet-100 text-violet-700"
     if (status === "FORGOT_CLOCK_OUT") return "bg-rose-100 text-rose-700"
     return "bg-slate-100 text-slate-700"
+  }
+
+  function timingVariant(label: string) {
+    if (label.startsWith("Late") || label.startsWith("Overtime")) return "bg-rose-100 text-rose-700"
+    if (label.startsWith("Early")) return "bg-amber-100 text-amber-700"
+    if (label.startsWith("On Time")) return "bg-emerald-100 text-emerald-700"
+    return "bg-slate-100 text-slate-700"
+  }
+
+  function getOpenTimingLabel(row: Row) {
+    const timing = analyzeShiftTiming({
+      scheduledStartTime: row.scheduledStartAt,
+      actualStartTime: row.startedAt,
+    })
+    if (timing.openStatus === "ON_TIME") return "On Time"
+    return `${timing.openStatus === "EARLY" ? "Early Open" : "Late Open"}: ${formatSignedTiming(timing.openDiffMs)}`
+  }
+
+  function getCloseTimingLabel(row: Row) {
+    const timing = analyzeShiftTiming({
+      scheduledEndTime: row.scheduledEndAt,
+      actualEndTime: row.endedAt,
+      actualStartTime: row.startedAt,
+      active: row.status === "ACTIVE",
+      now: liveNow,
+    })
+    if (row.status === "ACTIVE") {
+      if ((timing.overtimeByMs ?? 0) > 0) return `Overtime: ${formatSignedTiming(timing.overtimeByMs ?? 0)}`
+      if (timing.timeSinceStartMs != null) return `Time Passed: ${formatDurationCompact(timing.timeSinceStartMs)}`
+      return "-"
+    }
+    if (!row.endedAt) return "-"
+    if (timing.closeStatus === "ON_TIME") return "On Time"
+    return `${timing.closeStatus === "EARLY" ? "Early Close" : "Late Close"}: ${formatSignedTiming(timing.closeDiffMs)}`
   }
 
   return (
@@ -181,7 +224,7 @@ export default function StaffShiftsPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
-              {["Cashier Name","Role","Clock In Time (EAT)","Clock Out Time (EAT)","Orders Served","Revenue Generated","Cash Sales","Mpesa Sales","Refunds","Drawer Variance","Shift Status","Device Used","Notes"].map((h) => (
+              {["Cashier Name","Role","Clock In Time (EAT)","Open Timing","Clock Out Time (EAT)","Close/Live Timing","Orders Served","Revenue Generated","Cash Sales","Mpesa Sales","Refunds","Drawer Variance","Shift Status","Device Used","Notes"].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
               ))}
             </tr>
@@ -192,7 +235,9 @@ export default function StaffShiftsPage() {
                 <td className="px-3 py-2">{row.staffName}</td>
                 <td className="px-3 py-2">{row.role}</td>
                 <td className="px-3 py-2">{new Date(row.startedAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" })}</td>
+                <td className="px-3 py-2"><Badge className={timingVariant(getOpenTimingLabel(row))}>{getOpenTimingLabel(row)}</Badge></td>
                 <td className="px-3 py-2">{row.endedAt ? new Date(row.endedAt).toLocaleString("en-KE", { timeZone: "Africa/Nairobi" }) : "-"}</td>
+                <td className="px-3 py-2"><Badge className={timingVariant(getCloseTimingLabel(row))}>{getCloseTimingLabel(row)}</Badge></td>
                 <td className="px-3 py-2">{row.ordersServed}</td>
                 <td className="px-3 py-2">{row.totalRevenue.toLocaleString()}</td>
                 <td className="px-3 py-2">{row.cashSales.toLocaleString()}</td>
@@ -206,7 +251,7 @@ export default function StaffShiftsPage() {
             ))}
             {!loading && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">No shifts found for selected filters.</td>
+                <td colSpan={15} className="px-3 py-8 text-center text-muted-foreground">No shifts found for selected filters.</td>
               </tr>
             )}
           </tbody>

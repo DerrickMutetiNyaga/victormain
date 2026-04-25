@@ -3,6 +3,7 @@ import { aggregateShiftOrderStats, deriveShiftStatusOnClose, requireShiftSession
 import { createShiftEvent, findShiftEventByRequestId } from '@/lib/models/shift-event'
 import { getActiveStaffShiftByUserId, getLatestStaffShiftByUserId, transitionActiveShift } from '@/lib/models/staff-shift'
 import { sendShiftNotification } from '@/lib/catha-shift-sms'
+import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
 
 export async function POST(request: Request) {
   const auth = await requireShiftSessionUser()
@@ -72,10 +73,21 @@ export async function POST(request: Request) {
   })
   await sendShiftNotification(
     'CLOCK_OUT',
-    `${auth.name} ended shift at ${now.toLocaleTimeString('en-KE', { timeZone: 'Africa/Nairobi' })}. Sales KES ${Math.round(
-      stats.totalRevenue
-    ).toLocaleString()}. Orders ${stats.ordersServed}.`,
-    shift._id.toString()
+    (() => {
+      const timing = analyzeShiftTiming({
+        scheduledEndTime: shift.scheduledEndAt,
+        actualEndTime: now,
+      })
+      const timingLine =
+        timing.closeStatus === 'ON_TIME'
+          ? 'Timing: On Time'
+          : timing.closeStatus === 'EARLY'
+          ? `Timing: Early (${formatSignedTimingForSms(timing.closeDiffMs)})`
+          : `Timing: Overtime (${formatSignedTimingForSms(timing.closeDiffMs)})`
+      return `[SHIFT CLOSE]\nUser: ${auth.name}\n${timingLine}`
+    })(),
+    shift._id.toString(),
+    { dedupeKey: requestId || `shift-close:${shift._id.toString()}` }
   )
   if (drawerVariance < 0) {
     await sendShiftNotification(
