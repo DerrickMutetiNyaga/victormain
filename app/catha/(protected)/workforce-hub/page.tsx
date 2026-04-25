@@ -47,6 +47,8 @@ type ShiftRow = {
   staffName: string
   role: string
   startedAt: string
+  scheduledStartAt?: string
+  scheduledEndAt?: string
   endedAt?: string
   ordersServed: number
   totalRevenue: number
@@ -58,6 +60,8 @@ type ShiftRow = {
 type MyShift = {
   _id: string
   startedAt: string
+  scheduledStartAt?: string
+  scheduledEndAt?: string
   endedAt?: string
   ordersServed: number
   totalRevenue: number
@@ -83,6 +87,7 @@ const tabOptions = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "my-shifts", label: "My Shifts", icon: User },
   { id: "team-shifts", label: "Team", icon: Users },
+  { id: "timing", label: "Timing", icon: Clock3 },
   { id: "history", label: "History", icon: History },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
 ] as const
@@ -92,23 +97,58 @@ type TabValue = (typeof tabOptions)[number]["id"]
 const kenyaTimeFormat: Intl.DateTimeFormatOptions = { timeZone: "Africa/Nairobi" }
 
 function statusMeta(row: ShiftRow | MyShift) {
-  const isLate = ["yellow", "orange", "red"].includes(String(row.metadata?.latenessBand ?? ""))
-  if (row.status === "OVERTIME") {
-    return { label: "Overtime", className: "bg-sky-100 text-sky-700 border-sky-200", dotClass: "bg-sky-500", pulse: false }
-  }
   if (row.status === "ACTIVE" || !row.endedAt) {
-    return isLate
-      ? { label: "Active (Late)", className: "bg-orange-100 text-orange-700 border-orange-200", dotClass: "bg-orange-500", pulse: true }
-      : { label: "Active", className: "bg-emerald-100 text-emerald-700 border-emerald-200", dotClass: "bg-emerald-500", pulse: true }
+    return { label: "Active", className: "bg-emerald-100 text-emerald-700 border-emerald-200", dotClass: "bg-emerald-500", pulse: true }
   }
   if (row.endedAt || row.status === "COMPLETED" || row.status === "AUTO_CLOSED") {
     return { label: "Clocked Out", className: "bg-slate-100 text-slate-700 border-slate-200", dotClass: "bg-slate-400", pulse: false }
   }
-  return { label: "Absent", className: "bg-rose-100 text-rose-700 border-rose-200", dotClass: "bg-rose-500", pulse: false }
+  return { label: "Clocked Out", className: "bg-slate-100 text-slate-700 border-slate-200", dotClass: "bg-slate-400", pulse: false }
 }
 
 function isLiveShift(row: ShiftRow | MyShift) {
   return row.status === "ACTIVE" || !row.endedAt
+}
+
+function formatMinuteDelta(minutes: number) {
+  const abs = Math.abs(minutes)
+  const hrs = Math.floor(abs / 60)
+  const rem = abs % 60
+  if (hrs > 0 && rem > 0) return `${hrs}h ${rem}m`
+  if (hrs > 0) return `${hrs}h`
+  return `${rem}m`
+}
+
+function timingMeta(row: ShiftRow | MyShift) {
+  const scheduledStart = row.scheduledStartAt ? new Date(row.scheduledStartAt) : null
+  const started = new Date(row.startedAt)
+  if (!scheduledStart || Number.isNaN(scheduledStart.getTime()) || Number.isNaN(started.getTime())) {
+    return {
+      label: "No schedule",
+      detail: "-",
+      className: "bg-slate-100 text-slate-600 border-slate-200",
+    }
+  }
+  const diffMinutes = Math.round((started.getTime() - scheduledStart.getTime()) / 60000)
+  if (diffMinutes > 0) {
+    return {
+      label: "Late",
+      detail: `${formatMinuteDelta(diffMinutes)} late`,
+      className: "bg-orange-100 text-orange-700 border-orange-200",
+    }
+  }
+  if (diffMinutes < 0) {
+    return {
+      label: "Early",
+      detail: `${formatMinuteDelta(diffMinutes)} early`,
+      className: "bg-sky-100 text-sky-700 border-sky-200",
+    }
+  }
+  return {
+    label: "On Time",
+    detail: "On time",
+    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  }
 }
 
 function initials(name: string) {
@@ -759,6 +799,49 @@ export default function WorkforceHubPage() {
                       </tbody>
                     </table>
                   </div>
+                </motion.div>
+              )}
+
+              {activeTab === "timing" && (
+                <motion.div key="timing" {...panelMotion} className="space-y-3">
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="min-w-[920px] w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">Staff</th>
+                          <th className="px-4 py-3 font-medium">Role</th>
+                          <th className="px-4 py-3 font-medium">Clock In</th>
+                          <th className="px-4 py-3 font-medium">Schedule Start</th>
+                          <th className="px-4 py-3 font-medium">Timing</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTeamRows.map((row, index) => {
+                          const timing = timingMeta(row)
+                          const status = statusMeta(row)
+                          return (
+                            <tr key={rowKey(row, "timing", index)} className="border-t border-slate-100">
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.staffName}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.role || "Team member"}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.startedAt)}</td>
+                              <td className="px-4 py-3 text-slate-700">{formatTime(row.scheduledStartAt)}</td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${timing.className}`}>{timing.detail}</Badge>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge className={`border ${status.className}`}>
+                                  <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${status.dotClass} ${status.pulse ? "animate-pulse" : ""}`} />
+                                  {status.label}
+                                </Badge>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!loading && filteredTeamRows.length === 0 && <div className="rounded-xl border border-slate-200 px-4 py-6 text-sm text-slate-500">No timing records found.</div>}
                 </motion.div>
               )}
 
