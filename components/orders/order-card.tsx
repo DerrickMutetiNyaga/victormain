@@ -282,7 +282,7 @@ export function OrderCard<T = any>({
                 View
               </ActionButton>
             )}
-            {(onEdit || onAddItems) && (
+            {(onEdit || onAddItems || onResendMessage) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
