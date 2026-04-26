@@ -3,7 +3,7 @@ import { createStaffShift, getActiveStaffShiftByUserId } from '@/lib/models/staf
 import { createShiftEvent } from '@/lib/models/shift-event'
 import { getShiftSettings } from '@/lib/models/shift-setting'
 import { getDeviceFingerprint, getScheduleForNow, requireShiftSessionUser } from '@/lib/catha-shift-service'
-import { sendShiftNotification } from '@/lib/catha-shift-sms'
+import { sendShiftOpenedNotification } from '@/lib/catha-shift-lifecycle'
 import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
 
 export async function POST(request: Request) {
@@ -69,9 +69,10 @@ export async function POST(request: Request) {
     eventType: 'CLOCK_IN',
     metadata: { latenessBand, openingFloat, requestId },
   })
-  await sendShiftNotification(
-    'CLOCK_IN',
-    (() => {
+  await sendShiftOpenedNotification({
+    shiftId: shift._id!.toString(),
+    dedupeKey: requestId || `shift:open:${shift._id!.toString()}`,
+    message: (() => {
       const timing = analyzeShiftTiming({
         scheduledStartTime: scheduledStartAt,
         actualStartTime: now,
@@ -84,9 +85,7 @@ export async function POST(request: Request) {
             )})`
       return `[SHIFT OPEN]\nUser: ${auth.name}\n${timingLine}`
     })(),
-    shift._id!.toString(),
-    { dedupeKey: requestId || `shift-open:${shift._id!.toString()}` }
-  )
+  })
 
   return NextResponse.json({ ok: true, shift })
 }

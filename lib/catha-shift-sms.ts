@@ -18,7 +18,7 @@ export async function sendShiftNotification(
   type: ShiftNotificationType,
   message: string,
   shiftId?: string,
-  options?: { dedupeKey?: string; dedupeWindowMinutes?: number }
+  options?: { dedupeKey?: string; dedupeWindowMinutes?: number; throwOnError?: boolean }
 ) {
   const settings = await getShiftNotificationSettings()
   const db = await getDatabase('infusion_jaba')
@@ -30,6 +30,12 @@ export async function sendShiftNotification(
     ? cathaSettings.notifications.shiftNotificationPhones
     : []
   const recipients = normalizePhoneNumbers([...settings.numbers, ...settingsPhones])
+  console.log('[Shift SMS] dispatch request', {
+    shiftId,
+    type,
+    dedupeKey: options?.dedupeKey,
+    recipientCount: recipients.length,
+  })
   const isShiftOpenOrClose = type === 'CLOCK_IN' || type === 'CLOCK_OUT'
   const settingsPhonesOptIn = isShiftOpenOrClose && settingsPhones.length > 0
   const canSend = shouldSend(type, settings) || settingsPhonesOptIn
@@ -42,6 +48,13 @@ export async function sendShiftNotification(
       message,
       success: false,
       error: 'disabled_or_no_numbers',
+    })
+    console.warn('[Shift SMS] skipped', {
+      shiftId,
+      type,
+      canSend,
+      recipientCount: recipients.length,
+      reason: 'disabled_or_no_numbers',
     })
     return
   }
@@ -64,6 +77,12 @@ export async function sendShiftNotification(
     }
   }
   try {
+    console.log('[Shift SMS] sending payload', {
+      shiftId,
+      type,
+      recipients,
+      messagePreview: message.slice(0, 120),
+    })
     await sendJabaSmsStrict(message, recipients)
     await createShiftNotificationLog({
       shiftId,
@@ -83,6 +102,15 @@ export async function sendShiftNotification(
       success: false,
       error: error?.message || 'send_failed',
     })
+    console.error('[Shift SMS] failed', {
+      shiftId,
+      type,
+      dedupeKey: options?.dedupeKey,
+      error: error?.message || error,
+    })
+    if (options?.throwOnError) {
+      throw error
+    }
     return
   }
 }

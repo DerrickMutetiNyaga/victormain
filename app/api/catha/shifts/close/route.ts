@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { aggregateShiftOrderStats, deriveShiftStatusOnClose, requireShiftSessionUser } from '@/lib/catha-shift-service'
-import { createShiftEvent, findShiftEventByRequestId } from '@/lib/models/shift-event'
-import { getActiveStaffShiftByUserId, getLatestStaffShiftByUserId, transitionActiveShift } from '@/lib/models/staff-shift'
+import { findShiftEventByRequestId } from '@/lib/models/shift-event'
+import { getActiveStaffShiftByUserId, getLatestStaffShiftByUserId } from '@/lib/models/staff-shift'
 import { sendShiftNotification } from '@/lib/catha-shift-sms'
 import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
+import { closeShiftAndNotify } from '@/lib/catha-shift-lifecycle'
 
 export async function POST(request: Request) {
   const auth = await requireShiftSessionUser()
@@ -42,62 +43,59 @@ export async function POST(request: Request) {
     pendingClosure: shift.status === 'PENDING_CLOSURE',
   })
 
-  const closed = await transitionActiveShift(shift._id.toString(), {
-    endedAt: now,
-    clockOutAt: now,
-    status,
-    countedDrawerAmount,
-    expectedDrawerAmount,
-    drawerVariance,
-    cashSales: stats.cashSales,
-    mpesaSales: stats.mpesaSales,
-    totalRevenue: stats.totalRevenue,
-    ordersServed: stats.ordersServed,
-    refunds: stats.refunds,
-    discounts: stats.discounts,
-    notes: String(body.notes ?? shift.notes ?? ''),
-    pendingClosureAt: null,
-    metadata: {
-      ...(shift.metadata ?? {}),
-      financialLocked: true,
-      financialLockedAt: now.toISOString(),
-      closedByType: 'USER',
-      closeReason: 'normal_clockout',
-      clockOutAt: now.toISOString(),
+  const closeMessage = (() => {
+    const timing = analyzeShiftTiming({
+      scheduledEndTime: shift.scheduledEndAt,
+      actualEndTime: now,
+    })
+    const timingLine =
+      timing.closeStatus === 'ON_TIME'
+        ? 'Timing: On Time'
+        : timing.closeStatus === 'EARLY'
+        ? `Timing: Early (${formatSignedTimingForSms(timing.closeDiffMs)})`
+        : `Timing: Overtime (${formatSignedTimingForSms(timing.closeDiffMs)})`
+    return `[SHIFT CLOSE]\nUser: ${auth.name}\n${timingLine}`
+  })()
+  const closeResult = await closeShiftAndNotify({
+    shift,
+    actorUserId: auth.userId,
+    actorName: auth.name,
+    closeReason: 'normal_clockout',
+    closeEventType: 'CLOSE',
+    dedupeKey: requestId || `shift:close:${shift._id.toString()}`,
+    closeMessage,
+    eventMetadata: { status, drawerVariance, expectedDrawerAmount, countedDrawerAmount, requestId },
+    updates: {
+      endedAt: now,
+      clockOutAt: now,
+      status,
+      countedDrawerAmount,
+      expectedDrawerAmount,
+      drawerVariance,
+      cashSales: stats.cashSales,
+      mpesaSales: stats.mpesaSales,
+      totalRevenue: stats.totalRevenue,
+      ordersServed: stats.ordersServed,
+      refunds: stats.refunds,
+      discounts: stats.discounts,
+      notes: String(body.notes ?? shift.notes ?? ''),
+      pendingClosureAt: null,
+      metadata: {
+        ...(shift.metadata ?? {}),
+        financialLocked: true,
+        financialLockedAt: now.toISOString(),
+        closedByType: 'USER',
+        closeReason: 'normal_clockout',
+        clockOutAt: now.toISOString(),
+      },
     },
   })
-  if (!closed) {
+  if (closeResult.replay) {
     const latest = await getLatestStaffShiftByUserId(auth.userId)
     if (latest?.endedAt) return NextResponse.json({ ok: true, shift: latest, replay: true })
     return NextResponse.json({ error: 'Shift already closed' }, { status: 409 })
   }
-
-  await createShiftEvent({
-    shiftId: shift._id.toString(),
-    staffUserId: auth.userId,
-    actorUserId: auth.userId,
-    actorName: auth.name,
-    eventType: 'CLOSE',
-    metadata: { status, drawerVariance, expectedDrawerAmount, countedDrawerAmount, requestId },
-  })
-  await sendShiftNotification(
-    'CLOCK_OUT',
-    (() => {
-      const timing = analyzeShiftTiming({
-        scheduledEndTime: shift.scheduledEndAt,
-        actualEndTime: now,
-      })
-      const timingLine =
-        timing.closeStatus === 'ON_TIME'
-          ? 'Timing: On Time'
-          : timing.closeStatus === 'EARLY'
-          ? `Timing: Early (${formatSignedTimingForSms(timing.closeDiffMs)})`
-          : `Timing: Overtime (${formatSignedTimingForSms(timing.closeDiffMs)})`
-      return `[SHIFT CLOSE]\nUser: ${auth.name}\n${timingLine}`
-    })(),
-    shift._id.toString(),
-    { dedupeKey: requestId || `shift-close:${shift._id.toString()}` }
-  )
+  const closed = closeResult.shift
   if (drawerVariance < 0) {
     await sendShiftNotification(
       'CASH_VARIANCE',

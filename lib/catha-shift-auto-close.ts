@@ -1,16 +1,14 @@
 import { aggregateShiftOrderStats } from '@/lib/catha-shift-service'
-import { sendShiftNotification } from '@/lib/catha-shift-sms'
 import { queueCathaAuditLog } from '@/lib/catha-audit-log'
 import { getShiftSettings } from '@/lib/models/shift-setting'
-import { createShiftEvent } from '@/lib/models/shift-event'
 import {
   type StaffShift,
   getActiveStaffShiftByUserId,
   getLatestStaffShiftByUserId,
   listOverdueOpenStaffShifts,
-  transitionActiveShift,
 } from '@/lib/models/staff-shift'
 import { isOverdueForAutoClose } from '@/lib/catha-shift-auto-close-utils'
+import { closeShiftAndNotify } from '@/lib/catha-shift-lifecycle'
 
 type AutoCloseConfig = {
   graceHours: number
@@ -43,9 +41,16 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
     Math.round((now.getTime() - new Date(shift.scheduledEndAt).getTime()) / 60000)
   )
 
-  const closed = await transitionActiveShift(
-    shift._id.toString(),
-    {
+  const closeResult = await closeShiftAndNotify({
+    shift,
+    actorUserId,
+    actorName: 'SYSTEM',
+    closeEventType: 'FORCE_CLOSE',
+    closeReason: 'overdue_auto_close_backlog',
+    dedupeKey: `shift:auto-close:${shift._id.toString()}`,
+    closeMessage: `[SHIFT AUTO CLOSED]\nUser: ${shift.staffName}\nReason: overdue_auto_close_backlog\nWorked: ${durationMinutes}m`,
+    eventMetadata: { autoClosed: true, workedDurationMinutes: durationMinutes, overtimeMinutes },
+    updates: {
       status: 'AUTO_CLOSED',
       endedAt: now,
       clockOutAt: now,
@@ -71,19 +76,9 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
         clockOutAt: now.toISOString(),
       },
     },
-    [...OPEN_SHIFT_STATUSES]
-  )
-  if (!closed) return null
-
-  await createShiftEvent({
-    shiftId: shift._id.toString(),
-    staffUserId: shift.staffUserId,
-    actorUserId,
-    actorName: 'SYSTEM',
-    eventType: 'FORCE_CLOSE',
-    reason: 'overdue_auto_close_backlog',
-    metadata: { autoClosed: true, workedDurationMinutes: durationMinutes, overtimeMinutes },
   })
+  if (closeResult.replay) return null
+  const closed = closeResult.shift
   queueCathaAuditLog({
     type: 'SYSTEM',
     action: 'SHIFT_AUTO_CLOSE',
@@ -99,13 +94,6 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
       overtimeMinutes,
     },
   })
-  await sendShiftNotification(
-    'CLOCK_OUT',
-    `[SHIFT AUTO CLOSED]\nUser: ${shift.staffName}\nReason: overdue_auto_close\nWorked: ${durationMinutes}m`,
-    shift._id.toString(),
-    { dedupeKey: `auto-close:${shift._id.toString()}` }
-  )
-
   return closed
 }
 

@@ -42,6 +42,12 @@ export interface StaffShift {
   pendingClosureAt?: Date | null
   forcedClosedBy?: string
   forcedCloseReason?: string
+  closedNotifiedAt?: Date | null
+  closedNotifyAttemptCount?: number
+  closedNotifyLastAttemptAt?: Date | null
+  closedNotifyLastError?: string | null
+  shiftCloseLock?: string | null
+  shiftCloseLockExpiresAt?: Date | null
   metadata?: Record<string, unknown>
   createdAt: Date
   updatedAt: Date
@@ -133,6 +139,76 @@ export async function transitionActiveShift(
       { _id: new ObjectId(id), status: { $in: expectedStatuses } },
       { $set: { ...updates, updatedAt: new Date() } },
       { returnDocument: 'after' }
+    )
+}
+
+export async function acquireShiftCloseNotificationLock(id: string, lockId: string): Promise<boolean> {
+  const client = await clientPromise
+  const now = new Date()
+  const lockLeaseMs = Number(process.env.CATHA_SHIFT_CLOSE_LOCK_LEASE_MS || 30_000)
+  const expiresAt = new Date(now.getTime() + Math.max(5_000, lockLeaseMs))
+  const res = await client
+    .db(DB_NAME)
+    .collection<StaffShift>(COLLECTION)
+    .updateOne(
+      {
+        _id: new ObjectId(id),
+        endedAt: { $ne: null },
+        closedNotifiedAt: null,
+        $or: [
+          { shiftCloseLock: null },
+          { shiftCloseLock: { $exists: false } },
+          { shiftCloseLockExpiresAt: { $lte: now } },
+        ],
+      },
+      {
+        $set: {
+          shiftCloseLock: lockId,
+          shiftCloseLockExpiresAt: expiresAt,
+          closedNotifyLastAttemptAt: now,
+          updatedAt: now,
+        },
+      }
+    )
+  return res.modifiedCount === 1
+}
+
+export async function markShiftCloseNotificationSuccess(id: string, lockId: string): Promise<void> {
+  const client = await clientPromise
+  await client
+    .db(DB_NAME)
+    .collection<StaffShift>(COLLECTION)
+    .updateOne(
+      { _id: new ObjectId(id), shiftCloseLock: lockId },
+      {
+        $set: {
+          closedNotifiedAt: new Date(),
+          closedNotifyLastError: null,
+          shiftCloseLock: null,
+          shiftCloseLockExpiresAt: null,
+          updatedAt: new Date(),
+        },
+      }
+    )
+}
+
+export async function markShiftCloseNotificationFailure(id: string, lockId: string, error: string): Promise<void> {
+  const client = await clientPromise
+  await client
+    .db(DB_NAME)
+    .collection<StaffShift>(COLLECTION)
+    .updateOne(
+      { _id: new ObjectId(id), shiftCloseLock: lockId },
+      {
+        $set: {
+          shiftCloseLock: null,
+          shiftCloseLockExpiresAt: null,
+          closedNotifyLastError: error,
+          closedNotifyLastAttemptAt: new Date(),
+          updatedAt: new Date(),
+        },
+        $inc: { closedNotifyAttemptCount: 1 },
+      }
     )
 }
 

@@ -83,6 +83,19 @@ type InsightsResponse = {
   scoreboard?: Array<{ name: string; revenue: number; attendanceScore: number; badge: string }>
 }
 
+type ShiftNotificationHealth = {
+  recent: Array<{
+    shiftId: string | null
+    type: string
+    status: "sent" | "failed"
+    recipients: number
+    error: string | null
+    timestamp: string
+  }>
+  failuresLast24h: number
+  successRate: number
+}
+
 const tabOptions = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "my-shifts", label: "My Shifts", icon: User },
@@ -230,6 +243,12 @@ export default function WorkforceHubPage() {
   const [insights, setInsights] = useState<InsightsResponse>({})
   const [loading, setLoading] = useState(true)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [notificationHealth, setNotificationHealth] = useState<ShiftNotificationHealth>({
+    recent: [],
+    failuresLast24h: 0,
+    successRate: 1,
+  })
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "sent" | "failed">("all")
 
   const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(String((session?.user as { role?: string } | undefined)?.role ?? "").toUpperCase())
 
@@ -259,6 +278,20 @@ export default function WorkforceHubPage() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [range, fromDate, toDate])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    fetch(`/api/catha/shifts/notifications/health?limit=20&filter=${notificationFilter}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        setNotificationHealth({
+          recent: Array.isArray(data?.recent) ? data.recent : [],
+          failuresLast24h: Number(data?.failuresLast24h ?? 0),
+          successRate: Number(data?.successRate ?? 1),
+        })
+      })
+      .catch(() => {})
+  }, [isAdmin, notificationFilter])
 
   const filteredTeamRows = useMemo(() => {
     const teamSource = dashboardRows.length > 0 ? dashboardRows : historyRows
@@ -716,6 +749,65 @@ export default function WorkforceHubPage() {
                         {(insights.charts?.chronicLateness ?? []).length === 0 && <p className="text-slate-500">No late alerts.</p>}
                       </CardContent>
                     </Card>
+
+                    {isAdmin ? (
+                      <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <CardTitle className="text-sm">Shift Notifications</CardTitle>
+                            <Select value={notificationFilter} onValueChange={(value) => setNotificationFilter(value as "all" | "sent" | "failed")}>
+                              <SelectTrigger className="h-8 w-[120px] rounded-lg border-slate-200 bg-white text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">All</SelectItem>
+                                <SelectItem value="sent">Success</SelectItem>
+                                <SelectItem value="failed">Failed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-2 text-xs">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                              <p className="text-slate-500">Failures (24h)</p>
+                              <p className="text-sm font-semibold text-slate-900">{notificationHealth.failuresLast24h}</p>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                              <p className="text-slate-500">Success Rate</p>
+                              <p className="text-sm font-semibold text-slate-900">
+                                {(notificationHealth.successRate * 100).toFixed(1)}%
+                              </p>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            {notificationHealth.recent.slice(0, 20).map((event, index) => (
+                              <div key={`${event.timestamp}-${event.shiftId ?? "none"}-${index}`} className="rounded-lg border border-slate-200 px-2 py-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium text-slate-800">
+                                    {event.type} - {event.status}
+                                  </span>
+                                  <Badge
+                                    className={
+                                      event.status === "sent"
+                                        ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : "border border-rose-200 bg-rose-50 text-rose-700"
+                                    }
+                                  >
+                                    {event.status}
+                                  </Badge>
+                                </div>
+                                <p className="mt-1 text-slate-500">
+                                  {formatTime(event.timestamp)} | recipients: {event.recipients}
+                                </p>
+                                {event.error ? <p className="text-rose-600">{event.error}</p> : null}
+                              </div>
+                            ))}
+                            {notificationHealth.recent.length === 0 ? <p className="text-slate-500">No notification events yet.</p> : null}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : null}
                   </div>
                 </motion.div>
               )}
