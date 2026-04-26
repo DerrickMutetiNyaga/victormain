@@ -30,6 +30,7 @@ export async function POST(request: Request) {
   })
   const closed = await updateStaffShift(shiftId, {
     endedAt: now,
+    clockOutAt: now,
     status,
     countedDrawerAmount,
     expectedDrawerAmount,
@@ -42,6 +43,14 @@ export async function POST(request: Request) {
     discounts: stats.discounts,
     pendingClosureAt: null,
     notes: String(body.notes ?? shift.notes ?? ''),
+    metadata: {
+      ...(shift.metadata ?? {}),
+      financialLocked: true,
+      financialLockedAt: now.toISOString(),
+      closedByType: isManager ? 'MANAGER' : 'USER',
+      closeReason: 'pending_resolve',
+      clockOutAt: now.toISOString(),
+    },
   })
   await createShiftEvent({
     shiftId,

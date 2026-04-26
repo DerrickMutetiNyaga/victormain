@@ -21,8 +21,17 @@ export async function POST(request: Request) {
   const updated = await updateStaffShift(shiftId, {
     status: 'AUTO_CLOSED',
     endedAt: new Date(),
+    clockOutAt: new Date(),
     forcedClosedBy: auth.userId,
     forcedCloseReason: reason,
+    metadata: {
+      ...(shift.metadata ?? {}),
+      autoClosedBySystem: false,
+      closedByType: 'MANAGER',
+      closeReason: reason,
+      financialLocked: true,
+      financialLockedAt: new Date().toISOString(),
+    },
   })
   await createShiftEvent({
     shiftId,

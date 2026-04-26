@@ -218,6 +218,8 @@ export default function SettingsPage() {
   const [shiftClosingTime, setShiftClosingTime] = useState("23:00")
   const [noShiftReminderMinutes, setNoShiftReminderMinutes] = useState(10)
   const [noShiftHardAlertMinutes, setNoShiftHardAlertMinutes] = useState(20)
+  const [autoCloseGraceHours, setAutoCloseGraceHours] = useState(2)
+  const [continuePromptWindowHours, setContinuePromptWindowHours] = useState(24)
 
   const eoPreview = useMemo(
     () =>
@@ -378,10 +380,14 @@ export default function SettingsPage() {
           const hardMin = Number(shiftSettingsData.settings.noShiftHardAlertMinutes)
           const openAt = String(shiftSettingsData.settings.openingTime ?? "").trim()
           const closeAt = String(shiftSettingsData.settings.closingTime ?? "").trim()
+          const graceHours = Number(shiftSettingsData.settings.autoCloseGraceHours)
+          const continueWindow = Number(shiftSettingsData.settings.continuePromptWindowHours)
           if (/^\d{2}:\d{2}$/.test(openAt)) setShiftOpeningTime(openAt)
           if (/^\d{2}:\d{2}$/.test(closeAt)) setShiftClosingTime(closeAt)
           if (Number.isFinite(reminderMin)) setNoShiftReminderMinutes(Math.max(1, Math.round(reminderMin)))
           if (Number.isFinite(hardMin)) setNoShiftHardAlertMinutes(Math.max(2, Math.round(hardMin)))
+          if (Number.isFinite(graceHours)) setAutoCloseGraceHours(Math.max(1, Math.round(graceHours)))
+          if (Number.isFinite(continueWindow)) setContinuePromptWindowHours(Math.max(1, Math.round(continueWindow)))
         }
       } catch (error) {
         console.error('Error loading settings:', error)
@@ -582,6 +588,8 @@ export default function SettingsPage() {
   const saveShiftReminderSettings = async () => {
     const reminder = Math.max(1, Math.round(Number(noShiftReminderMinutes) || 0))
     const hardAlert = Math.max(2, Math.round(Number(noShiftHardAlertMinutes) || 0))
+    const graceHours = Math.max(1, Math.round(Number(autoCloseGraceHours) || 0))
+    const continueWindow = Math.max(1, Math.round(Number(continuePromptWindowHours) || 0))
     const openingTime = shiftOpeningTime.trim()
     const closingTime = shiftClosingTime.trim()
     const hmRegex = /^([01]\d|2[0-3]):([0-5]\d)$/
@@ -611,6 +619,8 @@ export default function SettingsPage() {
           closingTime,
           noShiftReminderMinutes: reminder,
           noShiftHardAlertMinutes: hardAlert,
+          autoCloseGraceHours: graceHours,
+          continuePromptWindowHours: continueWindow,
         }),
       })
       const data = await response.json()
@@ -619,6 +629,8 @@ export default function SettingsPage() {
       }
       setNoShiftReminderMinutes(reminder)
       setNoShiftHardAlertMinutes(hardAlert)
+      setAutoCloseGraceHours(graceHours)
+      setContinuePromptWindowHours(continueWindow)
       toast({
         title: "Success",
         description: "Shift timing and reminder settings saved successfully",
@@ -1314,6 +1326,30 @@ export default function SettingsPage() {
                           min={2}
                           value={noShiftHardAlertMinutes}
                           onChange={(e) => setNoShiftHardAlertMinutes(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="auto-close-grace-hours">Auto-close grace after shift end (hours)</Label>
+                        <Input
+                          id="auto-close-grace-hours"
+                          type="number"
+                          min={1}
+                          max={12}
+                          value={autoCloseGraceHours}
+                          onChange={(e) => setAutoCloseGraceHours(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="continue-prompt-window-hours">Continue-shift prompt window (hours)</Label>
+                        <Input
+                          id="continue-prompt-window-hours"
+                          type="number"
+                          min={1}
+                          max={168}
+                          value={continuePromptWindowHours}
+                          onChange={(e) => setContinuePromptWindowHours(Number(e.target.value))}
                         />
                       </div>
                     </div>

@@ -3,10 +3,12 @@ import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSession
 import { listStaffShifts } from '@/lib/models/staff-shift'
 import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
 import { getShiftSettings } from '@/lib/models/shift-setting'
+import { autoCloseOverdueShiftForUser } from '@/lib/catha-shift-auto-close'
 
 export async function GET() {
   const auth = await requireShiftSessionUser()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  await autoCloseOverdueShiftForUser(auth.userId)
   const settings = await getShiftSettings()
   const shifts = await listStaffShifts({ staffUserId: auth.userId, limit: 30 })
   const emailsById = await getCathaUserEmailsByIds(shifts.map((s) => s.staffUserId))

@@ -38,10 +38,24 @@ export async function PUT(request: Request) {
       { status: 400 }
     )
   }
+  const autoCloseGraceHours = clamp(
+    body.autoCloseGraceHours,
+    1,
+    12,
+    current.autoCloseGraceHours
+  )
+  const continuePromptWindowHours = clamp(
+    body.continuePromptWindowHours,
+    1,
+    168,
+    current.continuePromptWindowHours
+  )
   const settings = await saveShiftSettings({
     ...body,
     noShiftReminderMinutes,
     noShiftHardAlertMinutes,
+    autoCloseGraceHours,
+    continuePromptWindowHours,
     updatedBy: auth.user.email,
   })
   return NextResponse.json({ ok: true, settings })

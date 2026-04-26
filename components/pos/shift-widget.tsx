@@ -13,10 +13,18 @@ type Shift = {
   _id: string
   status: string
   startedAt: string
+  endedAt?: string
   cashSales: number
   mpesaSales: number
   totalRevenue: number
   ordersServed: number
+}
+
+type ContinuePromptShift = {
+  _id: string
+  startedAt: string
+  endedAt?: string
+  status: string
 }
 
 type ShiftReminderSettings = {
@@ -35,9 +43,15 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   const [countedDrawerAmount, setCountedDrawerAmount] = useState("")
   const [notes, setNotes] = useState("")
   const [breakBusy, setBreakBusy] = useState(false)
+  const [clockInBusy, setClockInBusy] = useState(false)
+  const [closeBusy, setCloseBusy] = useState(false)
+  const [continueBusy, setContinueBusy] = useState(false)
   const [issueText, setIssueText] = useState("")
   const [showIssueDialog, setShowIssueDialog] = useState(false)
   const [showPendingDialog, setShowPendingDialog] = useState(false)
+  const [showContinueDialog, setShowContinueDialog] = useState(false)
+  const [continuePromptShift, setContinuePromptShift] = useState<ContinuePromptShift | null>(null)
+  const [dismissedContinuePromptId, setDismissedContinuePromptId] = useState<string>("")
   const [reminderSnoozeUntil, setReminderSnoozeUntil] = useState<number>(0)
   const [noShiftSinceMs, setNoShiftSinceMs] = useState<number | null>(null)
   const [nextShiftReminderAtMs, setNextShiftReminderAtMs] = useState<number | null>(null)
@@ -51,6 +65,20 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
     const response = await fetch("/api/catha/shifts/active", { cache: "no-store" })
     const data = await response.json()
     setShift(data.shift ?? null)
+    if (data?.autoClosedShift?._id) {
+      toast.warning("Shift auto-closed", {
+        description: "Your shift was auto-closed after passing scheduled clock-out by 2 hours.",
+      })
+    }
+    const prompt = (data?.continuePromptShift ?? null) as ContinuePromptShift | null
+    setContinuePromptShift(prompt)
+    if (
+      !data.shift &&
+      prompt?._id &&
+      prompt._id !== dismissedContinuePromptId
+    ) {
+      setShowContinueDialog(true)
+    }
     if (data?.shift?.status === "PENDING_CLOSURE") {
       const started = new Date(data.shift.startedAt)
       const today = new Date()
@@ -58,7 +86,7 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
       if (yesterdayPending) setShowPendingDialog(true)
     }
     setLoading(false)
-  }, [])
+  }, [dismissedContinuePromptId])
 
   const queuePending = useCallback((entry: { endpoint: string; body: Record<string, unknown> }) => {
     const raw = localStorage.getItem("catha_shift_pending_queue")
@@ -199,45 +227,92 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   }, [reminderSnoozeUntil])
 
   const onClockIn = async () => {
-    const response = await fetch("/api/catha/shifts/clock-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        openingFloat: Number(openingFloat || 0),
-        notes,
-      }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      queuePending({ endpoint: "/api/catha/shifts/clock-in", body: { openingFloat: Number(openingFloat || 0), notes } })
-      toast.error(data.error || "Failed to start shift")
-      return
+    if (clockInBusy) return
+    setClockInBusy(true)
+    try {
+      const response = await fetch("/api/catha/shifts/clock-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          openingFloat: Number(openingFloat || 0),
+          notes,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        queuePending({ endpoint: "/api/catha/shifts/clock-in", body: { openingFloat: Number(openingFloat || 0), notes } })
+        toast.error(data.error || "Failed to start shift")
+        return
+      }
+      setShift(data.shift)
+      setContinuePromptShift(null)
+      setShowContinueDialog(false)
+      setShowClockInDialog(false)
+      toast.success("Shift started")
+    } finally {
+      setClockInBusy(false)
     }
-    setShift(data.shift)
-    setShowClockInDialog(false)
-    toast.success("Shift started")
+  }
+
+  const onContinueShift = async () => {
+    if (!continuePromptShift?._id) return
+    if (continueBusy) return
+    setContinueBusy(true)
+    try {
+      const response = await fetch("/api/catha/shifts/continue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shiftId: continuePromptShift._id }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || "Failed to continue previous shift")
+        return
+      }
+      setShift(data.shift)
+      setShowContinueDialog(false)
+      setContinuePromptShift(null)
+      setDismissedContinuePromptId("")
+      toast.success("Previous shift resumed")
+    } finally {
+      setContinueBusy(false)
+    }
+  }
+
+  const onStartNewShiftFromPrompt = () => {
+    if (continuePromptShift?._id) {
+      setDismissedContinuePromptId(continuePromptShift._id)
+    }
+    setShowContinueDialog(false)
+    setShowClockInDialog(true)
   }
 
   const onCloseShift = async () => {
-    const response = await fetch("/api/catha/shifts/close", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        countedDrawerAmount: Number(countedDrawerAmount || 0),
-        notes,
-      }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      queuePending({ endpoint: "/api/catha/shifts/close", body: { countedDrawerAmount: Number(countedDrawerAmount || 0), notes } })
-      toast.error(data.error || "Failed to close shift")
-      return
+    if (closeBusy) return
+    setCloseBusy(true)
+    try {
+      const response = await fetch("/api/catha/shifts/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          countedDrawerAmount: Number(countedDrawerAmount || 0),
+          notes,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        queuePending({ endpoint: "/api/catha/shifts/close", body: { countedDrawerAmount: Number(countedDrawerAmount || 0), notes } })
+        toast.error(data.error || "Failed to close shift")
+        return
+      }
+      setShift(null)
+      setShowCloseDialog(false)
+      setCountedDrawerAmount("")
+      setNotes("")
+      toast.success("Shift closed")
+    } finally {
+      setCloseBusy(false)
     }
-    setShift(null)
-    setShowCloseDialog(false)
-    setCountedDrawerAmount("")
-    setNotes("")
-    toast.success("Shift closed")
   }
 
   const onBreakStart = async (breakType: "TEA" | "LUNCH" | "EMERGENCY") => {
@@ -403,11 +478,11 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
               />
             </div>
             <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
-              <Button variant="outline" onClick={() => setShowClockInDialog(false)}>
+              <Button variant="outline" onClick={() => setShowClockInDialog(false)} disabled={clockInBusy}>
                 Cancel
               </Button>
-              <Button className="sm:min-w-[132px]" onClick={onClockIn}>
-                Clock In Now
+              <Button className="sm:min-w-[132px]" onClick={onClockIn} disabled={clockInBusy}>
+                {clockInBusy ? "Clocking In..." : "Clock In Now"}
               </Button>
             </div>
           </div>
@@ -433,9 +508,11 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shift note" />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowCloseDialog(false)}>Cancel</Button>
-              <Button variant="outline" onClick={onSaveDraft}>Save Draft</Button>
-              <Button onClick={onCloseShift}>Confirm Close Shift</Button>
+              <Button variant="outline" onClick={() => setShowCloseDialog(false)} disabled={closeBusy}>Cancel</Button>
+              <Button variant="outline" onClick={onSaveDraft} disabled={closeBusy}>Save Draft</Button>
+              <Button onClick={onCloseShift} disabled={closeBusy}>
+                {closeBusy ? "Closing..." : "Confirm Close Shift"}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -480,6 +557,22 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
             <Button variant="outline" onClick={() => setShowPendingDialog(false)}>Resume Shift</Button>
             <Button variant="outline" onClick={() => setShowIssueDialog(true)}>Ask Manager</Button>
             <Button onClick={onClosePreviousShift}>Close Previous Shift</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showContinueDialog} onOpenChange={setShowContinueDialog}>
+        <DialogContent className="sm:max-w-lg rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">Previous shift was auto-closed</DialogTitle>
+            <DialogDescription>
+              Your previous shift was automatically closed because clock-out time was exceeded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onStartNewShiftFromPrompt} disabled={continueBusy}>Start New Shift</Button>
+            <Button onClick={onContinueShift} disabled={continueBusy}>
+              {continueBusy ? "Continuing..." : "Continue Previous Shift"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

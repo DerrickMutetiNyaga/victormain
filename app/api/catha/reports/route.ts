@@ -183,6 +183,42 @@ export async function GET(request: Request) {
     ])
     const profitSummary: ProfitSummary = { weekly, monthly, yearly }
 
+    const shiftRows = await db
+      .collection('staff_shifts')
+      .find({ startedAt: { $gte: start, $lte: end } })
+      .project({
+        status: 1,
+        scheduledEndAt: 1,
+        endedAt: 1,
+        metadata: 1,
+      })
+      .toArray()
+    const shiftBreakdown = shiftRows.reduce(
+      (acc, shift: any) => {
+        const status = String(shift.status || '').toUpperCase()
+        if (status === 'AUTO_CLOSED') {
+          if (shift?.metadata?.autoClosedBySystem) acc.autoClockouts += 1
+          else acc.manualManagerClose += 1
+        } else if (['COMPLETED', 'FORGOT_CLOCK_OUT', 'EARLY_EXIT', 'OVERTIME'].includes(status)) {
+          acc.normalClockouts += 1
+        }
+        if (shift?.metadata?.resumedAfterAutoClose) acc.continuedShifts += 1
+        const endedAt = shift?.endedAt ? new Date(shift.endedAt).getTime() : 0
+        const scheduledEndAt = shift?.scheduledEndAt ? new Date(shift.scheduledEndAt).getTime() : 0
+        if (endedAt && scheduledEndAt && endedAt > scheduledEndAt) {
+          acc.overtimeAfterScheduleMinutes += Math.max(0, Math.round((endedAt - scheduledEndAt) / 60000))
+        }
+        return acc
+      },
+      {
+        normalClockouts: 0,
+        manualManagerClose: 0,
+        autoClockouts: 0,
+        continuedShifts: 0,
+        overtimeAfterScheduleMinutes: 0,
+      }
+    )
+
     if (format === 'csv') {
       const lines: string[] = []
       lines.push(`Report Range,${start.toISOString()},${end.toISOString()}`)
@@ -194,6 +230,13 @@ export async function GET(request: Request) {
       lines.push(`Weekly Profit,${profitSummary.weekly.profit}`)
       lines.push(`Monthly Profit,${profitSummary.monthly.profit}`)
       lines.push(`Yearly Profit,${profitSummary.yearly.profit}`)
+      lines.push('')
+      lines.push('Shift Closures')
+      lines.push(`Normal Clockouts,${shiftBreakdown.normalClockouts}`)
+      lines.push(`Manual Manager Close,${shiftBreakdown.manualManagerClose}`)
+      lines.push(`Auto Clockouts,${shiftBreakdown.autoClockouts}`)
+      lines.push(`Continued Shifts,${shiftBreakdown.continuedShifts}`)
+      lines.push(`Overtime After Schedule (minutes),${shiftBreakdown.overtimeAfterScheduleMinutes}`)
       lines.push('')
       lines.push('Payment Method,Orders,Revenue')
       for (const p of paymentBreakdown) {
@@ -223,6 +266,7 @@ export async function GET(request: Request) {
         profitSummary,
         paymentBreakdown,
         topProducts,
+        shiftBreakdown,
       },
       { headers: { 'Cache-Control': 'no-store' } }
     )

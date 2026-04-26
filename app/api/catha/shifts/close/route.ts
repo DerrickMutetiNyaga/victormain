@@ -44,6 +44,7 @@ export async function POST(request: Request) {
 
   const closed = await transitionActiveShift(shift._id.toString(), {
     endedAt: now,
+    clockOutAt: now,
     status,
     countedDrawerAmount,
     expectedDrawerAmount,
@@ -56,6 +57,14 @@ export async function POST(request: Request) {
     discounts: stats.discounts,
     notes: String(body.notes ?? shift.notes ?? ''),
     pendingClosureAt: null,
+    metadata: {
+      ...(shift.metadata ?? {}),
+      financialLocked: true,
+      financialLockedAt: now.toISOString(),
+      closedByType: 'USER',
+      closeReason: 'normal_clockout',
+      clockOutAt: now.toISOString(),
+    },
   })
   if (!closed) {
     const latest = await getLatestStaffShiftByUserId(auth.userId)

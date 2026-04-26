@@ -3,6 +3,7 @@ import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSession
 import { listStaffShifts } from '@/lib/models/staff-shift'
 import { getShiftSettings } from '@/lib/models/shift-setting'
 import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
+import { autoCloseOverdueShifts } from '@/lib/catha-shift-auto-close'
 
 function rangeStart(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
@@ -14,6 +15,7 @@ export async function GET() {
   if (!['ADMIN', 'SUPER_ADMIN'].includes(auth.role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  await autoCloseOverdueShifts({ limit: 500 })
 
   const settings = await getShiftSettings()
   const shifts = await listStaffShifts({ from: rangeStart(60), limit: 2000 })

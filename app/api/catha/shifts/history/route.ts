@@ -3,6 +3,7 @@ import { aggregateShiftOrderStats, computeShiftLatenessBand, requireShiftSession
 import { listStaffShifts } from '@/lib/models/staff-shift'
 import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
 import { getShiftSettings } from '@/lib/models/shift-setting'
+import { autoCloseOverdueShiftForUser, autoCloseOverdueShifts } from '@/lib/catha-shift-auto-close'
 
 function getRangeStart(range: string): Date | undefined {
   const now = new Date()
@@ -15,6 +16,11 @@ function getRangeStart(range: string): Date | undefined {
 export async function GET(request: Request) {
   const auth = await requireShiftSessionUser()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (auth.role === 'ADMIN' || auth.role === 'SUPER_ADMIN') {
+    await autoCloseOverdueShifts({ limit: 500 })
+  } else {
+    await autoCloseOverdueShiftForUser(auth.userId)
+  }
 
   const url = new URL(request.url)
   const range = String(url.searchParams.get('range') ?? 'month')

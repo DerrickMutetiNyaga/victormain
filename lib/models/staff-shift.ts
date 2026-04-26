@@ -23,6 +23,7 @@ export interface StaffShift {
   deviceFingerprint: string
   startedAt: Date
   endedAt?: Date | null
+  clockOutAt?: Date | null
   scheduledStartAt: Date
   scheduledEndAt: Date
   openingFloat: number
@@ -54,6 +55,8 @@ export async function ensureStaffShiftIndexes() {
   const col = client.db(DB_NAME).collection(COLLECTION)
   await col.createIndex({ staffUserId: 1, startedAt: -1 }, { name: 'shift_staff_started_idx' })
   await col.createIndex({ status: 1, startedAt: -1 }, { name: 'shift_status_started_idx' })
+  await col.createIndex({ status: 1, scheduledEndAt: 1 }, { name: 'shift_status_scheduled_end_idx' })
+  await col.createIndex({ clockOutAt: -1 }, { name: 'shift_clockout_idx' })
   await col.createIndex({ businessDate: 1, staffUserId: 1 }, { name: 'shift_business_staff_idx' })
   await col.createIndex(
     { staffUserId: 1, status: 1 },
@@ -63,6 +66,23 @@ export async function ensureStaffShiftIndexes() {
       partialFilterExpression: { status: { $in: ['ACTIVE', 'PENDING_CLOSURE'] } },
     }
   )
+}
+
+export async function listOverdueOpenStaffShifts(params: {
+  overdueBefore: Date
+  limit?: number
+}): Promise<StaffShift[]> {
+  const client = await clientPromise
+  return client
+    .db(DB_NAME)
+    .collection<StaffShift>(COLLECTION)
+    .find({
+      status: { $in: ['ACTIVE', 'PENDING_CLOSURE'] },
+      scheduledEndAt: { $lt: params.overdueBefore },
+    })
+    .sort({ scheduledEndAt: 1 })
+    .limit(params.limit ?? 100)
+    .toArray()
 }
 
 export async function createStaffShift(

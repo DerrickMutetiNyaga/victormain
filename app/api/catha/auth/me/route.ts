@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getCathaSession } from '@/lib/catha-auth'
 import { getCathaUserByEmail } from '@/lib/models/catha-user'
 import { buildAllowedRoutes, isSuperAdmin } from '@/lib/catha-access'
+import { autoCloseOverdueShiftForUser, runFirstRequestBacklogSweep } from '@/lib/catha-shift-auto-close'
 
 const CACHE_CONTROL = 'no-store, no-cache, must-revalidate, max-age=0'
 
@@ -15,6 +16,9 @@ export async function GET() {
   headers.set('Pragma', 'no-cache')
 
   try {
+    await runFirstRequestBacklogSweep().catch((error: any) => {
+      console.error('[shift-auto-close] first-request auth sweep failed', error?.message || error)
+    })
     const session = await getCathaSession()
     if (!session?.user?.email) {
       return NextResponse.json({ ok: false, reason: 'unauthenticated' }, { status: 401, headers })
@@ -30,6 +34,9 @@ export async function GET() {
     const permissions = user.permissions
     const superAdmin = role === 'SUPER_ADMIN'
     const allowedRoutes = buildAllowedRoutes(permissions, superAdmin)
+
+    // On auth bootstrap, enforce overdue auto-close for the current user.
+    await autoCloseOverdueShiftForUser(user._id?.toString() || '')
 
     return NextResponse.json(
       {

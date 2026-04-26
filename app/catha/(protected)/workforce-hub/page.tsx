@@ -99,6 +99,15 @@ function statusMeta(row: ShiftRow | MyShift) {
   if (row.status === "ACTIVE" || !row.endedAt) {
     return { label: "Active", className: "bg-emerald-100 text-emerald-700 border-emerald-200", dotClass: "bg-emerald-500", pulse: true }
   }
+  if (row.status === "AUTO_CLOSED") {
+    return { label: "Auto Closed", className: "bg-rose-100 text-rose-700 border-rose-200", dotClass: "bg-rose-500", pulse: false }
+  }
+  if (row.status === "FORGOT_CLOCK_OUT") {
+    return { label: "Forgot Clock-out", className: "bg-amber-100 text-amber-700 border-amber-200", dotClass: "bg-amber-500", pulse: false }
+  }
+  if (row.status === "OVERTIME") {
+    return { label: "Overtime", className: "bg-violet-100 text-violet-700 border-violet-200", dotClass: "bg-violet-500", pulse: false }
+  }
   if (row.endedAt || row.status === "COMPLETED" || row.status === "AUTO_CLOSED") {
     return { label: "Clocked Out", className: "bg-slate-100 text-slate-700 border-slate-200", dotClass: "bg-slate-400", pulse: false }
   }

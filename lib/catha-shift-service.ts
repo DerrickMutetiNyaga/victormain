@@ -5,8 +5,12 @@ import { getDatabase } from '@/lib/mongodb'
 import { EAT_TIME_ZONE, evaluateLateness, getEatBusinessDate, getScheduledEatDate, isEarlyExit, isOvertime } from '@/lib/catha-shift-time'
 import type { StaffShiftStatus } from '@/lib/models/staff-shift'
 import { calculateShiftOrderStatsFromRows } from '@/lib/catha-shift-order-stats'
+import { runFirstRequestBacklogSweep } from '@/lib/catha-shift-auto-close'
 
 export async function requireShiftSessionUser() {
+  await runFirstRequestBacklogSweep().catch((error: any) => {
+    console.error('[shift-auto-close] first-request sweep failed', error?.message || error)
+  })
   const session = await getCathaSession()
   if (!session?.user?.email) return { ok: false as const, status: 401, error: 'Unauthorized' }
   const user = await getCathaUserByEmail(session.user.email)

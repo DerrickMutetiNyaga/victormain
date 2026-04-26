@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb'
 
 export type ShiftEventType =
   | 'CLOCK_IN'
+  | 'CLOCK_IN_CONTINUE'
   | 'CLOCK_OUT'
   | 'CLOSE'
   | 'BREAK_START'
