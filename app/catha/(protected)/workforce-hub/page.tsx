@@ -211,11 +211,11 @@ export default function WorkforceHubPage() {
   const { data: session } = useSession()
   const [activeTab, setActiveTab] = useState<TabValue>("overview")
   const [query, setQuery] = useState("")
-  const [range, setRange] = useState("today")
+  const [range, setRange] = useState("month")
   const [fromDate, setFromDate] = useState("")
   const [toDate, setToDate] = useState("")
   const [dashboardRows, setDashboardRows] = useState<ShiftRow[]>([])
-  const [historyRows, setHistoryRows] = useState<MyShift[]>([])
+  const [historyRows, setHistoryRows] = useState<ShiftRow[]>([])
   const [myRows, setMyRows] = useState<MyShift[]>([])
   const [cards, setCards] = useState<Record<string, unknown>>({})
   const [insights, setInsights] = useState<InsightsResponse>({})
@@ -244,7 +244,7 @@ export default function WorkforceHubPage() {
         setDashboardRows((dashboardData.rows ?? []) as ShiftRow[])
         setCards((dashboardData.cards ?? {}) as Record<string, unknown>)
         setMyRows((myData.shifts ?? []) as MyShift[])
-        setHistoryRows((historyData.shifts ?? []) as MyShift[])
+        setHistoryRows((historyData.shifts ?? []) as ShiftRow[])
         setInsights((insightsData ?? {}) as InsightsResponse)
       })
       .catch(() => {})
@@ -252,11 +252,12 @@ export default function WorkforceHubPage() {
   }, [range, fromDate, toDate])
 
   const filteredTeamRows = useMemo(() => {
-    const base = isAdmin ? dashboardRows : dashboardRows.filter((row) => row.status === "ACTIVE" || !row.endedAt)
+    const teamSource = dashboardRows.length > 0 ? dashboardRows : historyRows
+    const base = isAdmin ? teamSource : teamSource.filter((row) => row.status === "ACTIVE" || !row.endedAt)
     const q = query.trim().toLowerCase()
     if (!q) return base
     return base.filter((row) => row.staffName.toLowerCase().includes(q))
-  }, [dashboardRows, isAdmin, query])
+  }, [dashboardRows, historyRows, isAdmin, query])
 
   const attendanceScore = useMemo(() => {
     const source = dashboardRows.length ? dashboardRows : myRows

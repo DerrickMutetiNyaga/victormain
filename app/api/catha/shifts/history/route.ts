@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const url = new URL(request.url)
-  const range = String(url.searchParams.get('range') ?? 'week')
+  const range = String(url.searchParams.get('range') ?? 'month')
   const staffUserId = url.searchParams.get('staffUserId') || undefined
   const customFrom = url.searchParams.get('from')
   const from = customFrom ? new Date(customFrom) : getRangeStart(range)

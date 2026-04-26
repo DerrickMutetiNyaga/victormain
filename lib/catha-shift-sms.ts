@@ -1,4 +1,4 @@
-import { sendJabaSms } from '@/lib/jaba-sms'
+import { sendJabaSmsStrict } from '@/lib/jaba-sms'
 import { createShiftNotificationLog, ShiftNotificationType } from '@/lib/models/shift-notification-log'
 import { getShiftNotificationSettings } from '@/lib/models/shift-notification-settings'
 import { getDatabase } from '@/lib/mongodb'
@@ -64,7 +64,7 @@ export async function sendShiftNotification(
     }
   }
   try {
-    await sendJabaSms(message, recipients)
+    await sendJabaSmsStrict(message, recipients)
     await createShiftNotificationLog({
       shiftId,
       type,
