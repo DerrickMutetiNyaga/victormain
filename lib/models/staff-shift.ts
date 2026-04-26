@@ -42,6 +42,15 @@ export interface StaffShift {
   pendingClosureAt?: Date | null
   forcedClosedBy?: string
   forcedCloseReason?: string
+  closureContext?: {
+    strategy: 'expected' | 'now' | 'manual'
+    wasDelayed: boolean
+    overdueByMs: number
+    delayedByMs: number
+    crossedDayBoundary: boolean
+    decidedAt: string
+    isCorrectedClosure: boolean
+  }
   closedNotifiedAt?: Date | null
   closedNotifyAttemptCount?: number
   closedNotifyLastAttemptAt?: Date | null

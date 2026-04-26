@@ -13,11 +13,23 @@ type Shift = {
   _id: string
   status: string
   startedAt: string
+  scheduledEndAt?: string
   endedAt?: string
   cashSales: number
   mpesaSales: number
   totalRevenue: number
   ordersServed: number
+}
+
+type CloseAtStrategy = "expected" | "now" | "manual"
+type ShiftTiming = {
+  isDelayed: boolean
+  overdueByMs: number
+  delayedByMs: number
+  overdueByHuman: string
+  delayedByHuman: string
+  expectedCloseAt: string
+  now: string
 }
 
 type ContinuePromptShift = {
@@ -35,9 +47,11 @@ type ShiftReminderSettings = {
 export function ShiftWidget({ cashierName }: { cashierName: string }) {
   const router = useRouter()
   const [shift, setShift] = useState<Shift | null>(null)
+  const [shiftTiming, setShiftTiming] = useState<ShiftTiming | null>(null)
   const [loading, setLoading] = useState(true)
   const [showClockInDialog, setShowClockInDialog] = useState(false)
   const [showCloseDialog, setShowCloseDialog] = useState(false)
+  const [showDelayedCloseDialog, setShowDelayedCloseDialog] = useState(false)
   const [showClosingReminder, setShowClosingReminder] = useState(false)
   const [openingFloat, setOpeningFloat] = useState("")
   const [countedDrawerAmount, setCountedDrawerAmount] = useState("")
@@ -45,6 +59,8 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
   const [breakBusy, setBreakBusy] = useState(false)
   const [clockInBusy, setClockInBusy] = useState(false)
   const [closeBusy, setCloseBusy] = useState(false)
+  const [delayedCloseStrategy, setDelayedCloseStrategy] = useState<CloseAtStrategy>("expected")
+  const [manualDelayedCloseAt, setManualDelayedCloseAt] = useState("")
   const [continueBusy, setContinueBusy] = useState(false)
   const [issueText, setIssueText] = useState("")
   const [showIssueDialog, setShowIssueDialog] = useState(false)
@@ -65,6 +81,7 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
     const response = await fetch("/api/catha/shifts/active", { cache: "no-store" })
     const data = await response.json()
     setShift(data.shift ?? null)
+    setShiftTiming(data.timing ?? null)
     if (data?.autoClosedShift?._id) {
       toast.warning("Shift auto-closed", {
         description: "Your shift was auto-closed after passing scheduled clock-out by 2 hours.",
@@ -289,26 +306,47 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
 
   const onCloseShift = async () => {
     if (closeBusy) return
+    if (shiftTiming?.isDelayed) {
+      setShowDelayedCloseDialog(true)
+      return
+    }
+    await submitCloseShift("now")
+  }
+
+  const submitCloseShift = async (closeAtStrategy: CloseAtStrategy) => {
+    if (closeBusy) return
     setCloseBusy(true)
     try {
+      const payload: Record<string, unknown> = {
+        countedDrawerAmount: Number(countedDrawerAmount || 0),
+        notes,
+        closeAtStrategy,
+      }
+      if (closeAtStrategy === "manual") {
+        if (!manualDelayedCloseAt) {
+          toast.error("Please set a custom closing time")
+          return
+        }
+        payload.manualClosedAt = new Date(manualDelayedCloseAt).toISOString()
+      }
       const response = await fetch("/api/catha/shifts/close", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          countedDrawerAmount: Number(countedDrawerAmount || 0),
-          notes,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await response.json()
       if (!response.ok) {
-        queuePending({ endpoint: "/api/catha/shifts/close", body: { countedDrawerAmount: Number(countedDrawerAmount || 0), notes } })
+        queuePending({ endpoint: "/api/catha/shifts/close", body: payload })
         toast.error(data.error || "Failed to close shift")
         return
       }
       setShift(null)
       setShowCloseDialog(false)
+      setShowDelayedCloseDialog(false)
       setCountedDrawerAmount("")
       setNotes("")
+      setManualDelayedCloseAt("")
+      setDelayedCloseStrategy("expected")
       toast.success("Shift closed")
     } finally {
       setCloseBusy(false)
@@ -396,6 +434,20 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
     return "bg-slate-100 text-slate-700"
   }, [shift])
 
+  const delayedCloseInfo = useMemo(() => {
+    if (!shiftTiming?.isDelayed) return null
+    const expectedLabel = new Date(shiftTiming.expectedCloseAt).toLocaleString()
+    const totalHoursLate = Math.floor(shiftTiming.overdueByMs / (60 * 60 * 1000))
+    const crossesBusinessDayBoundary =
+      new Date(shiftTiming.now).toDateString() !== new Date(shiftTiming.expectedCloseAt).toDateString()
+    return {
+      expectedLabel,
+      delayedByLabel: shiftTiming.delayedByHuman,
+      totalHoursLate,
+      crossesBusinessDayBoundary,
+    }
+  }, [shiftTiming])
+
   return (
     <>
       <button
@@ -411,6 +463,11 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
         {shift ? (
           <div className="mt-1 text-[11px]">
             Sales KES {Math.round(shift.totalRevenue).toLocaleString()} | Orders {shift.ordersServed}
+          </div>
+        ) : null}
+        {shift && delayedCloseInfo ? (
+          <div className="mt-1 text-[11px] text-amber-700">
+            ⏱ Shift overdue by {delayedCloseInfo.delayedByLabel}
           </div>
         ) : null}
       </button>
@@ -529,6 +586,66 @@ export function ShiftWidget({ cashierName }: { cashierName: string }) {
             <Button variant="outline" onClick={() => { setReminderSnoozeUntil(Date.now() + 30 * 60 * 1000); setShowClosingReminder(false) }}>Extend Shift 30 mins</Button>
             <Button variant="outline" onClick={() => { setReminderSnoozeUntil(Date.now() + 10 * 60 * 1000); setShowClosingReminder(false) }}>Remind Later</Button>
             <Button onClick={() => { setShowClosingReminder(false); setShowCloseDialog(true) }}>Close Shift Now</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showDelayedCloseDialog} onOpenChange={setShowDelayedCloseDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delayed Shift Closure Detected</DialogTitle>
+            <DialogDescription>
+              This shift was supposed to close at {delayedCloseInfo?.expectedLabel || "the expected time"} and is being closed{" "}
+              {delayedCloseInfo ? `${delayedCloseInfo.totalHoursLate}h later` : "late"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">To keep reports accurate, choose how to proceed:</p>
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={delayedCloseStrategy === "expected"}
+                  onChange={() => setDelayedCloseStrategy("expected")}
+                />
+                <span>Close at correct time (Recommended)</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input type="radio" checked={delayedCloseStrategy === "now"} onChange={() => setDelayedCloseStrategy("now")} />
+                <span>Close with current time</span>
+              </label>
+              {delayedCloseStrategy === "now" && delayedCloseInfo?.crossesBusinessDayBoundary ? (
+                <p className="text-xs text-amber-700">
+                  ⚠️ This will move part of yesterday&apos;s shift into today&apos;s reports.
+                </p>
+              ) : null}
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={delayedCloseStrategy === "manual"}
+                  onChange={() => setDelayedCloseStrategy("manual")}
+                />
+                <span>Adjust manually</span>
+              </label>
+              {delayedCloseStrategy === "manual" ? (
+                <div className="pt-1">
+                  <Label htmlFor="manual-close-at">Custom closing time</Label>
+                  <Input
+                    id="manual-close-at"
+                    type="datetime-local"
+                    value={manualDelayedCloseAt}
+                    onChange={(e) => setManualDelayedCloseAt(e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowDelayedCloseDialog(false)} disabled={closeBusy}>
+                Cancel
+              </Button>
+              <Button onClick={() => submitCloseShift(delayedCloseStrategy)} disabled={closeBusy}>
+                {closeBusy ? "Closing..." : "Continue"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

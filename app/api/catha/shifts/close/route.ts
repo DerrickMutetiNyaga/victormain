@@ -6,6 +6,14 @@ import { sendShiftNotification } from '@/lib/catha-shift-sms'
 import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
 import { closeShiftAndNotify } from '@/lib/catha-shift-lifecycle'
 
+const DELAYED_CLOSE_GRACE_HOURS = 2
+
+function isDelayedClosure(scheduledEndAt: Date | undefined | null, now: Date): boolean {
+  if (!scheduledEndAt) return false
+  const threshold = new Date(scheduledEndAt).getTime() + DELAYED_CLOSE_GRACE_HOURS * 60 * 60 * 1000
+  return now.getTime() > threshold
+}
+
 export async function POST(request: Request) {
   const auth = await requireShiftSessionUser()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
@@ -30,7 +38,42 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}))
   const now = new Date()
-  const stats = await aggregateShiftOrderStats(auth.name, shift.startedAt, now, [auth.email], auth.userId)
+  const expectedCloseTime = new Date(shift.scheduledEndAt)
+  const delayedClosure = isDelayedClosure(shift.scheduledEndAt, now)
+  const closeAtStrategy = String(body.closeAtStrategy ?? '').trim()
+  let closedAt = now
+  if (closeAtStrategy === 'expected') {
+    closedAt = expectedCloseTime
+  } else if (closeAtStrategy === 'manual') {
+    const parsedManual = new Date(String(body.manualClosedAt ?? ''))
+    if (!Number.isFinite(parsedManual.getTime())) {
+      return NextResponse.json({ error: 'Invalid manual closing time' }, { status: 400 })
+    }
+    closedAt = parsedManual
+  } else if (closeAtStrategy === 'now' || closeAtStrategy === '') {
+    closedAt = now
+  } else {
+    return NextResponse.json({ error: 'Invalid close strategy' }, { status: 400 })
+  }
+  if (closedAt.getTime() < new Date(shift.startedAt).getTime()) {
+    return NextResponse.json({ error: 'Closing time cannot be before shift start' }, { status: 400 })
+  }
+  if (delayedClosure && closeAtStrategy === '') {
+    return NextResponse.json({ error: 'Delayed closure choice is required' }, { status: 400 })
+  }
+  const overdueByMs = Math.max(0, now.getTime() - expectedCloseTime.getTime())
+  const delayedByMs = Math.max(0, overdueByMs - DELAYED_CLOSE_GRACE_HOURS * 60 * 60 * 1000)
+  const crossedDayBoundary = now.toDateString() !== expectedCloseTime.toDateString()
+  const closureContext = {
+    strategy: (closeAtStrategy || 'now') as 'expected' | 'now' | 'manual',
+    wasDelayed: delayedClosure,
+    overdueByMs,
+    delayedByMs,
+    crossedDayBoundary,
+    decidedAt: now.toISOString(),
+    isCorrectedClosure: closeAtStrategy === 'expected' && delayedClosure,
+  }
+  const stats = await aggregateShiftOrderStats(auth.name, shift.startedAt, closedAt, [auth.email], auth.userId)
   const countedDrawerAmount = Number(body.countedDrawerAmount ?? shift.countedDrawerAmount ?? 0)
   if (!Number.isFinite(countedDrawerAmount) || countedDrawerAmount < 0 || countedDrawerAmount > 10_000_000) {
     return NextResponse.json({ error: 'Invalid counted drawer amount' }, { status: 400 })
@@ -39,14 +82,14 @@ export async function POST(request: Request) {
   const drawerVariance = countedDrawerAmount - expectedDrawerAmount
   const status = deriveShiftStatusOnClose({
     scheduledEndAt: shift.scheduledEndAt,
-    endedAt: now,
+    endedAt: closedAt,
     pendingClosure: shift.status === 'PENDING_CLOSURE',
   })
 
   const closeMessage = (() => {
     const timing = analyzeShiftTiming({
       scheduledEndTime: shift.scheduledEndAt,
-      actualEndTime: now,
+      actualEndTime: closedAt,
     })
     const timingLine =
       timing.closeStatus === 'ON_TIME'
@@ -66,8 +109,8 @@ export async function POST(request: Request) {
     closeMessage,
     eventMetadata: { status, drawerVariance, expectedDrawerAmount, countedDrawerAmount, requestId },
     updates: {
-      endedAt: now,
-      clockOutAt: now,
+      endedAt: closedAt,
+      clockOutAt: closedAt,
       status,
       countedDrawerAmount,
       expectedDrawerAmount,
@@ -86,8 +129,10 @@ export async function POST(request: Request) {
         financialLockedAt: now.toISOString(),
         closedByType: 'USER',
         closeReason: 'normal_clockout',
-        clockOutAt: now.toISOString(),
+        clockOutAt: closedAt.toISOString(),
+        closeAtStrategy: closureContext.strategy,
       },
+      closureContext: shift.closureContext ?? closureContext,
     },
   })
   if (closeResult.replay) {

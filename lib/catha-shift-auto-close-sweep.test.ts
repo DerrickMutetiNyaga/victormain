@@ -2,12 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetShiftSettings = vi.fn()
 const mockListOverdueOpenStaffShifts = vi.fn()
-const mockTransitionActiveShift = vi.fn()
 const mockGetActiveStaffShiftByUserId = vi.fn()
 const mockGetLatestStaffShiftByUserId = vi.fn()
 const mockAggregateShiftOrderStats = vi.fn()
-const mockCreateShiftEvent = vi.fn()
-const mockSendShiftNotification = vi.fn()
+const mockCloseShiftAndNotify = vi.fn()
 const mockQueueAuditLog = vi.fn()
 
 vi.mock('@/lib/models/shift-setting', () => ({
@@ -16,7 +14,6 @@ vi.mock('@/lib/models/shift-setting', () => ({
 
 vi.mock('@/lib/models/staff-shift', () => ({
   listOverdueOpenStaffShifts: mockListOverdueOpenStaffShifts,
-  transitionActiveShift: mockTransitionActiveShift,
   getActiveStaffShiftByUserId: mockGetActiveStaffShiftByUserId,
   getLatestStaffShiftByUserId: mockGetLatestStaffShiftByUserId,
 }))
@@ -25,12 +22,8 @@ vi.mock('@/lib/catha-shift-service', () => ({
   aggregateShiftOrderStats: mockAggregateShiftOrderStats,
 }))
 
-vi.mock('@/lib/models/shift-event', () => ({
-  createShiftEvent: mockCreateShiftEvent,
-}))
-
-vi.mock('@/lib/catha-shift-sms', () => ({
-  sendShiftNotification: mockSendShiftNotification,
+vi.mock('@/lib/catha-shift-lifecycle', () => ({
+  closeShiftAndNotify: mockCloseShiftAndNotify,
 }))
 
 vi.mock('@/lib/catha-audit-log', () => ({
@@ -67,13 +60,13 @@ describe('auto close backlog sweep', () => {
       refunds: 0,
       discounts: 0,
     })
-    mockTransitionActiveShift.mockImplementation(async (id: string, updates: any) => ({
-      _id: { toString: () => id },
-      ...makeShift(id),
-      ...updates,
+    mockCloseShiftAndNotify.mockImplementation(async ({ shift, updates }: any) => ({
+      replay: false,
+      shift: {
+        ...shift,
+        ...updates,
+      },
     }))
-    mockCreateShiftEvent.mockResolvedValue({})
-    mockSendShiftNotification.mockResolvedValue(undefined)
   })
 
   it('processes 100 overdue shifts in batches', async () => {
@@ -82,7 +75,7 @@ describe('auto close backlog sweep', () => {
     const { autoCloseOverdueShifts } = await import('@/lib/catha-shift-auto-close')
     const result = await autoCloseOverdueShifts({ limit: 100, batchSize: 25 })
     expect(result.autoClosed).toHaveLength(100)
-    expect(mockTransitionActiveShift).toHaveBeenCalledTimes(100)
+    expect(mockCloseShiftAndNotify).toHaveBeenCalledTimes(100)
   })
 
   it('rerun is idempotent when no overdue records remain', async () => {
@@ -92,15 +85,19 @@ describe('auto close backlog sweep', () => {
     const second = await autoCloseOverdueShifts({ limit: 100, batchSize: 25 })
     expect(first.autoClosed).toHaveLength(0)
     expect(second.autoClosed).toHaveLength(0)
-    expect(mockTransitionActiveShift).toHaveBeenCalledTimes(0)
+    expect(mockCloseShiftAndNotify).toHaveBeenCalledTimes(0)
   })
 
   it('continues processing when one record fails', async () => {
     const batch = [makeShift('1'), makeShift('2'), makeShift('3')]
     mockListOverdueOpenStaffShifts.mockResolvedValueOnce(batch).mockResolvedValueOnce([])
-    mockTransitionActiveShift.mockImplementation(async (id: string, updates: any) => {
+    mockCloseShiftAndNotify.mockImplementation(async ({ shift, updates }: any) => {
+      const id = shift?._id?.toString?.() ?? ''
       if (id === '2') throw new Error('boom')
-      return { _id: { toString: () => id }, ...makeShift(id), ...updates }
+      return {
+        replay: false,
+        shift: { ...shift, ...updates },
+      }
     })
     const { autoCloseOverdueShifts } = await import('@/lib/catha-shift-auto-close')
     const result = await autoCloseOverdueShifts({ limit: 10, batchSize: 10 })

@@ -31,14 +31,27 @@ function normalizeConfig(raw: Awaited<ReturnType<typeof getShiftSettings>>): Aut
 async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Promise<StaffShift | null> {
   if (!shift._id) return null
   const now = new Date()
-  const stats = await aggregateShiftOrderStats(shift.staffName, shift.startedAt, now, [], shift.staffUserId)
+  const closedAt = shift.scheduledEndAt ? new Date(shift.scheduledEndAt) : now
+  const overdueByMs = Math.max(0, now.getTime() - closedAt.getTime())
+  const delayedByMs = Math.max(0, overdueByMs - 2 * 60 * 60 * 1000)
+  const crossedDayBoundary = now.toDateString() !== closedAt.toDateString()
+  const closureContext = {
+    strategy: 'expected' as const,
+    wasDelayed: true,
+    overdueByMs,
+    delayedByMs,
+    crossedDayBoundary,
+    decidedAt: now.toISOString(),
+    isCorrectedClosure: true,
+  }
+  const stats = await aggregateShiftOrderStats(shift.staffName, shift.startedAt, closedAt, [], shift.staffUserId)
   const expectedDrawerAmount = Number(shift.openingFloat || 0) + Number(stats.cashSales || 0)
   const countedDrawerAmount = Number(shift.countedDrawerAmount ?? expectedDrawerAmount)
   const drawerVariance = countedDrawerAmount - expectedDrawerAmount
-  const durationMinutes = Math.max(0, Math.round((now.getTime() - new Date(shift.startedAt).getTime()) / 60000))
+  const durationMinutes = Math.max(0, Math.round((closedAt.getTime() - new Date(shift.startedAt).getTime()) / 60000))
   const overtimeMinutes = Math.max(
     0,
-    Math.round((now.getTime() - new Date(shift.scheduledEndAt).getTime()) / 60000)
+    Math.round((closedAt.getTime() - new Date(shift.scheduledEndAt).getTime()) / 60000)
   )
 
   const closeResult = await closeShiftAndNotify({
@@ -52,8 +65,8 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
     eventMetadata: { autoClosed: true, workedDurationMinutes: durationMinutes, overtimeMinutes },
     updates: {
       status: 'AUTO_CLOSED',
-      endedAt: now,
-      clockOutAt: now,
+      endedAt: closedAt,
+      clockOutAt: closedAt,
       countedDrawerAmount,
       expectedDrawerAmount,
       drawerVariance,
@@ -69,12 +82,14 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
         autoClosedBySystem: true,
         closedByType: 'SYSTEM',
         closeReason: 'overdue_auto_close_backlog',
+        closeAtStrategy: closureContext.strategy,
         financialLocked: true,
         financialLockedAt: now.toISOString(),
         workedDurationMinutes: durationMinutes,
         overtimeMinutes,
-        clockOutAt: now.toISOString(),
+        clockOutAt: closedAt.toISOString(),
       },
+      closureContext: shift.closureContext ?? closureContext,
     },
   })
   if (closeResult.replay) return null
