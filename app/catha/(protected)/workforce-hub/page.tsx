@@ -102,7 +102,7 @@ type KpiValueKind = "number" | "currency" | "percent"
 
 function formatFreshnessLabel(lastFetchedAt: number, nowTick: number) {
   const elapsedSeconds = Math.max(0, Math.floor((nowTick - lastFetchedAt) / 1000))
-  if (elapsedSeconds < 10) return "Updated just now"
+  if (elapsedSeconds < 30) return "Live • updating"
   if (elapsedSeconds < 60) return `Updated ${elapsedSeconds}s ago`
   return `Updated ${Math.floor(elapsedSeconds / 60)}m ago`
 }
@@ -137,6 +137,56 @@ function AnimatedKpiValue({
   return <>{Math.round(display).toLocaleString()}</>
 }
 
+function MiniSparkline({ from, to, id }: { from: string; to: string; id: string }) {
+  return (
+    <svg viewBox="0 0 100 40" className="h-9 w-20 opacity-90">
+      <defs>
+        <linearGradient id={id} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={from} />
+          <stop offset="100%" stopColor={to} />
+        </linearGradient>
+      </defs>
+      <path
+        d="M2 30 C16 6, 30 35, 44 20 C58 5, 72 35, 86 14 C92 8, 96 18, 98 8"
+        fill="none"
+        stroke={`url(#${id})`}
+        strokeWidth="2.8"
+        strokeLinecap="round"
+        strokeDasharray="140"
+        strokeDashoffset="140"
+      >
+        <animate attributeName="stroke-dashoffset" from="140" to="0" dur="0.5s" fill="freeze" />
+      </path>
+    </svg>
+  )
+}
+
+function MiniBars({ color }: { color: string }) {
+  return (
+    <div className="flex h-10 items-end gap-1">
+      {[8, 14, 6, 18, 24].map((h, i) => (
+        <div key={i} className="w-1.5 rounded-full" style={{ height: `${h}px`, backgroundColor: color, opacity: 0.55 + i * 0.08 }} />
+      ))}
+    </div>
+  )
+}
+
+function ProgressRing({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value))
+  const radius = 22
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - pct / 100)
+  return (
+    <div className="relative h-14 w-14">
+      <svg className="h-14 w-14 -rotate-90" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={radius} stroke="#D1FAE5" strokeWidth="6" fill="none" />
+        <circle cx="28" cy="28" r={radius} stroke="#10B981" strokeWidth="6" fill="none" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-slate-700">{pct}%</span>
+    </div>
+  )
+}
+
 const tabOptions = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "my-shifts", label: "My Shifts", icon: User },
@@ -146,6 +196,7 @@ const tabOptions = [
 ] as const
 
 type TabValue = (typeof tabOptions)[number]["id"]
+type TrendTone = "positive" | "negative" | "neutral"
 
 const kenyaTimeFormat: Intl.DateTimeFormatOptions = { timeZone: "Africa/Nairobi" }
 
@@ -369,9 +420,18 @@ export default function WorkforceHubPage() {
 
   const attendanceScore = Number(cards.attendanceScoreMonth ?? 100)
   const hoursWorkedTodayMs = Number(cards.hoursWorkedTodayMs ?? 0)
-  const hoursWorkedToday = `${(hoursWorkedTodayMs / 3_600_000).toFixed(1)}h`
+  const hoursWorkedYesterdayMs = Number(cards.hoursWorkedYesterdayMs ?? 0)
+  const hoursWorkedDeltaHours = (hoursWorkedTodayMs - hoursWorkedYesterdayMs) / 3_600_000
   const activeDelta = Number(cards.activeShiftsDeltaFromYesterday ?? 0)
   const activeDeltaLabel = `${activeDelta >= 0 ? "+" : ""}${activeDelta} from yesterday`
+  const revenueToday = Number(cards.revenueToday ?? 0)
+  const revenueYesterday = Number(cards.revenueYesterday ?? 0)
+  const revenueVsYesterdayPct = revenueYesterday > 0 ? ((revenueToday - revenueYesterday) / revenueYesterday) * 100 : revenueToday > 0 ? 100 : 0
+  const lateMonth = Number(cards.lateArrivalsMonth ?? 0)
+  const lateLastMonth = Number(cards.lateArrivalsLastMonth ?? 0)
+  const pendingToday = Number(cards.pendingClockOutsToday ?? 0)
+  const pendingYesterday = Number(cards.pendingClockOutsYesterday ?? 0)
+  const attendanceLastMonth = Number(cards.attendanceScoreLastMonth ?? attendanceScore)
 
   const kpis = useMemo(
     () => [
@@ -382,9 +442,10 @@ export default function WorkforceHubPage() {
         icon: Users,
         tint: "from-emerald-500 to-green-400",
         trend: activeDeltaLabel,
+        trendTone: (activeDelta >= 0 ? "positive" : "negative") as TrendTone,
         scope: "today" as KpiScope,
         emptyLabel: "No activity today",
-        onClick: () => setActiveTab("team-shifts" as TabValue),
+        onClick: () => router.push("/catha/staff-shifts"),
       },
       {
         title: "Hours Worked",
@@ -393,30 +454,43 @@ export default function WorkforceHubPage() {
         icon: Clock3,
         tint: "from-sky-500 to-cyan-400",
         trend: "Across all shifts today",
+        trendDelta: `${hoursWorkedDeltaHours >= 0 ? "+" : ""}${hoursWorkedDeltaHours.toFixed(1)}h vs yesterday`,
+        trendTone: (hoursWorkedDeltaHours >= 0 ? "positive" : "negative") as TrendTone,
         scope: "today" as KpiScope,
         suffix: "h",
         emptyLabel: "No activity today",
+        onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
       },
       {
         title: "Revenue Today",
-        value: Number(cards.revenueToday ?? 0),
+        value: revenueToday,
         valueKind: "currency" as KpiValueKind,
         icon: TrendingUp,
         tint: "from-indigo-500 to-violet-500",
         trend: "Live service revenue today",
+        trendDelta: `${revenueVsYesterdayPct >= 0 ? "+" : ""}${Math.round(revenueVsYesterdayPct)}% vs yesterday`,
+        trendTone: (revenueVsYesterdayPct >= 0 ? "positive" : "negative") as TrendTone,
         scope: "today" as KpiScope,
         emptyLabel: "No activity today",
+        onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
       },
       {
         title: "Late Arrivals",
-        value: Number(cards.lateArrivalsMonth ?? 0),
+        value: lateMonth,
         valueKind: "number" as KpiValueKind,
         icon: AlertTriangle,
         tint: "from-amber-500 to-orange-500",
         trend: "This month performance",
+        trendDelta: `${lateMonth - lateLastMonth >= 0 ? "+" : ""}${lateMonth - lateLastMonth} vs last month`,
+        trendTone: (lateMonth - lateLastMonth <= 0 ? "positive" : "negative") as TrendTone,
+        urgencyLabel: lateMonth > 0 ? "⚠ Needs attention" : "",
         scope: "month" as KpiScope,
-        emptyLabel: "No late arrivals this month",
-        onClick: () => setActiveTab("history" as TabValue),
+        emptyLabel: "All staff on time",
+        onClick: () => {
+          router.push("/catha/workforce-hub?tab=history&filter=late")
+          setRange("month")
+          setActiveTab("history" as TabValue)
+        },
       },
       {
         title: "Attendance Score",
@@ -425,21 +499,51 @@ export default function WorkforceHubPage() {
         icon: ShieldCheck,
         tint: "from-teal-500 to-emerald-500",
         trend: "On-time consistency this month",
+        trendDelta: `${attendanceScore - attendanceLastMonth >= 0 ? "+" : ""}${attendanceScore - attendanceLastMonth}% vs last month`,
+        trendTone: (attendanceScore - attendanceLastMonth >= 0 ? "positive" : "negative") as TrendTone,
         scope: "month" as KpiScope,
+        onClick: () => {
+          router.push("/catha/workforce-hub?tab=analytics&view=attendance")
+          setActiveTab("analytics" as TabValue)
+        },
       },
       {
         title: "Pending Clock-outs",
-        value: Number(cards.pendingClockOutsToday ?? 0),
+        value: pendingToday,
         valueKind: "number" as KpiValueKind,
         icon: TimerReset,
         tint: "from-slate-500 to-slate-400",
         trend: "Awaiting shift closure",
+        trendDelta: `${pendingToday - pendingYesterday >= 0 ? "+" : ""}${pendingToday - pendingYesterday} vs yesterday`,
+        trendTone: (pendingToday - pendingYesterday <= 0 ? "positive" : "negative") as TrendTone,
+        urgencyLabel: pendingToday > 0 ? "Pending action" : "",
         scope: "today" as KpiScope,
-        emptyLabel: "No pending clock-outs",
-        onClick: () => setActiveTab("team-shifts" as TabValue),
+        emptyLabel: "No pending actions",
+        onClick: () => {
+          router.push("/catha/workforce-hub?tab=team-shifts&filter=unresolved")
+          setRange("today")
+          setActiveTab("team-shifts" as TabValue)
+        },
       },
     ],
-    [activeDeltaLabel, attendanceScore, cards, hoursWorkedMs]
+    [
+      activeDelta,
+      activeDeltaLabel,
+      attendanceLastMonth,
+      attendanceScore,
+      cards,
+      hoursWorkedDeltaHours,
+      hoursWorkedTodayMs,
+      lateLastMonth,
+      lateMonth,
+      pendingToday,
+      pendingYesterday,
+      revenueToday,
+      revenueVsYesterdayPct,
+      router,
+      setActiveTab,
+      setRange,
+    ]
   )
 
   function exportCsv() {
@@ -507,61 +611,61 @@ export default function WorkforceHubPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/70 p-2 sm:p-4 lg:p-6">
-      <div className="mx-auto max-w-[1600px] space-y-3 lg:space-y-4">
-        <section className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/70 p-2 sm:p-4 lg:p-6">
+      <div className="mx-auto max-w-[1600px] space-y-4 lg:space-y-5">
+        <section className="rounded-3xl border border-slate-200/80 bg-white/95 p-4 shadow-sm sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">Workforce Hub</h1>
-                <Badge className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                  <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                  Today Live Pulse
-                </Badge>
-              </div>
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Workforce Hub</h1>
               <p className="text-sm text-slate-600">Live attendance, payroll and shift operations.</p>
             </div>
-            <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
-                {formatFreshnessLabel(lastFetchedAt, freshnessNowTick)}
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-slate-600">
+              <Badge className="rounded-full border border-emerald-200 bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">
+                <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                Today Live Pulse
+              </Badge>
+              <div className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2">
                 Active staff: <span className="font-semibold text-slate-900">{Number(cards.activeShiftsNow ?? 0)}</span>
               </div>
+              <div className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2">
+                Revenue today: <span className="font-semibold text-slate-900">{formatCurrency(Number(cards.revenueToday ?? 0))}</span>
+              </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
-                Revenue: <span className="font-semibold text-slate-900">{formatCurrency(revenueTotal)}</span>
+                {formatFreshnessLabel(lastFetchedAt, freshnessNowTick)}
               </div>
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search employee..."
+                placeholder="Search employee, shift or department..."
                 aria-label="Search employee"
-                className="h-10 rounded-xl border-slate-200 bg-white pl-9"
+                className="h-12 rounded-xl border-slate-200 bg-slate-50 pl-9"
               />
             </div>
             <Button
               variant="outline"
               onClick={() => setFiltersOpen((prev) => !prev)}
-              className="h-10 rounded-xl border-slate-200 bg-white px-3"
+              className="h-12 rounded-xl border-slate-200 bg-white px-4"
             >
               <Filter className="mr-2 h-4 w-4" />
               Filters
               <ChevronDown className={`ml-2 h-4 w-4 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
             </Button>
-            <Button variant="outline" onClick={exportCsv} className="hidden h-10 rounded-xl border-slate-200 bg-white px-3 md:inline-flex">
+            <Button variant="outline" onClick={exportCsv} className="hidden h-12 rounded-xl border-slate-200 bg-white px-4 md:inline-flex">
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
-            <Button className="hidden h-10 rounded-xl bg-emerald-600 px-4 text-white hover:bg-emerald-700 md:inline-flex">
+            <Button className="hidden h-12 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700 md:inline-flex">
               <Plus className="mr-2 h-4 w-4" />
               Add Shift
             </Button>
+          </div>
           </div>
 
           <AnimatePresence initial={false}>
@@ -617,19 +721,23 @@ export default function WorkforceHubPage() {
           </AnimatePresence>
         </section>
 
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {kpis.map((kpi) => (
             <motion.div key={kpi.title} whileHover={{ y: -2 }}>
               <Card
                 onClick={kpi.onClick}
                 role={kpi.onClick ? "button" : undefined}
                 tabIndex={kpi.onClick ? 0 : -1}
-                className={`relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${
-                  kpi.onClick ? "cursor-pointer transition hover:border-slate-300" : ""
-                }`}
+                className={`relative overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm ${
+                  kpi.onClick ? "cursor-pointer transition hover:border-slate-300 hover:shadow-md" : ""
+                } ${kpi.title === "Late Arrivals" && Number(kpi.value) > 0 ? "ring-1 ring-amber-200/70 shadow-amber-100/80" : ""}`}
               >
                 <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${kpi.tint}`} />
-                <CardContent className="p-3">
+                {kpi.title === "Late Arrivals" && Number(kpi.value) > 0 ? (
+                  <div className="pointer-events-none absolute inset-0 animate-pulse bg-amber-100/10" />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white to-gray-50/90" />
+                <CardContent className="p-5 min-h-[174px]">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">{kpi.title}</p>
@@ -642,24 +750,45 @@ export default function WorkforceHubPage() {
                       >
                         {kpi.scope === "today" ? "Today" : "This Month"}
                       </Badge>
-                      {Number(kpi.value) === 0 && kpi.emptyLabel ? (
-                        <p className="mt-1 text-sm font-medium text-slate-500">{kpi.emptyLabel}</p>
-                      ) : (
-                        <motion.p
-                          key={`${kpi.title}-${String(kpi.value)}`}
-                          initial={{ opacity: 0.45 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.35 }}
-                          className="mt-1 text-2xl font-semibold leading-none text-slate-900"
-                        >
-                          <AnimatedKpiValue value={Number(kpi.value)} kind={kpi.valueKind} />
-                          {kpi.suffix ? kpi.suffix : null}
-                        </motion.p>
-                      )}
+                      <motion.p
+                        key={`${kpi.title}-${String(kpi.value)}`}
+                        initial={{ opacity: 0.45 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.35 }}
+                        className={`mt-1 text-2xl font-semibold leading-none ${Number(kpi.value) === 0 ? "text-slate-400" : "text-slate-900"}`}
+                      >
+                        <AnimatedKpiValue value={Number(kpi.value)} kind={kpi.valueKind} />
+                        {kpi.suffix ? kpi.suffix : null}
+                      </motion.p>
+                      {Number(kpi.value) === 0 && kpi.emptyLabel ? <p className="mt-1 text-sm font-medium text-slate-500">{kpi.emptyLabel}</p> : null}
                       <p className="mt-1.5 truncate text-[11px] text-slate-500">{kpi.trend}</p>
+                      {"trendDelta" in kpi && kpi.trendDelta ? (
+                        <p className={`mt-1 text-[11px] font-medium ${kpi.trendTone === "positive" ? "text-emerald-600" : kpi.trendTone === "negative" ? "text-rose-600" : "text-slate-500"}`}>
+                          {kpi.trendDelta}
+                        </p>
+                      ) : null}
+                      {"urgencyLabel" in kpi && kpi.urgencyLabel ? <p className="mt-1 text-[11px] font-semibold text-amber-600">{kpi.urgencyLabel}</p> : null}
                     </div>
-                    <div className={`rounded-lg bg-gradient-to-r p-2 text-white shadow-sm ${kpi.tint}`}>
-                      <kpi.icon className="h-4 w-4" />
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={`relative rounded-xl bg-gradient-to-r p-2.5 text-white shadow-sm ${kpi.tint}`}>
+                        <kpi.icon className="h-5 w-5" />
+                        {kpi.title === "Pending Clock-outs" && Number(kpi.value) > 0 ? (
+                          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
+                        ) : null}
+                      </div>
+                      {kpi.title === "Late Arrivals" ? (
+                        <MiniBars color="#F59E0B" />
+                      ) : kpi.title === "Attendance Score" ? (
+                        <ProgressRing value={Number(cards.attendanceScoreMonth ?? 0)} />
+                      ) : kpi.title === "Pending Clock-outs" ? (
+                        <Clock3 className="h-6 w-6 text-slate-500" />
+                      ) : kpi.title === "Revenue Today" ? (
+                        <MiniSparkline id="spark-revenue" from="#6366F1" to="#A855F7" />
+                      ) : kpi.title === "Hours Worked" ? (
+                        <MiniSparkline id="spark-hours" from="#0EA5E9" to="#3B82F6" />
+                      ) : (
+                        <MiniSparkline id="spark-active" from="#10B981" to="#34D399" />
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -667,15 +796,27 @@ export default function WorkforceHubPage() {
             </motion.div>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-          <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-700">Today (live data)</Badge>
-          <Badge className="border border-blue-200 bg-blue-100 text-blue-700">This Month (performance)</Badge>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-gray-600">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-700">Today (live data)</Badge>
+            <Badge className="border border-blue-200 bg-blue-100 text-blue-700">This Month (performance)</Badge>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full bg-emerald-500 ${formatFreshnessLabel(lastFetchedAt, freshnessNowTick).startsWith("Live") ? "animate-pulse" : ""}`} />
+              {formatFreshnessLabel(lastFetchedAt, freshnessNowTick)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Auto refresh: 30s
+            </span>
+          </div>
         </div>
 
         <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <CardHeader className="pb-2">
             <div className="overflow-x-auto">
-              <div className="relative flex w-max min-w-full items-center gap-1 rounded-xl bg-slate-100 p-1">
+              <div className="relative flex w-max min-w-full items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                 {visibleTabs.map((tab) => {
                   const Icon = tab.icon
                   const active = activeTab === tab.id
@@ -684,15 +825,10 @@ export default function WorkforceHubPage() {
                       key={tab.id}
                       variant="ghost"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`relative h-9 overflow-hidden rounded-lg px-3 text-sm transition-all ${active ? "text-slate-900" : "text-slate-600 hover:text-slate-900"}`}
+                      className={`relative h-10 overflow-hidden rounded-xl px-4 text-sm transition-all ${
+                        active ? "bg-emerald-50 text-emerald-700" : "text-slate-600 hover:text-slate-900"
+                      }`}
                     >
-                      {active ? (
-                        <motion.span
-                          layoutId="workforce-segment-active-pill"
-                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                          className="absolute inset-0 rounded-xl bg-white shadow-sm"
-                        />
-                      ) : null}
                       <Icon className="relative z-10 mr-2 h-4 w-4" />
                       <span className="relative z-10 flex items-center">
                         {tab.label}

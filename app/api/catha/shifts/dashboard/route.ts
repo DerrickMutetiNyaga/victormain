@@ -19,13 +19,18 @@ type TodayMetrics = {
   activeStaff: number
   activeStaffDeltaFromYesterday: number
   hoursWorkedMs: number
+  hoursWorkedYesterdayMs: number
   revenue: number
+  revenueYesterday: number
   pendingClockOuts: number
+  pendingClockOutsYesterday: number
 }
 
 type MonthlyMetrics = {
   lateArrivals: number
+  lateArrivalsLastMonth: number
   attendanceScore: number
+  attendanceScoreLastMonth: number
 }
 
 let todayMetricsCache: { expiresAt: number; value: TodayMetrics } | null = null
@@ -65,6 +70,7 @@ async function computeTodayMetrics(now: Date): Promise<TodayMetrics> {
   const sameTimeYesterday = new Date(nowTs - 24 * 60 * 60 * 1000)
   const db = await getDatabase('infusion_jaba')
   const shiftsToday = await listStaffShifts({ from: dayStart, to: now, limit: 2000 })
+  const shiftsYesterdayToNow = await listStaffShifts({ from: yesterdayStart, to: sameTimeYesterday, limit: 2000 })
 
   const activeStaff = shiftsToday.filter((s) => s.status === 'ACTIVE').length
   const activeYesterday = (
@@ -92,6 +98,19 @@ async function computeTodayMetrics(now: Date): Promise<TodayMetrics> {
     const scheduledEnd = toDate(shift.scheduledEndAt)
     return !shift.endedAt || (scheduledEnd ? scheduledEnd <= now : true)
   }).length
+  const hoursWorkedYesterdayMs = shiftsYesterdayToNow.reduce((sum, shift) => {
+    const started = toDate(shift.startedAt)
+    if (!started) return sum
+    const ended = toDate(shift.endedAt)
+    return sum + durationWithinWindowMs(started, ended, yesterdayStart, sameTimeYesterday)
+  }, 0)
+  const pendingClockOutsYesterday = shiftsYesterdayToNow.filter((shift) => {
+    if (shift.status !== 'ACTIVE') return false
+    const started = toDate(shift.startedAt)
+    if (!started || started < yesterdayStart) return false
+    const scheduledEnd = toDate(shift.scheduledEndAt)
+    return !shift.endedAt || (scheduledEnd ? scheduledEnd <= sameTimeYesterday : true)
+  }).length
 
   const revenueAgg = await db
     .collection('orders')
@@ -110,22 +129,46 @@ async function computeTodayMetrics(now: Date): Promise<TodayMetrics> {
       },
     ])
     .toArray()
+  const revenueYesterdayAgg = await db
+    .collection('orders')
+    .aggregate<{ totalRevenue: number }>([
+      {
+        $match: {
+          createdAt: { $gte: yesterdayStart, $lte: sameTimeYesterday },
+          status: { $in: ['completed', 'COMPLETED'] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: { $ifNull: ['$total', 0] } },
+        },
+      },
+    ])
+    .toArray()
   const revenue = Number(revenueAgg[0]?.totalRevenue ?? 0)
+  const revenueYesterday = Number(revenueYesterdayAgg[0]?.totalRevenue ?? 0)
 
   return {
     activeStaff,
     activeStaffDeltaFromYesterday: activeStaff - activeYesterday,
     hoursWorkedMs,
+    hoursWorkedYesterdayMs,
     revenue,
+    revenueYesterday,
     pendingClockOuts,
+    pendingClockOutsYesterday,
   }
 }
 
 async function computeMonthlyMetrics(now: Date): Promise<MonthlyMetrics> {
   const monthStart = startOfEatMonth(now)
+  const lastMonthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1, -3, 0, 0, 0))
+  const monthEndExclusive = monthStart
   const settings = await getShiftSettings()
   const graceMs = Math.max(0, Number(settings.graceLatenessMinutes ?? 0)) * 60_000
   const monthlyShifts = await listStaffShifts({ from: monthStart, to: now, limit: 5000 })
+  const lastMonthShifts = await listStaffShifts({ from: lastMonthStart, to: monthEndExclusive, limit: 5000 })
   const totalShifts = monthlyShifts.length
   const lateArrivals = monthlyShifts.filter((shift) => {
     const started = toDate(shift.startedAt)
@@ -138,10 +181,23 @@ async function computeMonthlyMetrics(now: Date): Promise<MonthlyMetrics> {
     if (!started || !scheduledStart) return false
     return started.getTime() <= scheduledStart.getTime() + graceMs
   }).length
+  const lateArrivalsLastMonth = lastMonthShifts.filter((shift) => {
+    const started = toDate(shift.startedAt)
+    const scheduledStart = toDate(shift.scheduledStartAt)
+    return !!started && !!scheduledStart && started.getTime() > scheduledStart.getTime()
+  }).length
+  const onTimeLastMonth = lastMonthShifts.filter((shift) => {
+    const started = toDate(shift.startedAt)
+    const scheduledStart = toDate(shift.scheduledStartAt)
+    if (!started || !scheduledStart) return false
+    return started.getTime() <= scheduledStart.getTime() + graceMs
+  }).length
 
   return {
     lateArrivals,
+    lateArrivalsLastMonth,
     attendanceScore: totalShifts ? Math.round((onTimeShifts / totalShifts) * 100) : 100,
+    attendanceScoreLastMonth: lastMonthShifts.length ? Math.round((onTimeLastMonth / lastMonthShifts.length) * 100) : 100,
   }
 }
 
@@ -217,10 +273,15 @@ export async function GET(request: Request) {
       activeShiftsNow: todayMetrics.activeStaff,
       activeShiftsDeltaFromYesterday: todayMetrics.activeStaffDeltaFromYesterday,
       hoursWorkedTodayMs: todayMetrics.hoursWorkedMs,
+      hoursWorkedYesterdayMs: todayMetrics.hoursWorkedYesterdayMs,
       revenueToday: todayMetrics.revenue,
+      revenueYesterday: todayMetrics.revenueYesterday,
       pendingClockOutsToday: todayMetrics.pendingClockOuts,
+      pendingClockOutsYesterday: todayMetrics.pendingClockOutsYesterday,
       lateArrivalsMonth: monthlyMetrics.lateArrivals,
+      lateArrivalsLastMonth: monthlyMetrics.lateArrivalsLastMonth,
       attendanceScoreMonth: monthlyMetrics.attendanceScore,
+      attendanceScoreLastMonth: monthlyMetrics.attendanceScoreLastMonth,
       noShows: 0,
       bestPerformerToday: top?.staffName ?? null,
       earlyExits: earlyExit,
