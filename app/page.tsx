@@ -245,6 +245,14 @@ export default function HomePage() {
           <div className="pointer-events-none absolute -right-20 bottom-10 h-52 w-52 rounded-full bg-[var(--brand-orange)]/20 blur-3xl" />
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
             <div className="mx-auto max-w-3xl text-center">
+              <div className="mb-6 flex justify-center">
+                <SiteLogo
+                  priority
+                  className="h-14 w-[200px] sm:h-16 sm:w-[230px]"
+                  imageClassName="drop-shadow-[0_7px_16px_rgba(0,0,0,0.35)]"
+                />
+              </div>
+
               {/* Badge */}
               <div className="inline-flex items-center gap-2 rounded-full bg-[#f4e5c5]/10 border border-[var(--brand-green)]/35 px-4 py-2 text-sm font-medium text-[#f4e5c5] shadow-sm mb-6 hover-lift backdrop-blur-md">
                 <Sparkles className="h-4 w-4" />
