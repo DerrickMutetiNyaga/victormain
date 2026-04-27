@@ -97,6 +97,46 @@ type ShiftNotificationHealth = {
   successRate: number
 }
 
+type KpiScope = "today" | "month"
+type KpiValueKind = "number" | "currency" | "percent"
+
+function formatFreshnessLabel(lastFetchedAt: number, nowTick: number) {
+  const elapsedSeconds = Math.max(0, Math.floor((nowTick - lastFetchedAt) / 1000))
+  if (elapsedSeconds < 10) return "Updated just now"
+  if (elapsedSeconds < 60) return `Updated ${elapsedSeconds}s ago`
+  return `Updated ${Math.floor(elapsedSeconds / 60)}m ago`
+}
+
+function AnimatedKpiValue({
+  value,
+  kind,
+}: {
+  value: number
+  kind: KpiValueKind
+}) {
+  const [display, setDisplay] = useState(value)
+
+  useEffect(() => {
+    const start = display
+    const end = value
+    const durationMs = 420
+    const startedAt = performance.now()
+    let raf = 0
+    const step = (ts: number) => {
+      const progress = Math.min(1, (ts - startedAt) / durationMs)
+      const next = start + (end - start) * progress
+      setDisplay(next)
+      if (progress < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+
+  if (kind === "currency") return <>{`KES ${Math.round(display).toLocaleString()}`}</>
+  if (kind === "percent") return <>{`${Math.round(display)}%`}</>
+  return <>{Math.round(display).toLocaleString()}</>
+}
+
 const tabOptions = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "my-shifts", label: "My Shifts", icon: User },
@@ -244,6 +284,8 @@ export default function WorkforceHubPage() {
   const [cards, setCards] = useState<Record<string, unknown>>({})
   const [insights, setInsights] = useState<InsightsResponse>({})
   const [loading, setLoading] = useState(true)
+  const [lastFetchedAt, setLastFetchedAt] = useState<number>(Date.now())
+  const [freshnessNowTick, setFreshnessNowTick] = useState<number>(Date.now())
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [notificationHealth, setNotificationHealth] = useState<ShiftNotificationHealth>({
     recent: [],
@@ -284,10 +326,16 @@ export default function WorkforceHubPage() {
         setMyRows((myData.shifts ?? []) as MyShift[])
         setHistoryRows((historyData.shifts ?? []) as ShiftRow[])
         setInsights((insightsData ?? {}) as InsightsResponse)
+        setLastFetchedAt(Date.now())
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [range, fromDate, toDate])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setFreshnessNowTick(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -319,46 +367,79 @@ export default function WorkforceHubPage() {
     return base.filter((row) => row.staffName.toLowerCase().includes(q))
   }, [dashboardRows, historyRows, isAdmin, query])
 
-  const attendanceScore = useMemo(() => {
-    const source = dashboardRows.length ? dashboardRows : myRows
-    if (!source.length) return 100
-    const lateCount = source.filter((s) => ["yellow", "orange", "red"].includes(String(s.metadata?.latenessBand ?? ""))).length
-    return Math.max(0, Math.round(((source.length - lateCount) / source.length) * 100))
-  }, [dashboardRows, myRows])
+  const attendanceScore = Number(cards.attendanceScoreMonth ?? 100)
+  const hoursWorkedTodayMs = Number(cards.hoursWorkedTodayMs ?? 0)
+  const hoursWorkedToday = `${(hoursWorkedTodayMs / 3_600_000).toFixed(1)}h`
+  const activeDelta = Number(cards.activeShiftsDeltaFromYesterday ?? 0)
+  const activeDeltaLabel = `${activeDelta >= 0 ? "+" : ""}${activeDelta} from yesterday`
 
   const kpis = useMemo(
     () => [
-      { title: "Active Staff", value: Number(cards.activeShiftsNow ?? 0), icon: Users, tint: "from-emerald-500 to-green-400", trend: "+2 from yesterday" },
+      {
+        title: "Active Staff",
+        value: Number(cards.activeShiftsNow ?? 0),
+        valueKind: "number" as KpiValueKind,
+        icon: Users,
+        tint: "from-emerald-500 to-green-400",
+        trend: activeDeltaLabel,
+        scope: "today" as KpiScope,
+        emptyLabel: "No activity today",
+        onClick: () => setActiveTab("team-shifts" as TabValue),
+      },
       {
         title: "Hours Worked",
-        value: `${(
-          dashboardRows.reduce(
-            (sum, row) => sum + (new Date(row.endedAt ?? Date.now()).getTime() - new Date(row.startedAt).getTime()),
-            0
-          ) / 3_600_000
-        ).toFixed(1)}h`,
+        value: Number(hoursWorkedTodayMs / 3_600_000),
+        valueKind: "number" as KpiValueKind,
         icon: Clock3,
         tint: "from-sky-500 to-cyan-400",
-        trend: "Across all live shifts",
+        trend: "Across all shifts today",
+        scope: "today" as KpiScope,
+        suffix: "h",
+        emptyLabel: "No activity today",
       },
       {
         title: "Revenue Today",
-        value: `KES ${dashboardRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0).toLocaleString()}`,
+        value: Number(cards.revenueToday ?? 0),
+        valueKind: "currency" as KpiValueKind,
         icon: TrendingUp,
         tint: "from-indigo-500 to-violet-500",
-        trend: "Live service revenue",
+        trend: "Live service revenue today",
+        scope: "today" as KpiScope,
+        emptyLabel: "No activity today",
       },
-      { title: "Late Arrivals", value: Number(cards.lateArrivalsToday ?? 0), icon: AlertTriangle, tint: "from-amber-500 to-orange-500", trend: "Needs immediate review" },
-      { title: "Attendance Score", value: `${attendanceScore}%`, icon: ShieldCheck, tint: "from-teal-500 to-emerald-500", trend: "On-time consistency today" },
+      {
+        title: "Late Arrivals",
+        value: Number(cards.lateArrivalsMonth ?? 0),
+        valueKind: "number" as KpiValueKind,
+        icon: AlertTriangle,
+        tint: "from-amber-500 to-orange-500",
+        trend: "This month performance",
+        scope: "month" as KpiScope,
+        emptyLabel: "No late arrivals this month",
+        onClick: () => setActiveTab("history" as TabValue),
+      },
+      {
+        title: "Attendance Score",
+        value: attendanceScore,
+        valueKind: "percent" as KpiValueKind,
+        icon: ShieldCheck,
+        tint: "from-teal-500 to-emerald-500",
+        trend: "On-time consistency this month",
+        scope: "month" as KpiScope,
+      },
       {
         title: "Pending Clock-outs",
-        value: dashboardRows.filter((r) => r.status === "ACTIVE" && !r.endedAt).length,
+        value: Number(cards.pendingClockOutsToday ?? 0),
+        valueKind: "number" as KpiValueKind,
         icon: TimerReset,
         tint: "from-slate-500 to-slate-400",
         trend: "Awaiting shift closure",
+        scope: "today" as KpiScope,
+        emptyLabel: "No pending clock-outs",
+        onClick: () => setActiveTab("team-shifts" as TabValue),
       },
     ],
-    [cards, dashboardRows, attendanceScore]
+    [activeDeltaLabel, attendanceScore, cards, hoursWorkedMs]
   )
 
   function exportCsv() {
@@ -441,6 +522,9 @@ export default function WorkforceHubPage() {
               <p className="text-sm text-slate-600">Live attendance, payroll and shift operations.</p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+                {formatFreshnessLabel(lastFetchedAt, freshnessNowTick)}
+              </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
                 Active staff: <span className="font-semibold text-slate-900">{Number(cards.activeShiftsNow ?? 0)}</span>
               </div>
@@ -536,15 +620,42 @@ export default function WorkforceHubPage() {
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {kpis.map((kpi) => (
             <motion.div key={kpi.title} whileHover={{ y: -2 }}>
-              <Card className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <Card
+                onClick={kpi.onClick}
+                role={kpi.onClick ? "button" : undefined}
+                tabIndex={kpi.onClick ? 0 : -1}
+                className={`relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${
+                  kpi.onClick ? "cursor-pointer transition hover:border-slate-300" : ""
+                }`}
+              >
                 <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${kpi.tint}`} />
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">{kpi.title}</p>
-                      <motion.p initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="mt-1 text-2xl font-semibold leading-none text-slate-900">
-                        {kpi.value}
-                      </motion.p>
+                      <Badge
+                        className={`mt-1 border px-2 py-0.5 text-[10px] ${
+                          kpi.scope === "today"
+                            ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+                            : "border-blue-200 bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {kpi.scope === "today" ? "Today" : "This Month"}
+                      </Badge>
+                      {Number(kpi.value) === 0 && kpi.emptyLabel ? (
+                        <p className="mt-1 text-sm font-medium text-slate-500">{kpi.emptyLabel}</p>
+                      ) : (
+                        <motion.p
+                          key={`${kpi.title}-${String(kpi.value)}`}
+                          initial={{ opacity: 0.45 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.35 }}
+                          className="mt-1 text-2xl font-semibold leading-none text-slate-900"
+                        >
+                          <AnimatedKpiValue value={Number(kpi.value)} kind={kpi.valueKind} />
+                          {kpi.suffix ? kpi.suffix : null}
+                        </motion.p>
+                      )}
                       <p className="mt-1.5 truncate text-[11px] text-slate-500">{kpi.trend}</p>
                     </div>
                     <div className={`rounded-lg bg-gradient-to-r p-2 text-white shadow-sm ${kpi.tint}`}>
@@ -555,6 +666,10 @@ export default function WorkforceHubPage() {
               </Card>
             </motion.div>
           ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-700">Today (live data)</Badge>
+          <Badge className="border border-blue-200 bg-blue-100 text-blue-700">This Month (performance)</Badge>
         </div>
 
         <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">

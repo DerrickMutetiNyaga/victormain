@@ -4,6 +4,8 @@ import { listStaffShifts } from '@/lib/models/staff-shift'
 import { getCathaUserEmailsByIds } from '@/lib/models/catha-user'
 import { getShiftSettings } from '@/lib/models/shift-setting'
 import { autoCloseOverdueShifts } from '@/lib/catha-shift-auto-close'
+import { getDatabase } from '@/lib/mongodb'
+import { getEatBusinessDate } from '@/lib/catha-shift-time'
 
 function getRangeStart(range: string): Date | undefined {
   const now = new Date()
@@ -11,6 +13,136 @@ function getRangeStart(range: string): Date | undefined {
   if (range === 'week') return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   if (range === 'month') return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   return undefined
+}
+
+type TodayMetrics = {
+  activeStaff: number
+  activeStaffDeltaFromYesterday: number
+  hoursWorkedMs: number
+  revenue: number
+  pendingClockOuts: number
+}
+
+type MonthlyMetrics = {
+  lateArrivals: number
+  attendanceScore: number
+}
+
+let todayMetricsCache: { expiresAt: number; value: TodayMetrics } | null = null
+let monthlyMetricsCache: { expiresAt: number; value: MonthlyMetrics } | null = null
+
+const ONE_MINUTE_MS = 60_000
+const TEN_MINUTES_MS = 10 * ONE_MINUTE_MS
+
+function startOfEatDay(now: Date) {
+  const businessDate = getEatBusinessDate(now)
+  const [year, month, day] = businessDate.split('-').map((n) => Number(n))
+  return new Date(Date.UTC(year, month - 1, day, -3, 0, 0, 0))
+}
+
+function startOfEatMonth(now: Date) {
+  const businessDate = getEatBusinessDate(now)
+  const [year, month] = businessDate.split('-').map((n) => Number(n))
+  return new Date(Date.UTC(year, month - 1, 1, -3, 0, 0, 0))
+}
+
+function durationWithinWindowMs(start: Date, end: Date | null, windowStart: Date, windowEnd: Date) {
+  const effectiveStart = Math.max(start.getTime(), windowStart.getTime())
+  const effectiveEnd = Math.min((end ?? windowEnd).getTime(), windowEnd.getTime())
+  return Math.max(0, effectiveEnd - effectiveStart)
+}
+
+function toDate(value: Date | string | null | undefined) {
+  if (!value) return null
+  const d = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+async function computeTodayMetrics(now: Date): Promise<TodayMetrics> {
+  const nowTs = now.getTime()
+  const dayStart = startOfEatDay(now)
+  const yesterdayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000)
+  const sameTimeYesterday = new Date(nowTs - 24 * 60 * 60 * 1000)
+  const db = await getDatabase('infusion_jaba')
+  const shiftsToday = await listStaffShifts({ from: dayStart, to: now, limit: 2000 })
+
+  const activeStaff = shiftsToday.filter((s) => s.status === 'ACTIVE').length
+  const activeYesterday = (
+    await db
+      .collection('staff_shifts')
+      .find({
+        startedAt: { $gte: yesterdayStart, $lte: sameTimeYesterday },
+        status: 'ACTIVE',
+      })
+      .project({ _id: 1 })
+      .toArray()
+  ).length
+
+  const hoursWorkedMs = shiftsToday.reduce((sum, shift) => {
+    const started = toDate(shift.startedAt)
+    if (!started) return sum
+    const ended = toDate(shift.endedAt)
+    return sum + durationWithinWindowMs(started, ended, dayStart, now)
+  }, 0)
+
+  const pendingClockOuts = shiftsToday.filter((shift) => {
+    if (shift.status !== 'ACTIVE') return false
+    const started = toDate(shift.startedAt)
+    if (!started || started < dayStart) return false
+    const scheduledEnd = toDate(shift.scheduledEndAt)
+    return !shift.endedAt || (scheduledEnd ? scheduledEnd <= now : true)
+  }).length
+
+  const revenueAgg = await db
+    .collection('orders')
+    .aggregate<{ totalRevenue: number }>([
+      {
+        $match: {
+          createdAt: { $gte: dayStart, $lte: now },
+          status: { $in: ['completed', 'COMPLETED'] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: { $ifNull: ['$total', 0] } },
+        },
+      },
+    ])
+    .toArray()
+  const revenue = Number(revenueAgg[0]?.totalRevenue ?? 0)
+
+  return {
+    activeStaff,
+    activeStaffDeltaFromYesterday: activeStaff - activeYesterday,
+    hoursWorkedMs,
+    revenue,
+    pendingClockOuts,
+  }
+}
+
+async function computeMonthlyMetrics(now: Date): Promise<MonthlyMetrics> {
+  const monthStart = startOfEatMonth(now)
+  const settings = await getShiftSettings()
+  const graceMs = Math.max(0, Number(settings.graceLatenessMinutes ?? 0)) * 60_000
+  const monthlyShifts = await listStaffShifts({ from: monthStart, to: now, limit: 5000 })
+  const totalShifts = monthlyShifts.length
+  const lateArrivals = monthlyShifts.filter((shift) => {
+    const started = toDate(shift.startedAt)
+    const scheduledStart = toDate(shift.scheduledStartAt)
+    return !!started && !!scheduledStart && started.getTime() > scheduledStart.getTime()
+  }).length
+  const onTimeShifts = monthlyShifts.filter((shift) => {
+    const started = toDate(shift.startedAt)
+    const scheduledStart = toDate(shift.scheduledStartAt)
+    if (!started || !scheduledStart) return false
+    return started.getTime() <= scheduledStart.getTime() + graceMs
+  }).length
+
+  return {
+    lateArrivals,
+    attendanceScore: totalShifts ? Math.round((onTimeShifts / totalShifts) * 100) : 100,
+  }
 }
 
 export async function GET(request: Request) {
@@ -62,18 +194,50 @@ export async function GET(request: Request) {
     acc[shift.staffName] = (acc[shift.staffName] ?? 0) + Number(shift.totalRevenue || 0)
     return acc
   }, {})
-  return NextResponse.json({
+  const now = new Date()
+  const nowMs = now.getTime()
+  const todayMetrics =
+    todayMetricsCache && todayMetricsCache.expiresAt > nowMs
+      ? todayMetricsCache.value
+      : await computeTodayMetrics(now).then((value) => {
+          todayMetricsCache = { value, expiresAt: nowMs + ONE_MINUTE_MS }
+          return value
+        })
+  const monthlyMetrics =
+    monthlyMetricsCache && monthlyMetricsCache.expiresAt > nowMs
+      ? monthlyMetricsCache.value
+      : await computeMonthlyMetrics(now).then((value) => {
+          monthlyMetricsCache = { value, expiresAt: nowMs + TEN_MINUTES_MS }
+          return value
+        })
+
+  const response = NextResponse.json({
     ok: true,
     cards: {
-      activeShiftsNow: active,
-      lateArrivalsToday: late,
+      activeShiftsNow: todayMetrics.activeStaff,
+      activeShiftsDeltaFromYesterday: todayMetrics.activeStaffDeltaFromYesterday,
+      hoursWorkedTodayMs: todayMetrics.hoursWorkedMs,
+      revenueToday: todayMetrics.revenue,
+      pendingClockOutsToday: todayMetrics.pendingClockOuts,
+      lateArrivalsMonth: monthlyMetrics.lateArrivals,
+      attendanceScoreMonth: monthlyMetrics.attendanceScore,
       noShows: 0,
       bestPerformerToday: top?.staffName ?? null,
       earlyExits: earlyExit,
       cashShortages: shortages,
       overtimeStaff: overtime,
       totalSalesByCashier,
+      scope: {
+        today: { from: startOfEatDay(now).toISOString(), to: now.toISOString() },
+        month: { from: startOfEatMonth(now).toISOString(), to: now.toISOString() },
+      },
+      legacy: {
+        activeShiftsNow: active,
+        lateArrivalsToday: late,
+      },
     },
     rows: enrichedShifts,
   })
+  response.headers.set('Cache-Control', 'private, max-age=30')
+  return response
 }
