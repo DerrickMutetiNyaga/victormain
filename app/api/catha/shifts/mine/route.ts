@@ -8,6 +8,7 @@ import { autoCloseOverdueShiftForUser } from '@/lib/catha-shift-auto-close'
 export async function GET() {
   const auth = await requireShiftSessionUser()
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  const isCashier = String(auth.role || '').toUpperCase() === 'CASHIER'
   await autoCloseOverdueShiftForUser(auth.userId)
   const settings = await getShiftSettings()
   const shifts = await listStaffShifts({ staffUserId: auth.userId, limit: 30 })
@@ -21,7 +22,7 @@ export async function GET() {
         [emailsById[shift.staffUserId]],
         shift.staffUserId
       )
-      return {
+      const base = {
         ...shift,
         metadata: {
           ...(shift.metadata ?? {}),
@@ -33,6 +34,20 @@ export async function GET() {
         totalRevenue: liveStats.totalRevenue,
         refunds: liveStats.refunds,
         discounts: liveStats.discounts,
+      }
+      if (!isCashier) return base
+      return {
+        ...base,
+        ordersServed: undefined,
+        cashSales: undefined,
+        mpesaSales: undefined,
+        totalRevenue: undefined,
+        refunds: undefined,
+        discounts: undefined,
+        openingFloat: undefined,
+        expectedDrawerAmount: undefined,
+        countedDrawerAmount: undefined,
+        drawerVariance: undefined,
       }
     })
   )

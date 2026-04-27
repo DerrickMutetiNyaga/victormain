@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireSuperAdminApi } from '@/lib/catha-auth'
-import { getAllCathaUsers, updateCathaUser, type CathaUserRole, type CathaUserStatus } from '@/lib/models/catha-user'
+import { getAllCathaUsers, getCathaUserByEmail, updateCathaUser, type CathaUserRole, type CathaUserStatus } from '@/lib/models/catha-user'
 import { CathaPermissions, normalizePermissions } from '@/lib/catha-permissions-model'
+import { getPhoneValidationError, normalizeKenyaPhone } from '@/lib/phone-utils'
 
 const VALID_ROLES: CathaUserRole[] = ['SUPER_ADMIN', 'ADMIN', 'CASHIER', 'PENDING']
 const VALID_STATUSES: CathaUserStatus[] = ['ACTIVE', 'PENDING', 'DISABLED']
@@ -11,6 +12,7 @@ function formatUser(u: Awaited<ReturnType<typeof getAllCathaUsers>>[0]) {
     id: u._id?.toString(),
     email: u.email,
     name: u.name,
+    phoneNumber: u.phoneNumber ?? null,
     image: u.image ?? null,
     role: u.role,
     status: u.status,
@@ -40,6 +42,8 @@ export async function PATCH(request: Request) {
     const body = await request.json()
     const email = typeof body.email === 'string' ? body.email.trim() : ''
     if (!email) return NextResponse.json({ success: false, error: 'email required' }, { status: 400 })
+    const existing = await getCathaUserByEmail(email)
+    if (!existing) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
 
     const updates: Parameters<typeof updateCathaUser>[1] = {}
     if (VALID_STATUSES.includes(body.status)) updates.status = body.status
@@ -47,9 +51,27 @@ export async function PATCH(request: Request) {
     if (body.permissions && typeof body.permissions === 'object') {
       updates.permissions = normalizePermissions(body.permissions as CathaPermissions)
     }
+    const resolvedRole = String((updates.role ?? existing.role) || '').toUpperCase()
+    if (resolvedRole === 'CASHIER') {
+      const basePermissions = normalizePermissions(updates.permissions ?? existing.permissions ?? {})
+      basePermissions.myShift = { view: true, add: false, edit: false, delete: false }
+      updates.permissions = basePermissions
+    }
+
+    if (body.phoneNumber !== undefined) {
+      const rawPhone = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : ''
+      const validationError = getPhoneValidationError(rawPhone)
+      if (validationError) {
+        return NextResponse.json({ success: false, error: validationError }, { status: 400 })
+      }
+      updates.phoneNumber = normalizeKenyaPhone(rawPhone)
+    }
 
     if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ success: false, error: 'No valid updates (status, role, or permissions)' }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: 'No valid updates (status, role, permissions, or phoneNumber)' },
+        { status: 400 }
+      )
     }
 
     const user = await updateCathaUser(email, updates)

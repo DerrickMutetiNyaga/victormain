@@ -40,6 +40,7 @@ export interface CathaNavSection {
 
 export const CATHA_NAV_ITEMS: CathaNavItem[] = [
   { name: 'Dashboard', href: '/catha', icon: LayoutDashboard, color: 'indigo', permissionKey: 'system.dashboard' },
+  { name: 'My Shift', href: '/catha/my-shift', icon: Clock3, color: 'emerald', permissionKey: 'system.myShift' },
   { name: 'POS Sales', href: '/catha/pos', icon: ShoppingCart, color: 'emerald', permissionKey: 'sales.posSales' },
   { name: 'Orders', href: '/catha/orders', icon: Receipt, color: 'indigo', permissionKey: 'sales.orders' },
   { name: 'Tables', href: '/catha/tables', icon: Grid3X3, color: 'blue', permissionKey: 'operations.tables' },
@@ -71,6 +72,7 @@ export const CATHA_NAV_SECTIONS: CathaNavSection[] = [
     title: 'Main',
     items: [
       { name: 'Dashboard', href: '/catha', icon: LayoutDashboard, permissionKey: 'system.dashboard' },
+      { name: 'My Shift', href: '/catha/my-shift', icon: Clock3, permissionKey: 'system.myShift' },
       { name: 'POS Sales', href: '/catha/pos', icon: ShoppingCart, permissionKey: 'sales.posSales' },
       { name: 'Orders', href: '/catha/orders', icon: Receipt, permissionKey: 'sales.orders' },
       { name: 'Tables', href: '/catha/tables', icon: Grid3X3, permissionKey: 'operations.tables' },

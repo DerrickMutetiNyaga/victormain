@@ -3,6 +3,7 @@ import { ensureShiftBreakIndexes } from '@/lib/models/shift-break'
 import { ensureShiftEventIndexes } from '@/lib/models/shift-event'
 import { ensureShiftSettingsIndexes } from '@/lib/models/shift-setting'
 import { ensureShiftNotificationLogIndexes } from '@/lib/models/shift-notification-log'
+import { ensureShiftSmsQueueIndexes } from '@/lib/models/shift-sms-queue'
 
 let bootstrapPromise: Promise<void> | null = null
 
@@ -14,6 +15,7 @@ export async function ensureCathaShiftInfrastructure() {
       ensureShiftEventIndexes(),
       ensureShiftSettingsIndexes(),
       ensureShiftNotificationLogIndexes(),
+      ensureShiftSmsQueueIndexes(),
     ])
       .then(() => undefined)
       .catch((error: any) => {

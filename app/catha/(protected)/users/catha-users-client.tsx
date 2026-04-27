@@ -61,6 +61,7 @@ import {
   FileBarChart,
   UserCheck,
   KeyRound as KeyIcon,
+  Phone,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSession } from 'next-auth/react'
@@ -73,6 +74,7 @@ import {
   normalizePermissionActions,
   CATHA_AUTH_ME_REFRESH_EVENT,
 } from '@/lib/catha-permissions-model'
+import { formatPhoneDisplay, getPhoneValidationError } from '@/lib/phone-utils'
 
 type CathaUserRole = 'SUPER_ADMIN' | 'ADMIN' | 'CASHIER' | 'PENDING'
 type CathaUserStatus = 'ACTIVE' | 'PENDING' | 'DISABLED'
@@ -81,6 +83,7 @@ type CathaUser = {
   id?: string
   email: string
   name: string
+  phoneNumber?: string | null
   image: string | null
   role: CathaUserRole
   status: CathaUserStatus
@@ -131,6 +134,7 @@ type UserRow = {
   id: string | undefined
   email: string
   name: string
+  phoneNumber?: string | null
   image: string | null
   role: string
   status: string
@@ -166,6 +170,10 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
   const [pinValue, setPinValue] = useState('')
   const [pinError, setPinError] = useState<string | null>(null)
   const [pinSubmitting, setPinSubmitting] = useState(false)
+  const [phoneDialogUser, setPhoneDialogUser] = useState<CathaUser | null>(null)
+  const [phoneValue, setPhoneValue] = useState('')
+  const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [phoneSubmitting, setPhoneSubmitting] = useState(false)
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -273,7 +281,10 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
       ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
       : 'bg-stone-200 text-stone-700 border-stone-400 dark:bg-stone-800 dark:text-stone-400'
 
-  async function patchUser(email: string, updates: Partial<Pick<CathaUser, 'role' | 'status' | 'permissions'>>) {
+  async function patchUser(
+    email: string,
+    updates: Partial<Pick<CathaUser, 'role' | 'status' | 'permissions' | 'phoneNumber'>>
+  ): Promise<boolean> {
     setUpdating(email)
     try {
       const res = await fetch('/api/catha/users', {
@@ -294,6 +305,7 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                 role: (updated.role || u.role) as CathaUserRole,
                 status: (updated.status || u.status) as CathaUserStatus,
                 permissions: normalizePermissions(updated.permissions),
+                phoneNumber: updated.phoneNumber ?? null,
               }
             : u
         )
@@ -304,9 +316,11 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
       if (session?.user?.email && email === session.user.email) {
         await updateSession()
       }
+      return true
     } catch (e: any) {
       console.error(e)
       toast.error(e?.message || 'Update failed')
+      return false
     } finally {
       setUpdating(null)
       setUpdatingOperation(null)
@@ -342,11 +356,12 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
     if (!selectedUser || !selectedRoleTemplate) return
     setUpdating(selectedUser.email)
     try {
-      await patchUser(selectedUser.email, {
+      const ok = await patchUser(selectedUser.email, {
         role: selectedRoleTemplate,
         status: 'ACTIVE',
         permissions: editingPermissions,
       })
+      if (!ok) return
       toast.success('User approved successfully')
       setIsApproveModalOpen(false)
       setSelectedUser(null)
@@ -362,7 +377,8 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
     if (!selectedUser) return
     setUpdating(selectedUser.email)
     try {
-      await patchUser(selectedUser.email, { permissions: editingPermissions })
+      const ok = await patchUser(selectedUser.email, { permissions: editingPermissions })
+      if (!ok) return
       toast.success('Permissions updated successfully')
       setIsPermissionsModalOpen(false)
       setSelectedUser(null)
@@ -382,7 +398,8 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
     setUpdatingOperation(opKey)
     const templatePermissions =
       newRole === 'PENDING' ? {} : normalizePermissions(ROLE_TEMPLATES[newRole as Exclude<CathaUserRole, 'PENDING'>])
-    await patchUser(email, { role: newRole, permissions: templatePermissions })
+    const ok = await patchUser(email, { role: newRole, permissions: templatePermissions })
+    if (!ok) return
     toast.success('Role updated successfully')
   }
 
@@ -390,7 +407,8 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
     const opKey = `${email}-status`
     if (updatingOperation === opKey) return
     setUpdatingOperation(opKey)
-    await patchUser(email, { status: newStatus })
+    const ok = await patchUser(email, { status: newStatus })
+    if (!ok) return
     toast.success('Status updated successfully')
   }
 
@@ -474,6 +492,30 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
     } finally {
       setPinSubmitting(false)
     }
+  }
+
+  const openPhoneDialog = (user: CathaUser) => {
+    setPhoneDialogUser(user)
+    setPhoneValue(user.phoneNumber || '')
+    setPhoneError(null)
+  }
+
+  const submitPhone = async () => {
+    if (!phoneDialogUser) return
+    const validationError = getPhoneValidationError(phoneValue.trim())
+    if (validationError) {
+      setPhoneError(validationError)
+      return
+    }
+    setPhoneSubmitting(true)
+    const ok = await patchUser(phoneDialogUser.email, { phoneNumber: phoneValue.trim() })
+    if (ok) {
+      toast.success('Phone number updated')
+      setPhoneDialogUser(null)
+      setPhoneValue('')
+      setPhoneError(null)
+    }
+    setPhoneSubmitting(false)
   }
 
   if (loading) {
@@ -638,6 +680,7 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                     user={user}
                     onApprove={() => handleApproveUser(user)}
                     onPermissions={() => handleOpenPermissions(user)}
+                    onEditPhone={() => openPhoneDialog(user)}
                     onToggleStatus={() =>
                       handleStatusChange(
                         user.email,
@@ -693,6 +736,9 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                                 {user.name || user.email}
                               </p>
                               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {user.phoneNumber ? formatPhoneDisplay(user.phoneNumber) : 'No phone number'}
+                              </p>
                             </div>
                           </div>
                         </TableCell>
@@ -762,6 +808,10 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                               <DropdownMenuItem onClick={() => handleOpenPermissions(user)}>
                                 <Shield className="h-4 w-4 mr-2" />
                                 Edit permissions
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openPhoneDialog(user)}>
+                                <Phone className="h-4 w-4 mr-2" />
+                                Edit phone number
                               </DropdownMenuItem>
                               {user.role === 'CASHIER' && (
                                 <DropdownMenuItem onClick={() => openPinDialog(user)}>
@@ -909,6 +959,7 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
                   <PermissionsList
                     permissions={editingPermissions}
                     setPermissions={setEditingPermissions}
+                    isCashierRole={selectedRoleTemplate === 'CASHIER'}
                   />
                 )}
               </div>
@@ -946,7 +997,11 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
               Configure Catha permissions for this user.
             </DialogDescription>
           </DialogHeader>
-          <PermissionsList permissions={editingPermissions} setPermissions={setEditingPermissions} />
+          <PermissionsList
+            permissions={editingPermissions}
+            setPermissions={setEditingPermissions}
+            isCashierRole={selectedUser?.role === 'CASHIER'}
+          />
           <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-4">
             <Button
               variant="outline"
@@ -990,6 +1045,58 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
               className="rounded-xl h-11"
             >
               Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!phoneDialogUser} onOpenChange={() => setPhoneDialogUser(null)}>
+        <DialogContent className="rounded-2xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit phone number</DialogTitle>
+            <DialogDescription>Use 07..., 01..., or +254... format.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label className="text-xs font-medium">User</Label>
+              <p className="text-sm text-foreground">
+                {phoneDialogUser?.name}{' '}
+                <span className="text-xs text-muted-foreground">({phoneDialogUser?.email})</span>
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Phone number</Label>
+              <Input
+                value={phoneValue}
+                onChange={(e) => {
+                  setPhoneValue(e.target.value)
+                  setPhoneError(null)
+                }}
+                placeholder="e.g. 0796030992"
+                className="h-11"
+              />
+              {phoneError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                  {phoneError}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPhoneDialogUser(null)}
+              className="rounded-xl h-10"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={phoneSubmitting}
+              onClick={submitPhone}
+              className="rounded-xl h-10"
+            >
+              {phoneSubmitting ? 'Saving…' : 'Save phone'}
             </Button>
           </div>
         </DialogContent>
@@ -1071,6 +1178,7 @@ function UserCardMobile({
   user,
   onApprove,
   onPermissions,
+  onEditPhone,
   onToggleStatus,
   onDelete,
   formatDate,
@@ -1081,6 +1189,7 @@ function UserCardMobile({
   user: CathaUser
   onApprove: () => void
   onPermissions: () => void
+  onEditPhone: () => void
   onToggleStatus: () => void
   onDelete: () => void
   formatDate: (s: string | null | undefined) => string
@@ -1122,6 +1231,9 @@ function UserCardMobile({
       <div className="border-t border-border/50 my-3" />
       <div className="mt-3">
         <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {user.phoneNumber ? formatPhoneDisplay(user.phoneNumber) : 'No phone number'}
+        </p>
       </div>
       <div className="flex items-center justify-between mt-3">
         <Badge className={`text-[10px] rounded-lg border ${getRoleBadgeClass(user.role)}`}>
@@ -1167,6 +1279,10 @@ function UserCardMobile({
               )}
               {user.status === 'ACTIVE' ? 'Disable' : 'Activate'}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={onEditPhone}>
+              <Phone className="h-4 w-4 mr-2" />
+              Edit phone number
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onDelete} className="text-destructive">
               <Trash2 className="h-4 w-4 mr-2" />
@@ -1183,7 +1299,7 @@ const PERMISSION_GROUPS: {
   name: string
   modules: (keyof CathaPermissions)[]
 }[] = [
-  { name: 'System', modules: ['dashboard', 'users', 'settings', 'reports'] },
+  { name: 'System', modules: ['dashboard', 'myShift', 'users', 'settings', 'reports'] },
   { name: 'Sales & POS', modules: ['pos', 'orders'] },
   { name: 'Operations', modules: ['tables', 'tableQrCodes'] },
   { name: 'Inventory', modules: ['inventory', 'suppliers', 'stockMovement'] },
@@ -1193,6 +1309,7 @@ const PERMISSION_GROUPS: {
 
 const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
   dashboard: 'Dashboard',
+  myShift: 'My Shift Access',
   users: 'User Management',
   pos: 'POS Sales',
   orders: 'Orders',
@@ -1212,9 +1329,11 @@ const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
 function PermissionsList({
   permissions,
   setPermissions,
+  isCashierRole = false,
 }: {
   permissions: CathaPermissions
   setPermissions: (p: CathaPermissions) => void
+  isCashierRole?: boolean
 }) {
   const normalized = normalizePermissions(permissions)
 
@@ -1243,7 +1362,7 @@ function PermissionsList({
             <div key={action} className="flex items-center gap-1.5">
               <Checkbox
                 checked={state[action]}
-                disabled={action !== 'view' && !state.view}
+                disabled={action !== 'view' && !state.view || (isCashierRole && module === 'myShift')}
                 onCheckedChange={(c) => updateModuleAction(module, action, c === true)}
                 className="h-5 w-5 rounded-md border-2 border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-600 shadow-sm"
               />

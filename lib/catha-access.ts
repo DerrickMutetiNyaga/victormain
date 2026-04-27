@@ -44,6 +44,7 @@ export type Permissions = Record<string, PermissionEntry>
 /** Canonical permission keys - MUST match DB + UI. Each has { view, create, edit, delete }. */
 export const CANONICAL_PERMISSION_KEYS = [
   'system.dashboard',
+  'system.myShift',
   'system.userManagement',
   'system.settings',
   'system.reports',
@@ -65,6 +66,7 @@ export type CanonicalPermissionKey = (typeof CANONICAL_PERMISSION_KEYS)[number]
 /** Human-readable labels for modal and UI */
 export const CANONICAL_PERMISSION_LABELS: Record<CanonicalPermissionKey, string> = {
   'system.dashboard': 'Dashboard',
+  'system.myShift': 'My Shift Access',
   'system.userManagement': 'User Management',
   'system.settings': 'Settings',
   'system.reports': 'Reports',
@@ -84,6 +86,7 @@ export const CANONICAL_PERMISSION_LABELS: Record<CanonicalPermissionKey, string>
 /** Legacy DB pageKey -> canonical key */
 export const LEGACY_PAGEKEY_TO_CANONICAL: Record<string, CanonicalPermissionKey> = {
   dashboard: 'system.dashboard',
+  myShift: 'system.myShift',
   pos: 'sales.posSales',
   orders: 'sales.orders',
   tables: 'operations.tables',
@@ -103,6 +106,7 @@ export const LEGACY_PAGEKEY_TO_CANONICAL: Record<string, CanonicalPermissionKey>
 /** Canonical key -> legacy pageKey (for backward compat with legacy DB shape) */
 export const CANONICAL_TO_LEGACY: Record<CanonicalPermissionKey, string> = {
   'system.dashboard': 'dashboard',
+  'system.myShift': 'myShift',
   'system.userManagement': 'users',
   'system.settings': 'settings',
   'system.reports': 'reports',
@@ -202,6 +206,10 @@ function getEntryForKey(
 // ─── Route -> canonical permission key. Public routes = null ───
 export const ROUTE_PERMISSION_MAP: Record<string, CanonicalPermissionKey | null> = {
   '/catha': 'system.dashboard',
+  '/catha/my-shift': 'system.myShift',
+  '/catha/staff-shifts': 'system.myShift',
+  '/catha/shift-history': 'system.myShift',
+  '/catha/workforce-hub': 'system.myShift',
   '/catha/pos': 'sales.posSales',
   '/catha/orders': 'sales.orders',
   '/catha/tables': 'operations.tables',
@@ -227,6 +235,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, CanonicalPermissionKey | null>
 /** Route for each canonical key */
 export const CANONICAL_TO_ROUTE: Record<CanonicalPermissionKey, string> = {
   'system.dashboard': '/catha',
+  'system.myShift': '/catha/my-shift',
   'system.userManagement': '/catha/users',
   'system.settings': '/catha/settings',
   'system.reports': '/catha/reports',
@@ -365,7 +374,7 @@ export function getFirstAllowedRoute(user: CathaAccessUser | null): string {
 
 /** Permission groups for modal (canonical keys) */
 export const CANONICAL_PERMISSION_GROUPS: Record<string, CanonicalPermissionKey[]> = {
-  System: ['system.dashboard', 'system.userManagement', 'system.settings', 'system.reports'],
+  System: ['system.dashboard', 'system.myShift', 'system.userManagement', 'system.settings', 'system.reports'],
   Sales: ['sales.posSales', 'sales.orders'],
   Operations: ['operations.tables', 'operations.tableQrCodes'],
   Inventory: ['inventory.inventory', 'inventory.suppliers', 'inventory.stockMovement'],

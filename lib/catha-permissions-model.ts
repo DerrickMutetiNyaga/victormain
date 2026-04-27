@@ -15,6 +15,7 @@ export type PermissionActions = {
 
 export type CathaPermissions = {
   dashboard?: PermissionActions
+  myShift?: PermissionActions
   users?: PermissionActions
   pos?: PermissionActions
   orders?: PermissionActions
@@ -36,6 +37,7 @@ export type CathaPermissionAction = keyof PermissionActions
 
 const MODULE_KEYS: CathaModuleKey[] = [
   'dashboard',
+  'myShift',
   'users',
   'pos',
   'orders',
@@ -142,6 +144,7 @@ export const ROLE_TEMPLATES: Record<CathaRoleTemplateKey, CathaPermissions> = {
 
   CASHIER: {
     dashboard: { view: true, add: false, edit: false, delete: false },
+    myShift: { view: true, add: false, edit: false, delete: false },
     pos: { view: true, add: true, edit: false, delete: false },
     orders: { view: true, add: true, edit: true, delete: false },
     tables: { view: true, add: true, edit: true, delete: false },

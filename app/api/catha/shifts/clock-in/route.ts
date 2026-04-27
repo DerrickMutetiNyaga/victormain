@@ -5,6 +5,7 @@ import { getShiftSettings } from '@/lib/models/shift-setting'
 import { getDeviceFingerprint, getScheduleForNow, requireShiftSessionUser } from '@/lib/catha-shift-service'
 import { sendShiftOpenedNotification } from '@/lib/catha-shift-lifecycle'
 import { analyzeShiftTiming, formatSignedTimingForSms } from '@/lib/catha-shift-timing-analysis'
+import { queueShiftUserSms } from '@/lib/catha-shift-user-sms'
 
 export async function POST(request: Request) {
   const auth = await requireShiftSessionUser()
@@ -85,6 +86,12 @@ export async function POST(request: Request) {
             )})`
       return `[SHIFT OPEN]\nUser: ${auth.name}\n${timingLine}`
     })(),
+  })
+  void queueShiftUserSms({
+    userId: auth.userId,
+    shiftId: shift._id!.toString(),
+    eventType: 'SHIFT_OPENED',
+    message: `Shift Opened: Hi ${auth.name}, your shift has started at ${new Date(now).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', hour12: false })}. Have a productive session.`,
   })
 
   return NextResponse.json({ ok: true, shift })

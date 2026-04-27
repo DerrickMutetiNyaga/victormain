@@ -9,6 +9,7 @@ import {
 } from '@/lib/models/staff-shift'
 import { sendShiftNotification } from '@/lib/catha-shift-sms'
 import { randomUUID } from 'crypto'
+import { queueShiftUserSms } from '@/lib/catha-shift-user-sms'
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -99,6 +100,18 @@ export async function closeShiftAndNotify(params: {
     await markShiftCloseNotificationFailure(shiftId, lockId, error?.message || 'close_notification_failed')
     throw error
   }
+
+  const closedAt = params.updates.endedAt ? new Date(params.updates.endedAt) : new Date()
+  const closeTime = closedAt.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const isAutoClose = params.closeReason === 'overdue_auto_close_backlog'
+  void queueShiftUserSms({
+    userId: params.shift.staffUserId,
+    shiftId,
+    eventType: isAutoClose ? 'SHIFT_AUTO_CLOSED' : 'SHIFT_CLOSED',
+    message: isAutoClose
+      ? `Shift Auto-Closed: Hi ${params.shift.staffName}, your shift was automatically closed due to overtime at ${closeTime}.`
+      : `Shift Closed: Hi ${params.shift.staffName}, your shift closed at ${closeTime}. Status: manual. Thank you.`,
+  })
 
   return { shift: closed, replay: false as const }
 }

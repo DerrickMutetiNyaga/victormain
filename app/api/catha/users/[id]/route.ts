@@ -23,6 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       id: doc._id?.toString(),
       email: doc.email,
       name: doc.name ?? '',
+      phoneNumber: doc.phoneNumber ?? null,
       image: doc.image ?? null,
       role: doc.role ?? 'PENDING',
       status: doc.status ?? 'PENDING',

@@ -25,6 +25,7 @@ import {
   type EcommerceOpeningHoursSettings,
 } from "@/lib/ecommerce-opening-hours"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
+import Link from "next/link"
 
 const EO_DAY_DEFS: { value: number; label: string }[] = [
   { value: 1, label: "Mon" },
@@ -136,6 +137,14 @@ type AuthHealthResponse = {
   deviceSplit: Array<{ device: string; count: number }>
 }
 
+type SmsDashboardMetrics = {
+  total: number
+  successRate: number
+  failureRate: number
+  pending: number
+  unresolvedCriticalAlerts: number
+}
+
 const DEFAULT_DELIVERY_OPTIONS: DeliveryOption[] = [
   { value: "deliver_to_my_location", label: "Deliver to My Location", fee: 1000, subtext: "Delivery fee applies", enabled: true },
   { value: "collect_at_catha_lodge", label: "Collect at Catha Lounge", fee: 0, subtext: "No delivery fee", enabled: true },
@@ -220,6 +229,7 @@ export default function SettingsPage() {
   const [noShiftHardAlertMinutes, setNoShiftHardAlertMinutes] = useState(20)
   const [autoCloseGraceHours, setAutoCloseGraceHours] = useState(2)
   const [continuePromptWindowHours, setContinuePromptWindowHours] = useState(24)
+  const [smsMetrics, setSmsMetrics] = useState<SmsDashboardMetrics | null>(null)
 
   const eoPreview = useMemo(
     () =>
@@ -407,6 +417,13 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchAuthHealth()
   }, [fetchAuthHealth])
+
+  useEffect(() => {
+    fetch('/api/catha/settings/sms-logs?limit=1', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setSmsMetrics(data?.metrics ?? null))
+      .catch(() => {})
+  }, [])
 
   const saveBusinessInfo = async () => {
     setSaving(true)
@@ -954,6 +971,22 @@ export default function SettingsPage() {
     <>
         <Header title="Settings" subtitle="Manage your POS system" />
         <div className="p-6">
+          <div className="mb-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/catha/settings/sms-logs">Open SMS Logs</Link>
+              </Button>
+              {smsMetrics ? (
+                <>
+                  <Badge variant="outline">SMS: {smsMetrics.total}</Badge>
+                  <Badge variant="outline">Success: {smsMetrics.successRate}%</Badge>
+                  <Badge variant="outline">Failure: {smsMetrics.failureRate}%</Badge>
+                  <Badge variant="outline">Pending: {smsMetrics.pending}</Badge>
+                  <Badge variant="destructive">Critical: {smsMetrics.unresolvedCriticalAlerts}</Badge>
+                </>
+              ) : null}
+            </div>
+          </div>
           <Tabs defaultValue="general" className="space-y-6">
             <TabsList className="bg-secondary">
               <TabsTrigger value="general" className="gap-2">

@@ -181,6 +181,18 @@ export async function middleware(request: NextRequest) {
       url.searchParams.set("callbackUrl", pathname)
       return NextResponse.redirect(url)
     }
+    const cathaRole = String((cathaToken as any)?.role ?? '').toUpperCase()
+    const cashierShiftRoutes = [
+      '/catha/staff-shifts',
+      '/catha/shift-history',
+      '/catha/workforce-hub',
+    ]
+    if (
+      cathaRole === 'CASHIER' &&
+      cashierShiftRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+    ) {
+      return NextResponse.redirect(new URL('/catha/my-shift', request.url))
+    }
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set('x-catha-pathname', pathname)
     return NextResponse.next({

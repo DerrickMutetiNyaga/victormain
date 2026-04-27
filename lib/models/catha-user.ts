@@ -15,6 +15,7 @@ export interface CathaUser {
   _id?: ObjectId
   email: string
   name: string
+  phoneNumber?: string | null
   image?: string
   role: CathaUserRole
   status: CathaUserStatus
@@ -40,6 +41,7 @@ export async function getCathaUserByEmail(email: string): Promise<CathaUser | nu
     _id: doc._id,
     email: doc.email,
     name: doc.name ?? '',
+    phoneNumber: doc.phoneNumber ?? null,
     image: doc.image,
     role: (doc.role ?? 'PENDING') as CathaUserRole,
     status: (doc.status ?? 'PENDING') as CathaUserStatus,
@@ -63,6 +65,7 @@ export async function getCathaUserById(id: string): Promise<CathaUser | null> {
     _id: doc._id,
     email: doc.email,
     name: doc.name ?? '',
+    phoneNumber: doc.phoneNumber ?? null,
     image: doc.image,
     role: (doc.role ?? 'PENDING') as CathaUserRole,
     status: (doc.status ?? 'PENDING') as CathaUserStatus,
@@ -80,6 +83,7 @@ export async function getCathaUserById(id: string): Promise<CathaUser | null> {
 export async function createCathaUser(data: {
   email: string
   name: string
+  phoneNumber?: string | null
   image?: string
   role?: CathaUserRole
   status?: CathaUserStatus
@@ -91,6 +95,7 @@ export async function createCathaUser(data: {
   const doc = {
     email: data.email,
     name: data.name ?? '',
+    phoneNumber: data.phoneNumber ?? null,
     image: data.image ?? null,
     role: data.role ?? 'PENDING',
     status: data.status ?? 'PENDING',
@@ -108,7 +113,7 @@ export async function createCathaUser(data: {
 
 export async function updateCathaUser(
   email: string,
-  updates: Partial<Pick<CathaUser, 'role' | 'status' | 'permissions' | 'name' | 'image'>>
+  updates: Partial<Pick<CathaUser, 'role' | 'status' | 'permissions' | 'name' | 'image' | 'phoneNumber'>>
 ): Promise<CathaUser | null> {
   const client = await clientPromise
   const $set: Record<string, unknown> = { ...updates, updatedAt: new Date() }
@@ -122,6 +127,7 @@ export async function updateCathaUser(
     _id: doc._id,
     email: doc.email,
     name: doc.name ?? '',
+    phoneNumber: doc.phoneNumber ?? null,
     image: doc.image,
     role: (doc.role ?? 'PENDING') as CathaUserRole,
     status: (doc.status ?? 'PENDING') as CathaUserStatus,
@@ -148,6 +154,7 @@ export async function getAllCathaUsers(): Promise<CathaUser[]> {
     _id: doc._id,
     email: doc.email,
     name: doc.name ?? '',
+    phoneNumber: doc.phoneNumber ?? null,
     image: doc.image,
     role: (doc.role ?? 'PENDING') as CathaUserRole,
     status: (doc.status ?? 'PENDING') as CathaUserStatus,
@@ -237,6 +244,7 @@ export async function getCathaUserByPinLookup(pinLookup: string): Promise<CathaU
     _id: doc._id,
     email: doc.email,
     name: doc.name ?? '',
+    phoneNumber: doc.phoneNumber ?? null,
     image: doc.image,
     role: (doc.role ?? 'PENDING') as CathaUserRole,
     status: (doc.status ?? 'PENDING') as CathaUserStatus,

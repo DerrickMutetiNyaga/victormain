@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { format } from "date-fns"
 import {
@@ -230,7 +231,8 @@ function rowKey(row: ShiftRow | MyShift, scope: string, index: number) {
 }
 
 export default function WorkforceHubPage() {
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabValue>("overview")
   const [query, setQuery] = useState("")
   const [range, setRange] = useState("month")
@@ -250,7 +252,15 @@ export default function WorkforceHubPage() {
   })
   const [notificationFilter, setNotificationFilter] = useState<"all" | "sent" | "failed">("all")
 
-  const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(String((session?.user as { role?: string } | undefined)?.role ?? "").toUpperCase())
+  const role = String((session?.user as { role?: string } | undefined)?.role ?? "").toUpperCase()
+  const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(role)
+  const isCashier = role === "CASHIER"
+
+  useEffect(() => {
+    if (sessionStatus !== "loading" && isCashier) {
+      router.replace("/catha/my-shift")
+    }
+  }, [sessionStatus, isCashier, router])
 
   useEffect(() => {
     const params = new URLSearchParams({ range })
@@ -292,6 +302,14 @@ export default function WorkforceHubPage() {
       })
       .catch(() => {})
   }, [isAdmin, notificationFilter])
+
+  if (sessionStatus === "loading") {
+    return <div className="p-6 text-sm text-muted-foreground">Loading workforce hub...</div>
+  }
+
+  if (isCashier) {
+    return <div className="p-6 text-sm text-muted-foreground">Redirecting to My Shift...</div>
+  }
 
   const filteredTeamRows = useMemo(() => {
     const teamSource = dashboardRows.length > 0 ? dashboardRows : historyRows

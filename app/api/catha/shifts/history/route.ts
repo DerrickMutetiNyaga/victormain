@@ -63,5 +63,23 @@ export async function GET(request: Request) {
       }
     })
   )
+  if (!canViewAll) {
+    return NextResponse.json({
+      ok: true,
+      shifts: enrichedShifts.map((shift) => ({
+        ...shift,
+        ordersServed: undefined,
+        cashSales: undefined,
+        mpesaSales: undefined,
+        totalRevenue: undefined,
+        refunds: undefined,
+        discounts: undefined,
+        openingFloat: undefined,
+        expectedDrawerAmount: undefined,
+        countedDrawerAmount: undefined,
+        drawerVariance: undefined,
+      })),
+    })
+  }
   return NextResponse.json({ ok: true, shifts: enrichedShifts })
 }
