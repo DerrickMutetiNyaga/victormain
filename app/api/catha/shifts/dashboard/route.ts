@@ -218,13 +218,23 @@ export async function GET(request: Request) {
   const emailsById = await getCathaUserEmailsByIds(shifts.map((s) => s.staffUserId))
   const enrichedShifts = await Promise.all(
     shifts.map(async (shift) => {
-      const liveStats = await aggregateShiftOrderStats(
-        shift.staffName,
-        shift.startedAt,
-        shift.endedAt ? new Date(shift.endedAt) : new Date(),
-        [emailsById[shift.staffUserId]],
-        shift.staffUserId
-      )
+      const shouldComputeLiveStats = shift.status === 'ACTIVE' || shift.status === 'PENDING_CLOSURE'
+      const liveStats = shouldComputeLiveStats
+        ? await aggregateShiftOrderStats(
+            shift.staffName,
+            shift.startedAt,
+            shift.endedAt ? new Date(shift.endedAt) : new Date(),
+            [emailsById[shift.staffUserId]],
+            shift.staffUserId
+          )
+        : {
+            ordersServed: Number(shift.ordersServed ?? 0),
+            cashSales: Number(shift.cashSales ?? 0),
+            mpesaSales: Number(shift.mpesaSales ?? 0),
+            totalRevenue: Number(shift.totalRevenue ?? 0),
+            refunds: Number(shift.refunds ?? 0),
+            discounts: Number(shift.discounts ?? 0),
+          }
       return {
         ...shift,
         metadata: {
