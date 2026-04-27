@@ -22,6 +22,16 @@ type AutoCloseResult = {
 
 const OPEN_SHIFT_STATUSES = ['ACTIVE', 'PENDING_CLOSURE'] as const
 
+function formatWorkedTime(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes))
+  const hours = Math.floor(safeMinutes / 60)
+  const minutes = safeMinutes % 60
+
+  if (hours === 0) return `${minutes}m`
+  if (minutes === 0) return `${hours}h`
+  return `${hours}h ${minutes}m`
+}
+
 function normalizeConfig(raw: Awaited<ReturnType<typeof getShiftSettings>>): AutoCloseConfig {
   const graceHours = Math.max(1, Math.min(12, Math.round(Number(raw.autoCloseGraceHours || 2))))
   const continueWindowHours = Math.max(1, Math.min(168, Math.round(Number(raw.continuePromptWindowHours || 24))))
@@ -61,7 +71,12 @@ async function closeShiftAsSystem(shift: StaffShift, actorUserId = 'SYSTEM'): Pr
     closeEventType: 'FORCE_CLOSE',
     closeReason: 'overdue_auto_close_backlog',
     dedupeKey: `shift:auto-close:${shift._id.toString()}`,
-    closeMessage: `[SHIFT AUTO CLOSED]\nUser: ${shift.staffName}\nReason: overdue_auto_close_backlog\nWorked: ${durationMinutes}m`,
+    closeMessage:
+      `[SHIFT AUTO CLOSED]\n\n` +
+      `User: ${shift.staffName}\n` +
+      `Reason: Overdue Auto Close (Backlog)\n` +
+      `Worked Time: ${formatWorkedTime(durationMinutes)}\n\n` +
+      `STOP: *456*9*5#`,
     eventMetadata: { autoClosed: true, workedDurationMinutes: durationMinutes, overtimeMinutes },
     updates: {
       status: 'AUTO_CLOSED',
