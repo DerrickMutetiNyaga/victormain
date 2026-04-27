@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
@@ -344,10 +344,23 @@ export default function WorkforceHubPage() {
     successRate: 1,
   })
   const [notificationFilter, setNotificationFilter] = useState<"all" | "sent" | "failed">("all")
+  const [historyLoadedKey, setHistoryLoadedKey] = useState("")
+  const [insightsLoadedKey, setInsightsLoadedKey] = useState("")
 
   const role = String((session?.user as { role?: string } | undefined)?.role ?? "").toUpperCase()
   const isAdmin = ["ADMIN", "SUPER_ADMIN"].includes(role)
   const isCashier = role === "CASHIER"
+  const params = useMemo(() => {
+    const next = new URLSearchParams({ range })
+    if (fromDate) next.set("from", new Date(fromDate).toISOString())
+    if (toDate) {
+      const end = new Date(toDate)
+      end.setHours(23, 59, 59, 999)
+      next.set("to", end.toISOString())
+    }
+    return next
+  }, [range, fromDate, toDate])
+  const filterCacheKey = `${range}|${fromDate}|${toDate}`
 
   useEffect(() => {
     if (sessionStatus !== "loading" && isCashier) {
@@ -356,32 +369,55 @@ export default function WorkforceHubPage() {
   }, [sessionStatus, isCashier, router])
 
   useEffect(() => {
-    const params = new URLSearchParams({ range })
-    if (fromDate) params.set("from", new Date(fromDate).toISOString())
-    if (toDate) {
-      const end = new Date(toDate)
-      end.setHours(23, 59, 59, 999)
-      params.set("to", end.toISOString())
-    }
-
+    const controller = new AbortController()
+    setHistoryLoadedKey("")
+    setInsightsLoadedKey("")
     setLoading(true)
     Promise.all([
-      fetch(`/api/catha/shifts/dashboard?${params.toString()}`, { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/catha/shifts/mine", { cache: "no-store" }).then((r) => r.json()),
-      fetch(`/api/catha/shifts/history?${params.toString()}`, { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/catha/shifts/insights", { cache: "no-store" }).then((r) => r.json()),
+      fetch(`/api/catha/shifts/dashboard?${params.toString()}`, { cache: "no-store", signal: controller.signal }).then((r) => r.json()),
+      fetch("/api/catha/shifts/mine", { cache: "no-store", signal: controller.signal }).then((r) => r.json()),
     ])
-      .then(([dashboardData, myData, historyData, insightsData]) => {
+      .then(([dashboardData, myData]) => {
+        if (controller.signal.aborted) return
         setDashboardRows((dashboardData.rows ?? []) as ShiftRow[])
         setCards((dashboardData.cards ?? {}) as Record<string, unknown>)
         setMyRows((myData.shifts ?? []) as MyShift[])
-        setHistoryRows((historyData.shifts ?? []) as ShiftRow[])
-        setInsights((insightsData ?? {}) as InsightsResponse)
         setLastFetchedAt(Date.now())
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [range, fromDate, toDate])
+    return () => controller.abort()
+  }, [params, filterCacheKey])
+
+  useEffect(() => {
+    if (activeTab !== "history" || historyLoadedKey === filterCacheKey) return
+    const controller = new AbortController()
+    fetch(`/api/catha/shifts/history?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then((r) => r.json())
+      .then((historyData) => {
+        if (controller.signal.aborted) return
+        setHistoryRows((historyData.shifts ?? []) as ShiftRow[])
+        setHistoryLoadedKey(filterCacheKey)
+        setLastFetchedAt(Date.now())
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [activeTab, historyLoadedKey, filterCacheKey, params])
+
+  useEffect(() => {
+    if (activeTab !== "analytics" || insightsLoadedKey === filterCacheKey) return
+    const controller = new AbortController()
+    fetch("/api/catha/shifts/insights", { cache: "no-store", signal: controller.signal })
+      .then((r) => r.json())
+      .then((insightsData) => {
+        if (controller.signal.aborted) return
+        setInsights((insightsData ?? {}) as InsightsResponse)
+        setInsightsLoadedKey(filterCacheKey)
+        setLastFetchedAt(Date.now())
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [activeTab, insightsLoadedKey, filterCacheKey])
 
   useEffect(() => {
     const timer = window.setInterval(() => setFreshnessNowTick(Date.now()), 30_000)
