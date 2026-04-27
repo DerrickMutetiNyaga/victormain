@@ -3,13 +3,12 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
-import { EcommerceHeader } from "@/components/ecommerce/header"
 import { ProductCard } from "@/components/ecommerce/product-card"
 import { SiteLogo } from "@/components/branding/site-logo"
 import { useShopCart } from "@/hooks/use-shop-cart"
 import { useShopLoginModal } from "@/components/providers/shop-login-modal-provider"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Sparkles, MapPin, Loader2, ShieldCheck, Truck, Gem, ChevronDown } from "lucide-react"
+import { ArrowRight, Sparkles, MapPin, Loader2, ShieldCheck, Truck, Gem, ChevronDown, Search, Home, ShoppingBag, ShoppingCart, User } from "lucide-react"
 import { EcommerceProduct, Category, ecommerceProducts, ecommerceCategories } from "@/lib/ecommerce-data"
 import { toast } from "sonner"
 
@@ -30,7 +29,7 @@ const QUICK_SHOP = [
 ] as const
 
 export default function HomePage() {
-  const { cart, session, addItem, refresh } = useShopCart()
+  const { session, addItem, refresh } = useShopCart()
   const openLoginModal = useShopLoginModal()
   const [products, setProducts] = useState<EcommerceProduct[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -234,87 +233,122 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-[var(--brand-cream)]">
-      <EcommerceHeader cartCount={cart.reduce((s, i) => s + i.quantity, 0)} />
-
       <main>
-        {/* Hero Section */}
-        <section className="homepage-hero relative overflow-hidden bg-[radial-gradient(circle_at_14%_20%,rgba(47,143,79,0.2)_0%,transparent_45%),radial-gradient(circle_at_82%_2%,rgba(217,121,47,0.16)_0%,transparent_40%),linear-gradient(140deg,#120f0f_0%,#211714_44%,#1a1210_100%)] pt-8 pb-12 sm:py-24">
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,232,198,0.06),transparent_35%,rgba(0,0,0,0.35))]" />
-          <div className="absolute inset-0 opacity-[0.08] [background-image:radial-gradient(#f2dfb8_0.6px,transparent_0.6px)] [background-size:6px_6px]" />
-          <div className="pointer-events-none absolute -left-16 top-14 h-44 w-44 rounded-full bg-[var(--brand-green)]/20 blur-3xl" />
-          <div className="pointer-events-none absolute -right-20 bottom-10 h-52 w-52 rounded-full bg-[var(--brand-orange)]/20 blur-3xl" />
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
-            <div className="mx-auto max-w-3xl text-center">
-              {/* Badge */}
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#f4e5c5]/10 border border-[var(--brand-green)]/35 px-4 py-2 text-sm font-medium text-[#f4e5c5] shadow-sm mb-6 hover-lift backdrop-blur-md">
-                <Sparkles className="h-4 w-4" />
-                Catha Lounge
-              </div>
+        {/* Premium Mobile Hero */}
+        <section className="relative isolate min-h-[100svh] overflow-hidden bg-[radial-gradient(circle_at_12%_18%,rgba(33,120,72,0.3)_0%,transparent_40%),radial-gradient(circle_at_84%_6%,rgba(206,145,70,0.24)_0%,transparent_40%),linear-gradient(160deg,#031009_0%,#09150e_45%,#060707_100%)]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,200,110,0.14)_0%,transparent_34%),linear-gradient(180deg,rgba(0,0,0,0.08)_0%,rgba(0,0,0,0.58)_100%)]" />
+          <div className="pointer-events-none absolute -left-8 top-24 h-28 w-20 rotate-[-24deg] rounded-[70%_30%_70%_20%] bg-[radial-gradient(circle,rgba(104,177,93,0.6)_0%,rgba(57,118,62,0.28)_65%,transparent_100%)] blur-[0.6px]" />
+          <div className="pointer-events-none absolute right-2 top-40 h-24 w-16 rotate-[12deg] rounded-[35%_65%_50%_50%] bg-[radial-gradient(circle,rgba(120,191,99,0.58)_0%,rgba(53,107,56,0.24)_64%,transparent_100%)] blur-[0.6px]" />
+          <div className="pointer-events-none absolute left-10 top-64 h-3 w-3 rounded-full bg-[#e5ba74]/75 blur-[1px]" />
+          <div className="pointer-events-none absolute right-14 top-[30%] h-2 w-2 rounded-full bg-[#f1cf95]/70 blur-[1px]" />
+          <div className="pointer-events-none absolute left-1/2 top-[20%] h-32 w-32 -translate-x-1/2 rounded-full bg-[#f2ce8b]/12 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-[26%] right-[-10%] h-40 w-56 rounded-[50%] bg-[radial-gradient(circle,rgba(219,147,72,0.24)_0%,rgba(114,63,28,0.09)_66%,transparent_100%)] blur-2xl" />
 
-              {/* Main Heading */}
-              <h1 className="mb-5 text-3xl font-bold tracking-tight text-white sm:text-5xl font-heading">
-                Curated Wines & Rare Spirits
-                <br />
-                <span className="bg-gradient-to-r from-[#f6e7c8] via-[var(--brand-orange-soft)] to-[var(--brand-green)] bg-clip-text text-transparent">
-                  Delivered With Lounge Elegance
-                </span>
+          <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-md flex-col px-4 pb-28">
+            <nav className="pt-4">
+              <div className="grid grid-cols-3 items-center">
+                <div />
+                <div className="mx-auto">
+                  <SiteLogo className="h-10 w-[124px]" imageClassName="brightness-110 contrast-110" priority />
+                </div>
+                <button
+                  type="button"
+                  aria-label="Search"
+                  className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e8c07d]/30 bg-black/30 text-[#f4d8ad] backdrop-blur-md"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-3 h-px w-full bg-gradient-to-r from-transparent via-[#dfb679]/80 to-transparent" />
+            </nav>
+
+            <div className="mt-8 text-center">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-[#d7af71]/45 bg-black/30 px-4 py-1.5 text-xs text-[#f2d6a8] backdrop-blur-md shadow-[0_0_25px_rgba(215,175,113,0.2)]">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>✨ Catha Lounge</span>
+              </div>
+            </div>
+
+            <div className="mt-7 text-center">
+              <h1 className="font-heading text-[2.2rem] font-bold leading-[1.06] tracking-tight text-transparent [text-shadow:0_8px_26px_rgba(0,0,0,0.45)] bg-[linear-gradient(135deg,#f9e9ca_4%,#efc98a_42%,#b98a42_92%)] bg-clip-text">
+                Infusion Jaba Juice
               </h1>
-
-              {/* Subheading */}
-              <p className="mb-7 text-sm text-[#d6c7b0] sm:text-lg max-w-2xl mx-auto">
-                Discover top-shelf bottles, boutique labels, and house infusions in a premium delivery experience.
+              <p className="mt-3 px-2 text-base leading-relaxed text-[#f4efe8]">
+                Catha Lounge: Where Jaba Juice Meets Lounge Elegance
               </p>
-
-              {/* CTA Buttons */}
-              <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-                <Link href="/shop">
-                  <Button size="lg" className="w-full sm:w-auto rounded-xl px-7 h-11 text-sm font-semibold bg-[#f3e4c1] text-[#221716] shadow-lg hover:bg-[color-mix(in_srgb,#f3e4c1_82%,var(--brand-green)_18%)] hover:text-[var(--brand-green-strong)] transition-all hover:scale-[1.02] focus-visible:ring-[var(--brand-green)]/40">
-                    Shop Spirits
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                  </Button>
-                </Link>
-                <Link href="/shop?category=infused-jaba">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    className="w-full sm:w-auto rounded-xl px-7 h-11 text-sm font-semibold border border-[var(--brand-border-beige)] bg-[var(--brand-espresso)]/82 text-[#f7e6c6] hover:bg-[color-mix(in_srgb,var(--brand-espresso)_80%,var(--brand-green)_20%)] hover:border-[var(--brand-green)]/45"
-                  >
-                    Explore The Lounge
-                  </Button>
-                </Link>
-              </div>
+              <p className="mx-auto mt-3 max-w-[92%] text-sm leading-6 text-[#d9cebf]">
+                Step into a cinematic pour of premium flavors, curated for elevated nights, smooth hosting, and effortless doorstep delivery.
+              </p>
             </div>
-          </div>
-          <div className="pointer-events-none absolute bottom-0 left-0 w-full h-24 bg-gradient-to-t from-[#1a1311] to-transparent" />
-        </section>
 
-        {/* Quick Shop Categories */}
-        <section className="py-12 sm:py-20 bg-[var(--brand-cream)]">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="mb-8 sm:mb-12 text-center sm:text-left">
-              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-[#2a1f1b] mb-2 sm:mb-3 font-heading">Quick Shop</h2>
-              <p className="text-sm sm:text-base text-[#6f6257]">Fast categories for one-handed browsing</p>
+            <div className="mt-7 space-y-3">
+              <Link href="/shop?category=infused-jaba" className="block">
+                <Button className="h-12 w-full rounded-2xl bg-gradient-to-r from-[#f3e8d1] to-[#e6d5b4] text-[15px] font-semibold text-[#2d2016] shadow-[0_14px_28px_rgba(7,7,7,0.35)] hover:from-[#f5ebd8] hover:to-[#e8d8b9]">
+                  Order Jaba Juice Now
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/shop" className="block">
+                <Button
+                  variant="outline"
+                  className="h-11 w-full rounded-2xl border border-[#dfbb81]/60 bg-black/35 text-[#f3d8ae] backdrop-blur-sm hover:bg-black/45 hover:text-[#f6deb6]"
+                >
+                  Explore The Lounge
+                </Button>
+              </Link>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+
+            <div className="mt-auto rounded-t-[2rem] bg-gradient-to-b from-[#fff8ee] to-[#f4ecdf] px-4 pt-5 pb-5 shadow-[0_-18px_36px_rgba(0,0,0,0.28)]">
+              <h2 className="text-lg font-bold text-[#2b2018]">Quick Shop</h2>
+              <p className="mt-1 text-xs text-[#6f6257]">Fast categories for one-handed browsing</p>
+              <div className="mt-3 grid grid-cols-5 gap-1.5">
                 {QUICK_SHOP.map((item) => (
                   <Link
                     key={item.id}
                     href={item.query ? `/shop?${item.query}` : `/shop?category=${item.id}`}
-                    className="group relative h-24 overflow-hidden rounded-2xl border border-[#3a2f2a] shadow-[0_8px_20px_rgba(0,0,0,0.2)] sm:h-28"
+                    className="rounded-xl border border-[#e7d3b4] bg-white/75 px-1.5 py-2 text-center text-[10px] font-medium text-[#4d3f32]"
                   >
-                    <div
-                      className="absolute inset-0 bg-cover bg-center transition-transform duration-300 group-hover:scale-105"
-                      style={{ backgroundImage: `url('${item.image}')` }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#140f0d]/90 via-[#140f0d]/45 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-0 p-3">
-                      <p className="text-sm font-semibold text-[#f3e5c8]">{item.name}</p>
-                    </div>
+                    {item.name}
                   </Link>
                 ))}
+              </div>
             </div>
           </div>
+
+          <div className="pointer-events-none absolute bottom-0 left-0 h-28 w-full bg-gradient-to-t from-[#060908] to-transparent" />
         </section>
+
+        <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-md rounded-t-3xl border border-[#3e2f26] bg-[#120f0e]/95 px-5 py-3 backdrop-blur-lg">
+          <ul className="flex items-center justify-between">
+            <li>
+              <Link href="/" className="inline-flex flex-col items-center gap-1 text-[10px] text-[#f5c779] [text-shadow:0_0_10px_rgba(245,199,121,0.55)]">
+                <Home className="h-5 w-5" />
+                Home
+              </Link>
+            </li>
+            <li>
+              <Link href="/shop" className="inline-flex flex-col items-center gap-1 text-[10px] text-[#dacbb1]">
+                <ShoppingBag className="h-5 w-5" />
+                Shop
+              </Link>
+            </li>
+            <li className="relative">
+              <Link href="/cart" className="inline-flex flex-col items-center gap-1 text-[10px] text-[#dacbb1]">
+                <ShoppingCart className="h-5 w-5" />
+                Cart
+              </Link>
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2f9a5f] px-1 text-[9px] font-semibold text-white">
+                2
+              </span>
+            </li>
+            <li>
+              <Link href="/account" className="inline-flex flex-col items-center gap-1 text-[10px] text-[#dacbb1]">
+                <User className="h-5 w-5" />
+                Profile
+              </Link>
+            </li>
+          </ul>
+        </nav>
 
         {/* Featured Products */}
         <section className="bg-[#ece5dc] py-16 sm:py-20 border-y border-[var(--brand-border-beige)]">
