@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
@@ -410,13 +410,13 @@ export default function WorkforceHubPage() {
     return <div className="p-6 text-sm text-muted-foreground">Redirecting to My Shift...</div>
   }
 
-  const filteredTeamRows = useMemo(() => {
+  const filteredTeamRows = (() => {
     const teamSource = dashboardRows.length > 0 ? dashboardRows : historyRows
     const base = isAdmin ? teamSource : teamSource.filter((row) => row.status === "ACTIVE" || !row.endedAt)
     const q = query.trim().toLowerCase()
     if (!q) return base
     return base.filter((row) => row.staffName.toLowerCase().includes(q))
-  }, [dashboardRows, historyRows, isAdmin, query])
+  })()
 
   const attendanceScore = Number(cards.attendanceScoreMonth ?? 100)
   const hoursWorkedTodayMs = Number(cards.hoursWorkedTodayMs ?? 0)
@@ -433,118 +433,98 @@ export default function WorkforceHubPage() {
   const pendingYesterday = Number(cards.pendingClockOutsYesterday ?? 0)
   const attendanceLastMonth = Number(cards.attendanceScoreLastMonth ?? attendanceScore)
 
-  const kpis = useMemo(
-    () => [
-      {
-        title: "Active Staff",
-        value: Number(cards.activeShiftsNow ?? 0),
-        valueKind: "number" as KpiValueKind,
-        icon: Users,
-        tint: "from-emerald-500 to-green-400",
-        trend: activeDeltaLabel,
-        trendTone: (activeDelta >= 0 ? "positive" : "negative") as TrendTone,
-        scope: "today" as KpiScope,
-        emptyLabel: "No activity today",
-        onClick: () => router.push("/catha/staff-shifts"),
+  const kpis = [
+    {
+      title: "Active Staff",
+      value: Number(cards.activeShiftsNow ?? 0),
+      valueKind: "number" as KpiValueKind,
+      icon: Users,
+      tint: "from-emerald-500 to-green-400",
+      trend: activeDeltaLabel,
+      trendTone: (activeDelta >= 0 ? "positive" : "negative") as TrendTone,
+      scope: "today" as KpiScope,
+      emptyLabel: "No activity today",
+      onClick: () => router.push("/catha/staff-shifts"),
+    },
+    {
+      title: "Hours Worked",
+      value: Number(hoursWorkedTodayMs / 3_600_000),
+      valueKind: "number" as KpiValueKind,
+      icon: Clock3,
+      tint: "from-sky-500 to-cyan-400",
+      trend: "Across all shifts today",
+      trendDelta: `${hoursWorkedDeltaHours >= 0 ? "+" : ""}${hoursWorkedDeltaHours.toFixed(1)}h vs yesterday`,
+      trendTone: (hoursWorkedDeltaHours >= 0 ? "positive" : "negative") as TrendTone,
+      scope: "today" as KpiScope,
+      suffix: "h",
+      emptyLabel: "No activity today",
+      onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
+    },
+    {
+      title: "Revenue Today",
+      value: revenueToday,
+      valueKind: "currency" as KpiValueKind,
+      icon: TrendingUp,
+      tint: "from-indigo-500 to-violet-500",
+      trend: "Live service revenue today",
+      trendDelta: `${revenueVsYesterdayPct >= 0 ? "+" : ""}${Math.round(revenueVsYesterdayPct)}% vs yesterday`,
+      trendTone: (revenueVsYesterdayPct >= 0 ? "positive" : "negative") as TrendTone,
+      scope: "today" as KpiScope,
+      emptyLabel: "No activity today",
+      onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
+    },
+    {
+      title: "Late Arrivals",
+      value: lateMonth,
+      valueKind: "number" as KpiValueKind,
+      icon: AlertTriangle,
+      tint: "from-amber-500 to-orange-500",
+      trend: "This month performance",
+      trendDelta: `${lateMonth - lateLastMonth >= 0 ? "+" : ""}${lateMonth - lateLastMonth} vs last month`,
+      trendTone: (lateMonth - lateLastMonth <= 0 ? "positive" : "negative") as TrendTone,
+      urgencyLabel: lateMonth > 0 ? "⚠ Needs attention" : "",
+      scope: "month" as KpiScope,
+      emptyLabel: "All staff on time",
+      onClick: () => {
+        router.push("/catha/workforce-hub?tab=history&filter=late")
+        setRange("month")
+        setActiveTab("history" as TabValue)
       },
-      {
-        title: "Hours Worked",
-        value: Number(hoursWorkedTodayMs / 3_600_000),
-        valueKind: "number" as KpiValueKind,
-        icon: Clock3,
-        tint: "from-sky-500 to-cyan-400",
-        trend: "Across all shifts today",
-        trendDelta: `${hoursWorkedDeltaHours >= 0 ? "+" : ""}${hoursWorkedDeltaHours.toFixed(1)}h vs yesterday`,
-        trendTone: (hoursWorkedDeltaHours >= 0 ? "positive" : "negative") as TrendTone,
-        scope: "today" as KpiScope,
-        suffix: "h",
-        emptyLabel: "No activity today",
-        onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
+    },
+    {
+      title: "Attendance Score",
+      value: attendanceScore,
+      valueKind: "percent" as KpiValueKind,
+      icon: ShieldCheck,
+      tint: "from-teal-500 to-emerald-500",
+      trend: "On-time consistency this month",
+      trendDelta: `${attendanceScore - attendanceLastMonth >= 0 ? "+" : ""}${attendanceScore - attendanceLastMonth}% vs last month`,
+      trendTone: (attendanceScore - attendanceLastMonth >= 0 ? "positive" : "negative") as TrendTone,
+      scope: "month" as KpiScope,
+      onClick: () => {
+        router.push("/catha/workforce-hub?tab=analytics&view=attendance")
+        setActiveTab("analytics" as TabValue)
       },
-      {
-        title: "Revenue Today",
-        value: revenueToday,
-        valueKind: "currency" as KpiValueKind,
-        icon: TrendingUp,
-        tint: "from-indigo-500 to-violet-500",
-        trend: "Live service revenue today",
-        trendDelta: `${revenueVsYesterdayPct >= 0 ? "+" : ""}${Math.round(revenueVsYesterdayPct)}% vs yesterday`,
-        trendTone: (revenueVsYesterdayPct >= 0 ? "positive" : "negative") as TrendTone,
-        scope: "today" as KpiScope,
-        emptyLabel: "No activity today",
-        onClick: () => router.push("/catha/workforce-hub?tab=analytics"),
+    },
+    {
+      title: "Pending Clock-outs",
+      value: pendingToday,
+      valueKind: "number" as KpiValueKind,
+      icon: TimerReset,
+      tint: "from-slate-500 to-slate-400",
+      trend: "Awaiting shift closure",
+      trendDelta: `${pendingToday - pendingYesterday >= 0 ? "+" : ""}${pendingToday - pendingYesterday} vs yesterday`,
+      trendTone: (pendingToday - pendingYesterday <= 0 ? "positive" : "negative") as TrendTone,
+      urgencyLabel: pendingToday > 0 ? "Pending action" : "",
+      scope: "today" as KpiScope,
+      emptyLabel: "No pending actions",
+      onClick: () => {
+        router.push("/catha/workforce-hub?tab=team-shifts&filter=unresolved")
+        setRange("today")
+        setActiveTab("team-shifts" as TabValue)
       },
-      {
-        title: "Late Arrivals",
-        value: lateMonth,
-        valueKind: "number" as KpiValueKind,
-        icon: AlertTriangle,
-        tint: "from-amber-500 to-orange-500",
-        trend: "This month performance",
-        trendDelta: `${lateMonth - lateLastMonth >= 0 ? "+" : ""}${lateMonth - lateLastMonth} vs last month`,
-        trendTone: (lateMonth - lateLastMonth <= 0 ? "positive" : "negative") as TrendTone,
-        urgencyLabel: lateMonth > 0 ? "⚠ Needs attention" : "",
-        scope: "month" as KpiScope,
-        emptyLabel: "All staff on time",
-        onClick: () => {
-          router.push("/catha/workforce-hub?tab=history&filter=late")
-          setRange("month")
-          setActiveTab("history" as TabValue)
-        },
-      },
-      {
-        title: "Attendance Score",
-        value: attendanceScore,
-        valueKind: "percent" as KpiValueKind,
-        icon: ShieldCheck,
-        tint: "from-teal-500 to-emerald-500",
-        trend: "On-time consistency this month",
-        trendDelta: `${attendanceScore - attendanceLastMonth >= 0 ? "+" : ""}${attendanceScore - attendanceLastMonth}% vs last month`,
-        trendTone: (attendanceScore - attendanceLastMonth >= 0 ? "positive" : "negative") as TrendTone,
-        scope: "month" as KpiScope,
-        onClick: () => {
-          router.push("/catha/workforce-hub?tab=analytics&view=attendance")
-          setActiveTab("analytics" as TabValue)
-        },
-      },
-      {
-        title: "Pending Clock-outs",
-        value: pendingToday,
-        valueKind: "number" as KpiValueKind,
-        icon: TimerReset,
-        tint: "from-slate-500 to-slate-400",
-        trend: "Awaiting shift closure",
-        trendDelta: `${pendingToday - pendingYesterday >= 0 ? "+" : ""}${pendingToday - pendingYesterday} vs yesterday`,
-        trendTone: (pendingToday - pendingYesterday <= 0 ? "positive" : "negative") as TrendTone,
-        urgencyLabel: pendingToday > 0 ? "Pending action" : "",
-        scope: "today" as KpiScope,
-        emptyLabel: "No pending actions",
-        onClick: () => {
-          router.push("/catha/workforce-hub?tab=team-shifts&filter=unresolved")
-          setRange("today")
-          setActiveTab("team-shifts" as TabValue)
-        },
-      },
-    ],
-    [
-      activeDelta,
-      activeDeltaLabel,
-      attendanceLastMonth,
-      attendanceScore,
-      cards,
-      hoursWorkedDeltaHours,
-      hoursWorkedTodayMs,
-      lateLastMonth,
-      lateMonth,
-      pendingToday,
-      pendingYesterday,
-      revenueToday,
-      revenueVsYesterdayPct,
-      router,
-      setActiveTab,
-      setRange,
-    ]
-  )
+    },
+  ]
 
   function exportCsv() {
     const rows = (activeTab === "my-shifts" ? myRows : activeTab === "history" ? historyRows : filteredTeamRows) as Array<ShiftRow | MyShift>
@@ -579,11 +559,6 @@ export default function WorkforceHubPage() {
     exit: { opacity: 0, y: -6 },
     transition: { duration: 0.2 },
   }
-
-  const revenueTotal = useMemo(
-    () => dashboardRows.reduce((sum, row) => sum + Number(row.totalRevenue || 0), 0),
-    [dashboardRows]
-  )
 
   function formatCurrency(value: number) {
     return `KES ${Number(value || 0).toLocaleString()}`
