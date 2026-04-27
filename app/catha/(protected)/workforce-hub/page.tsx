@@ -139,7 +139,7 @@ function AnimatedKpiValue({
 
 function MiniSparkline({ from, to, id }: { from: string; to: string; id: string }) {
   return (
-    <svg viewBox="0 0 100 40" className="h-9 w-20 opacity-90">
+    <svg viewBox="0 0 100 40" className="h-9 w-20">
       <defs>
         <linearGradient id={id} x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor={from} />
@@ -165,7 +165,7 @@ function MiniBars({ color }: { color: string }) {
   return (
     <div className="flex h-10 items-end gap-1">
       {[8, 14, 6, 18, 24].map((h, i) => (
-        <div key={i} className="w-1.5 rounded-full" style={{ height: `${h}px`, backgroundColor: color, opacity: 0.55 + i * 0.08 }} />
+        <div key={i} className="w-1.5 rounded-full" style={{ height: `${h}px`, backgroundColor: color }} />
       ))}
     </div>
   )
@@ -440,6 +440,7 @@ export default function WorkforceHubPage() {
       valueKind: "number" as KpiValueKind,
       icon: Users,
       tint: "from-emerald-500 to-green-400",
+      iconClassName: "bg-green-100 text-green-600",
       trend: activeDeltaLabel,
       trendTone: (activeDelta >= 0 ? "positive" : "negative") as TrendTone,
       scope: "today" as KpiScope,
@@ -452,6 +453,7 @@ export default function WorkforceHubPage() {
       valueKind: "number" as KpiValueKind,
       icon: Clock3,
       tint: "from-sky-500 to-cyan-400",
+      iconClassName: "bg-blue-100 text-blue-600",
       trend: "Across all shifts today",
       trendDelta: `${hoursWorkedDeltaHours >= 0 ? "+" : ""}${hoursWorkedDeltaHours.toFixed(1)}h vs yesterday`,
       trendTone: (hoursWorkedDeltaHours >= 0 ? "positive" : "negative") as TrendTone,
@@ -466,6 +468,7 @@ export default function WorkforceHubPage() {
       valueKind: "currency" as KpiValueKind,
       icon: TrendingUp,
       tint: "from-indigo-500 to-violet-500",
+      iconClassName: "bg-purple-100 text-purple-600",
       trend: "Live service revenue today",
       trendDelta: `${revenueVsYesterdayPct >= 0 ? "+" : ""}${Math.round(revenueVsYesterdayPct)}% vs yesterday`,
       trendTone: (revenueVsYesterdayPct >= 0 ? "positive" : "negative") as TrendTone,
@@ -479,6 +482,7 @@ export default function WorkforceHubPage() {
       valueKind: "number" as KpiValueKind,
       icon: AlertTriangle,
       tint: "from-amber-500 to-orange-500",
+      iconClassName: "bg-amber-100 text-amber-600",
       trend: "This month performance",
       trendDelta: `${lateMonth - lateLastMonth >= 0 ? "+" : ""}${lateMonth - lateLastMonth} vs last month`,
       trendTone: (lateMonth - lateLastMonth <= 0 ? "positive" : "negative") as TrendTone,
@@ -497,6 +501,7 @@ export default function WorkforceHubPage() {
       valueKind: "percent" as KpiValueKind,
       icon: ShieldCheck,
       tint: "from-teal-500 to-emerald-500",
+      iconClassName: "bg-green-100 text-green-600",
       trend: "On-time consistency this month",
       trendDelta: `${attendanceScore - attendanceLastMonth >= 0 ? "+" : ""}${attendanceScore - attendanceLastMonth}% vs last month`,
       trendTone: (attendanceScore - attendanceLastMonth >= 0 ? "positive" : "negative") as TrendTone,
@@ -512,6 +517,7 @@ export default function WorkforceHubPage() {
       valueKind: "number" as KpiValueKind,
       icon: TimerReset,
       tint: "from-slate-500 to-slate-400",
+      iconClassName: "bg-blue-100 text-blue-600",
       trend: "Awaiting shift closure",
       trendDelta: `${pendingToday - pendingYesterday >= 0 ? "+" : ""}${pendingToday - pendingYesterday} vs yesterday`,
       trendTone: (pendingToday - pendingYesterday <= 0 ? "positive" : "negative") as TrendTone,
@@ -703,19 +709,15 @@ export default function WorkforceHubPage() {
                 onClick={kpi.onClick}
                 role={kpi.onClick ? "button" : undefined}
                 tabIndex={kpi.onClick ? 0 : -1}
-                className={`relative overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm ${
-                  kpi.onClick ? "cursor-pointer transition hover:border-slate-300 hover:shadow-md" : ""
+                className={`relative overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${
+                  kpi.onClick ? "cursor-pointer transition hover:shadow-md" : ""
                 } ${kpi.title === "Late Arrivals" && Number(kpi.value) > 0 ? "ring-1 ring-amber-200/70 shadow-amber-100/80" : ""}`}
               >
                 <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${kpi.tint}`} />
-                {kpi.title === "Late Arrivals" && Number(kpi.value) > 0 ? (
-                  <div className="pointer-events-none absolute inset-0 animate-pulse bg-amber-100/10" />
-                ) : null}
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white to-gray-50/90" />
                 <CardContent className="p-5 min-h-[174px]">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">{kpi.title}</p>
+                      <p className="truncate text-xs font-medium uppercase tracking-wide text-gray-500">{kpi.title}</p>
                       <Badge
                         className={`mt-1 border px-2 py-0.5 text-[10px] ${
                           kpi.scope === "today"
@@ -727,25 +729,25 @@ export default function WorkforceHubPage() {
                       </Badge>
                       <motion.p
                         key={`${kpi.title}-${String(kpi.value)}`}
-                        initial={{ opacity: 0.45 }}
+                        initial={{ opacity: 1 }}
                         animate={{ opacity: 1 }}
                         transition={{ duration: 0.35 }}
-                        className={`mt-1 text-2xl font-semibold leading-none ${Number(kpi.value) === 0 ? "text-slate-400" : "text-slate-900"}`}
+                        className="mt-1 text-2xl font-semibold leading-none text-gray-900"
                       >
                         <AnimatedKpiValue value={Number(kpi.value)} kind={kpi.valueKind} />
                         {kpi.suffix ? kpi.suffix : null}
                       </motion.p>
-                      {Number(kpi.value) === 0 && kpi.emptyLabel ? <p className="mt-1 text-sm font-medium text-slate-500">{kpi.emptyLabel}</p> : null}
-                      <p className="mt-1.5 truncate text-[11px] text-slate-500">{kpi.trend}</p>
+                      {Number(kpi.value) === 0 && kpi.emptyLabel ? <p className="mt-1 text-sm font-medium text-gray-600">{kpi.emptyLabel}</p> : null}
+                      <p className="mt-1.5 truncate text-[11px] text-gray-600">{kpi.trend}</p>
                       {"trendDelta" in kpi && kpi.trendDelta ? (
-                        <p className={`mt-1 text-[11px] font-medium ${kpi.trendTone === "positive" ? "text-emerald-600" : kpi.trendTone === "negative" ? "text-rose-600" : "text-slate-500"}`}>
+                        <p className={`mt-1 text-[11px] font-medium ${kpi.trendTone === "positive" ? "text-emerald-600" : kpi.trendTone === "negative" ? "text-rose-600" : "text-gray-600"}`}>
                           {kpi.trendDelta}
                         </p>
                       ) : null}
                       {"urgencyLabel" in kpi && kpi.urgencyLabel ? <p className="mt-1 text-[11px] font-semibold text-amber-600">{kpi.urgencyLabel}</p> : null}
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      <div className={`relative rounded-xl bg-gradient-to-r p-2.5 text-white shadow-sm ${kpi.tint}`}>
+                      <div className={`relative rounded-xl p-2.5 shadow-sm ${kpi.iconClassName}`}>
                         <kpi.icon className="h-5 w-5" />
                         {kpi.title === "Pending Clock-outs" && Number(kpi.value) > 0 ? (
                           <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
