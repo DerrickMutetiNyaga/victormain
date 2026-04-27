@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/accordion"
 import { ProductCard } from "@/components/ecommerce/product-card"
 import { motion } from "framer-motion"
+import { trackClientEvent } from "@/lib/commerce-analytics-client"
 
 const CATEGORY_MAP: Record<string, "Infused Jaba" | "Liquor" | "Spirits" | "Wines" | "Soft Drinks"> = {
   whiskey: "Spirits",
@@ -105,6 +106,16 @@ export default function ProductPage() {
       setRecentlyViewed([])
     }
   }, [product?.id, product?.name])
+
+  useEffect(() => {
+    if (!product?.id) return
+    trackClientEvent('product_view', {
+      productId: product.id,
+      productName: product.name,
+      category: product.category,
+      value: product.price,
+    })
+  }, [product?.id, product?.name, product?.category, product?.price])
 
   // Fetch product
   useEffect(() => {

@@ -10,6 +10,7 @@ import {
   OrderSourceIntelligence,
 } from './_components/ai-intelligence-sections'
 import { AskAIPanel, AIQuickActions } from './_components/ai-ask-panel'
+import { CommerceIntelligenceSection } from './_components/commerce-intelligence-section'
 
 interface IntelligenceData {
   success: boolean
@@ -133,10 +134,13 @@ export default function AIIntelligenceContent() {
 
       <AIActionLab data={data} />
 
-      {/* 12. Ask AI */}
+      {/* 12. Catha AI Commerce Intelligence */}
+      <CommerceIntelligenceSection />
+
+      {/* 13. Ask AI */}
       <AskAIPanel intelligenceData={data} />
 
-      {/* 13. Quick Actions */}
+      {/* 14. Quick Actions */}
       <AIQuickActions />
 
       {/* Footer Advisory */}

@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import Image from "next/image"
 import { useDebounce } from "@/hooks/use-debounce"
 import { toast } from "sonner"
+import { trackClientEvent } from "@/lib/commerce-analytics-client"
 
 function ShopPageContent() {
   const searchParams = useSearchParams()
@@ -299,6 +300,13 @@ function ShopPageContent() {
     const ok = await addItem({ id: product.id, name: product.name, price, image: product.image, quantity: 1, size })
     if (ok) {
       toast.success(`${product.name}${size ? ` (${size})` : ''} added to cart`, { duration: 4000 })
+      trackClientEvent('add_to_cart', {
+        productId: product.id,
+        productName: product.name,
+        category: product.category,
+        quantity: 1,
+        value: price,
+      })
     } else {
       toast.error(`Could not add ${product.name}. Try again.`)
     }
@@ -340,6 +348,17 @@ function ShopPageContent() {
       )
       .slice(0, 5) // Limit to 5 suggestions
   }, [searchQuery, products])
+
+  useEffect(() => {
+    if (!debouncedSearchQuery.trim() || debouncedSearchQuery.trim().length < 2) return
+    const timer = window.setTimeout(() => {
+      trackClientEvent('search', {
+        searchQuery: debouncedSearchQuery.trim(),
+        metadata: { resultCount: filteredProducts.length, source: 'shop-page' },
+      })
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [debouncedSearchQuery, filteredProducts.length])
 
   // Calculate total cart items (sum of quantities)
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0)

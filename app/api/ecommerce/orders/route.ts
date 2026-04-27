@@ -10,6 +10,7 @@ import { getClientIp } from '@/lib/rate-limit-simple'
 import { logOrderSecurityEvent } from '@/lib/order-security-audit'
 import { ecommerceStaffOrderPutSchema, formatZodError } from '@/lib/order-request-schemas'
 import { resolveEcommerceOrdersPutDenialWhenNotStaff } from '@/lib/ecommerce-orders-put-gate'
+import { trackAnalyticsEvent } from '@/lib/commerce-analytics'
 
 /** PUT is not a customer API — only Catha staff with `sales.orders` edit may mutate. */
 export async function GET(request: Request) {
@@ -294,6 +295,20 @@ export async function PUT(request: Request) {
       userAgent,
       requestSummary: { id, fromStatus: oldStatus, toStatus: nextStatus },
     })
+
+    if (nextStatus !== 'cancelled') {
+      await trackAnalyticsEvent(db, request, {
+        eventType: 'purchase',
+        sessionId: String(existingOrder.customerPhone || existingOrder.customerEmail || existingOrder.id || 'staff-complete'),
+        path: '/checkout',
+        pageName: 'Checkout',
+        value: Number(existingOrder.total) || 0,
+        orderId: String(existingOrder.id || ''),
+        quantity: Array.isArray(existingOrder.items)
+          ? existingOrder.items.reduce((sum: number, item: any) => sum + (Number(item?.quantity) || 0), 0)
+          : null,
+      })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error: any) {

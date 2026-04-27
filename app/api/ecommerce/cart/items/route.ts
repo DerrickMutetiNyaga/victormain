@@ -11,6 +11,7 @@ import {
 } from '@/lib/order-request-schemas'
 import { normalizeCartAddBody } from '@/lib/shop-cart-normalize'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit-simple'
+import { trackAnalyticsEvent } from '@/lib/commerce-analytics'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
@@ -82,6 +83,15 @@ export async function POST(request: Request) {
     }
     const items = Array.from(existingMap.values()) as ShopCartResolvedLine[]
     const updated = await upsertCart(customerId, items)
+    await trackAnalyticsEvent(db, request, {
+      eventType: 'add_to_cart',
+      sessionId: customerId.toString(),
+      path: '/cart',
+      pageName: 'Cart',
+      quantity: resolved.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+      value: resolved.items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.price) || 0)), 0),
+      metadata: { itemCount: resolved.items.length },
+    })
     return NextResponse.json({ success: true, items: updated.items }, { headers: NO_STORE })
   } catch (error) {
     console.error('[ecommerce/cart/items] POST error:', error)
@@ -162,6 +172,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, error: 'uniqueId or productId required' }, { status: 400 })
     }
 
+    const db = await getDatabase('infusion_jaba')
     const cart = await getCartByCustomerId(customerId)
     const existing = cart?.items ?? []
     const toRemove = new Set(lineIds.map((s) => String(s).trim()).filter(Boolean))
@@ -169,6 +180,14 @@ export async function DELETE(request: Request) {
     const items = existing.filter((i) => !toRemove.has(getUniqueId(i)))
 
     const updated = await upsertCart(customerId, items)
+    await trackAnalyticsEvent(db, request, {
+      eventType: 'remove_from_cart',
+      sessionId: customerId.toString(),
+      path: '/cart',
+      pageName: 'Cart',
+      quantity: toRemove.size,
+      metadata: { removedIds: Array.from(toRemove).slice(0, 20) },
+    })
     return NextResponse.json({ success: true, items: updated.items }, { headers: NO_STORE })
   } catch (error) {
     console.error('[ecommerce/cart/items] DELETE error:', error)

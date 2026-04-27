@@ -3,8 +3,16 @@ import { getCathaSession } from '@/lib/catha-auth'
 import { getCathaUserByEmail } from '@/lib/models/catha-user'
 import { buildAllowedRoutes, isSuperAdmin } from '@/lib/catha-access'
 import { autoCloseOverdueShiftForUser, runFirstRequestBacklogSweep } from '@/lib/catha-shift-auto-close'
+import { normalizePermissions } from '@/lib/catha-permissions-model'
 
 const CACHE_CONTROL = 'no-store, no-cache, must-revalidate, max-age=0'
+const CASHIER_MY_SHIFT_MIN_PERMS = { view: true, add: false, edit: false, delete: false } as const
+
+function hasValidMyShiftViewPermission(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const obj = value as Record<string, unknown>
+  return obj.view === true
+}
 
 /**
  * Returns current Catha user (V2) from session: role, status, permissions.
@@ -31,7 +39,10 @@ export async function GET() {
 
     const role = (user.role ?? 'PENDING').toUpperCase()
     const status = (user.status ?? 'PENDING').toUpperCase()
-    const permissions = user.permissions
+    const permissions = normalizePermissions(user.permissions ?? {})
+    if (role === 'CASHIER' && !hasValidMyShiftViewPermission(permissions.myShift)) {
+      permissions.myShift = { ...CASHIER_MY_SHIFT_MIN_PERMS }
+    }
     const superAdmin = role === 'SUPER_ADMIN'
     const allowedRoutes = buildAllowedRoutes(permissions, superAdmin)
 

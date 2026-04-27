@@ -28,6 +28,7 @@
     "reconcile-inventory": "tsx scripts/reconcile-inventory.ts",
     "reconcile-inventory:apply": "tsx scripts/reconcile-inventory.ts --apply",
     "backfill-product-visibility": "tsx scripts/backfill-product-visibility.ts",
+    "backfill-catha-cashier-my-shift": "tsx scripts/backfill-catha-cashier-my-shift.ts",
     "test-jaba-concurrency": "tsx scripts/test-jaba-concurrency.ts",
     "ensure-jaba-batch-number-index": "tsx scripts/ensure-jaba-batch-number-unique-index.ts"
   },

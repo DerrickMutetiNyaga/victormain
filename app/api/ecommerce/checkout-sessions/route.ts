@@ -23,6 +23,7 @@ import {
   evaluateEcommerceOpeningHours,
   type EcommerceOpeningHoursSettings,
 } from '@/lib/ecommerce-opening-hours'
+import { trackAnalyticsEvent } from '@/lib/commerce-analytics'
 
 async function resolveDeliveryFeeKes(
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -242,6 +243,16 @@ export async function POST(request: Request) {
       resolvedDbPrices: priced.dbPricesBySku,
       computedTotals: { subtotal: serverSubtotal, vat: serverVat, total: serverTotal },
       requestSummary: { sessionId, deliveryFee },
+    })
+
+    await trackAnalyticsEvent(db, request, {
+      eventType: 'begin_checkout',
+      sessionId: session.userId,
+      path: '/checkout',
+      pageName: 'Checkout',
+      quantity: priced.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+      value: serverTotal,
+      metadata: { checkoutSessionId: sessionId, itemCount: priced.items.length },
     })
 
     return NextResponse.json(

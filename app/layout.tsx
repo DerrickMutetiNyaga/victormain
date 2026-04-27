@@ -9,6 +9,7 @@ import { CartProvider } from "@/components/providers/cart-provider"
 import { ShopLoginModalProvider } from "@/components/providers/shop-login-modal-provider"
 import { OrderNotificationsProvider } from "@/components/providers/order-notifications-provider"
 import { GlobalErrorListener } from "@/components/providers/global-error-listener"
+import { CommercePageTracker } from "@/components/analytics/commerce-page-tracker"
 import "./globals.css"
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.infusionjaba.co.ke"
@@ -44,6 +45,7 @@ export default function RootLayout({
               <ShopLoginModalProvider>
                 <CartProvider>
                   <OrderNotificationsProvider>
+                    <CommercePageTracker />
                     {children}
                   </OrderNotificationsProvider>
                 </CartProvider>
