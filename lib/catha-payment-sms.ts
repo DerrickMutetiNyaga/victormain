@@ -6,7 +6,7 @@ function buildCathaPaymentReceiptMessage(orderId: string): string {
   const receiptLink =
     process.env.CATHA_RECEIPT_LINK_BASE?.trim() ||
     `https://infusionjaba.co.ke/r/${encodeURIComponent(orderId)}`
-  return `Payment received. Your order at Catha Lodge is confirmed.\nReceipt: ${receiptLink}\n\nThank you for visiting us.`
+  return `Payment received. Your order at Catha Lounge is confirmed.\nReceipt: ${receiptLink}\n\nThank you for visiting us.`
 }
 
 export async function maybeSendCathaPaymentReceiptSms(

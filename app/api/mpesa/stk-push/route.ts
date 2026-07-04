@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { initiateSTKPush, type MpesaConfig } from '@/lib/mpesa'
 import { ensureMpesaTransactionIndexes } from '@/lib/catha-mpesa-transaction-indexes'
+import { normalizePhoneNumbers } from '@/lib/phone-normalize'
 import { summarizeCathaOrderPayments } from '@/lib/catha-order-payments'
 import { ECOMMERCE_CHECKOUT_SESSIONS_COLLECTION } from '@/lib/ecommerce-checkout-session-constants'
 import { filterInventoryStockLineItems } from '@/lib/catha-order-inventory-lines'
@@ -89,6 +90,16 @@ export async function POST(request: Request) {
 
     // Catha / bar orders: STK amount must not exceed remaining balance (split / group pay).
     if (orderForRef && orderForRef.type !== 'ecommerce') {
+      // Save the phone the payer typed BEFORE initiating STK, so the receipt SMS
+      // goes to this number (not the MSISDN M-Pesa reports back).
+      const payerPhone = normalizePhoneNumbers(String(phoneNumber))[0]
+      if (payerPhone) {
+        await db.collection('orders').updateOne(
+          { id: ref },
+          { $set: { customerPhone: payerPhone, updatedAt: new Date() } }
+        )
+      }
+
       const pay = summarizeCathaOrderPayments(orderForRef as any)
       if (pay.balanceDue <= 0.02 && pay.totalLinkedPayments > 0) {
         return NextResponse.json(

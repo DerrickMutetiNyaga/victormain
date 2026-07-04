@@ -9,6 +9,7 @@ import {
   type EcommerceCheckoutSessionDoc,
 } from '@/lib/ecommerce-order-from-session'
 import { logEcommerceRecoveryCritical, releaseHoldAndUpdateSessionStatus } from '@/lib/ecommerce-stock-reservation'
+import { maybeSendCathaPaymentReceiptSms } from '@/lib/catha-payment-sms'
 /**
  * STK Push Callback Handler
  * Called by M-Pesa when customer completes or cancels payment
@@ -210,6 +211,17 @@ export async function POST(request: Request) {
                     checkoutRequestID,
                     mpesaReceiptNumber,
                   })
+                }
+              }
+
+              // Receipt SMS goes to order.customerPhone — the number the payer typed
+              // when initiating STK (saved by the stk-push route), NOT the callback MSISDN.
+              // maybeSend... is idempotent (SENDING/SENT claim), so duplicate callbacks are safe.
+              if (!ecommerceAmountMismatch && order.type !== 'ecommerce') {
+                try {
+                  await maybeSendCathaPaymentReceiptSms(db, orderId)
+                } catch (smsError) {
+                  console.error('[M-Pesa Callback] Failed to send payment receipt SMS:', smsError)
                 }
               }
             } else {
