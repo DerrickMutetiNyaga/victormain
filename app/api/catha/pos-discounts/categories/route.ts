@@ -10,11 +10,105 @@ import {
   buildDiscountDocFields,
   logPosDiscountAudit,
   isDiscountEffectivelyActive,
+  diffEligibleCustomers,
+  normalizeEligibleCustomerIds,
   type CategoryDiscountInputPayload,
   type PosDiscountStatus,
 } from '@/lib/pos-product-discounts'
 import { canManagePosDiscounts, canViewPosDiscountsAdmin } from '@/lib/pos-discount-permissions'
 import { ObjectId } from 'mongodb'
+import { normalizeKenyaPhone } from '@/lib/phone-utils'
+import type { Db } from 'mongodb'
+
+const CLIENTS_META_COLLECTION = 'catha_clients'
+
+async function resolveCustomerDisplayNames(
+  db: Db,
+  customerIds: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (customerIds.length === 0) return map
+
+  const phoneVariants = new Set<string>()
+  for (const id of customerIds) {
+    phoneVariants.add(id)
+    const m = /^\+254(\d{9})$/.exec(id)
+    if (m) phoneVariants.add(`0${m[1]}`)
+    const m2 = /^0(\d{9})$/.exec(id)
+    if (m2) phoneVariants.add(`+254${m2[1]}`)
+  }
+
+  const metaDocs = await db
+    .collection(CLIENTS_META_COLLECTION)
+    .find({ phone: { $in: [...phoneVariants] } })
+    .project({ phone: 1, name: 1 })
+    .toArray()
+
+  for (const doc of metaDocs) {
+    const key = normalizeKenyaPhone(String(doc.phone)) || String(doc.phone)
+    if (key && doc.name) map.set(key, String(doc.name))
+  }
+
+  for (const id of customerIds) {
+    if (!map.has(id)) map.set(id, id)
+  }
+  return map
+}
+
+async function logEligibilityAuditIfChanged(
+  db: Db,
+  opts: {
+    existing: Record<string, unknown> | null
+    nextEligible: string[]
+    promotionName: string | null
+    targetId: string
+    targetName: string
+    actorEmail: string | null
+    actorName: string | null
+  }
+) {
+  const prev = normalizeEligibleCustomerIds(
+    opts.existing?.eligibleCustomers as string[] | undefined
+  )
+  const { added, removed } = diffEligibleCustomers(prev, opts.nextEligible)
+  if (added.length === 0 && removed.length === 0) return
+
+  const nameMap = await resolveCustomerDisplayNames(db, [...added, ...removed])
+  const promotion = opts.promotionName || opts.targetName
+
+  for (const id of added) {
+    await logPosDiscountAudit(db, {
+      action: 'eligibility_changed',
+      targetType: 'category',
+      targetId: opts.targetId,
+      targetName: opts.targetName,
+      actorEmail: opts.actorEmail,
+      actorName: opts.actorName,
+      details: {
+        change: 'added',
+        customerId: id,
+        customerName: nameMap.get(id) || id,
+        promotionName: promotion,
+      },
+    })
+  }
+  for (const id of removed) {
+    await logPosDiscountAudit(db, {
+      action: 'eligibility_changed',
+      targetType: 'category',
+      targetId: opts.targetId,
+      targetName: opts.targetName,
+      actorEmail: opts.actorEmail,
+      actorName: opts.actorName,
+      details: {
+        change: 'removed',
+        customerId: id,
+        customerName: nameMap.get(id) || id,
+        promotionName: promotion,
+      },
+    })
+  }
+}
 
 export const runtime = 'nodejs'
 
@@ -135,6 +229,16 @@ export async function POST(request: Request) {
       { $set: { ...fields, category }, $setOnInsert: { createdAt: now } },
       { upsert: true, returnDocument: 'after' }
     )
+
+    await logEligibilityAuditIfChanged(db, {
+      existing,
+      nextEligible: fields.eligibleCustomers,
+      promotionName: fields.promotionName,
+      targetId: category,
+      targetName: CATEGORY_LABELS[category] ?? category,
+      actorEmail: actor.email,
+      actorName: actor.name,
+    })
 
     await logPosDiscountAudit(db, {
       action: existing ? 'updated' : 'category_applied',

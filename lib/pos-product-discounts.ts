@@ -5,6 +5,11 @@
  */
 
 import type { Db } from 'mongodb'
+import { normalizeKenyaPhone } from '@/lib/phone-utils'
+import {
+  isCampaignAllowingDiscount,
+  type PosDiscountCampaignDoc,
+} from '@/lib/pos-discount-campaigns'
 
 export const POS_DISCOUNTS_COLLECTION = 'pos_product_discounts'
 export const POS_CATEGORY_DISCOUNTS_COLLECTION = 'pos_category_discounts'
@@ -21,6 +26,21 @@ export type PosDiscountAuditAction =
   | 'deleted'
   | 'bulk_applied'
   | 'category_applied'
+  | 'eligibility_changed'
+  | 'campaign_created'
+  | 'campaign_updated'
+  | 'campaign_activated'
+  | 'campaign_disabled'
+  | 'campaign_archived'
+  | 'campaign_deleted'
+
+/** Who may receive a discount — extensible for future loyalty / membership scopes */
+export type PosDiscountEligibilityScope =
+  | 'everyone'
+  | 'selected_customers'
+  | 'customer_group'
+  | 'loyalty_tier'
+  | 'membership_plan'
 
 export interface PosDiscountRule {
   discountType: PosDiscountType
@@ -29,6 +49,12 @@ export interface PosDiscountRule {
   startAt?: Date | null
   endAt?: Date | null
   promotionName?: string | null
+  /** Defaults to 'everyone' when absent (backward compatible) */
+  eligibilityScope?: PosDiscountEligibilityScope
+  /** Normalized customer IDs (phone). Empty = available to everyone */
+  eligibleCustomers?: string[]
+  /** Optional promotion campaign link */
+  campaignId?: string | null
 }
 
 export interface PosProductDiscountDoc extends PosDiscountRule {
@@ -56,6 +82,9 @@ export interface PosDiscountPublic {
   startAt: string | null
   endAt: string | null
   promotionName: string | null
+  eligibilityScope: PosDiscountEligibilityScope
+  eligibleCustomers: string[]
+  campaignId: string | null
   createdBy: string | null
   createdAt: string
   updatedAt: string
@@ -74,6 +103,9 @@ export interface PosCategoryDiscountPublic {
   startAt: string | null
   endAt: string | null
   promotionName: string | null
+  eligibilityScope: PosDiscountEligibilityScope
+  eligibleCustomers: string[]
+  campaignId: string | null
   createdBy: string | null
   createdAt: string
   updatedAt: string
@@ -86,6 +118,8 @@ export interface AppliedPosDiscount {
   posDiscountType: PosDiscountType
   discountValue: number
   promotionName: string | null
+  campaignId: string | null
+  campaignName: string | null
   source: 'product' | 'category'
   badgeLabel: string
 }
@@ -93,6 +127,7 @@ export interface AppliedPosDiscount {
 export interface PosDiscountContext {
   productDiscounts: Map<string, PosProductDiscountDoc>
   categoryDiscounts: Map<string, PosCategoryDiscountDoc>
+  campaigns: Map<string, PosDiscountCampaignDoc>
   now: Date
 }
 
@@ -158,6 +193,63 @@ export function posDiscountBadgeLabel(
   return 'POS Offer'
 }
 
+export function normalizeCustomerIdForEligibility(id: string | null | undefined): string | null {
+  if (!id) return null
+  const trimmed = String(id).trim()
+  if (!trimmed) return null
+  return normalizeKenyaPhone(trimmed) || trimmed
+}
+
+export function normalizeEligibleCustomerIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return []
+  const out = new Set<string>()
+  for (const raw of ids) {
+    const normalized = normalizeCustomerIdForEligibility(String(raw))
+    if (normalized) out.add(normalized)
+  }
+  return [...out]
+}
+
+export function normalizeDiscountEligibility(
+  rule: Partial<{
+    eligibilityScope?: PosDiscountEligibilityScope
+    eligibleCustomers?: unknown
+  }>
+): { scope: PosDiscountEligibilityScope; eligibleCustomers: string[] } {
+  const eligibleCustomers = normalizeEligibleCustomerIds(rule.eligibleCustomers)
+  let scope = (rule.eligibilityScope as PosDiscountEligibilityScope) || 'everyone'
+  if (eligibleCustomers.length === 0) {
+    scope = 'everyone'
+  } else if (scope === 'everyone') {
+    scope = 'selected_customers'
+  }
+  return { scope, eligibleCustomers }
+}
+
+/**
+ * Whether a discount may apply for the current POS customer.
+ * No customer selected → only public (everyone) discounts qualify.
+ */
+export function isDiscountEligibleForCustomer(
+  rule: Pick<PosDiscountRule, 'eligibilityScope' | 'eligibleCustomers'>,
+  customerId: string | null | undefined
+): boolean {
+  const { scope, eligibleCustomers } = normalizeDiscountEligibility(rule)
+
+  if (scope === 'everyone' || eligibleCustomers.length === 0) {
+    return true
+  }
+
+  if (scope === 'selected_customers') {
+    const normalized = normalizeCustomerIdForEligibility(customerId)
+    if (!normalized) return false
+    return eligibleCustomers.includes(normalized)
+  }
+
+  // Future scopes (customer_group, loyalty_tier, membership_plan) — not yet implemented
+  return false
+}
+
 /** Manual status + schedule window */
 export function isDiscountEffectivelyActive(
   rule: Pick<PosDiscountRule, 'status' | 'startAt' | 'endAt'>,
@@ -182,6 +274,39 @@ export function applyDiscountRule(
   return { discountedPrice: validated.discountedPrice, discountAmount }
 }
 
+function resolveRuleApplication(
+  catalog: number,
+  rule: PosDiscountRule & { campaignId?: string | null },
+  ctx: PosDiscountContext,
+  customerId: string | null | undefined,
+  source: 'product' | 'category'
+): AppliedPosDiscount | null {
+  if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) {
+    return null
+  }
+  if (!isDiscountEffectivelyActive(rule, ctx.now)) return null
+  if (!isDiscountEligibleForCustomer(rule, customerId)) return null
+  const applied = applyDiscountRule(catalog, rule)
+  if (!applied) return null
+
+  const campaign = rule.campaignId ? ctx.campaigns.get(rule.campaignId) : undefined
+  const campaignName = campaign?.name ?? null
+  const displayName = campaignName ?? rule.promotionName ?? null
+
+  return {
+    unit: applied.discountedPrice,
+    originalPrice: catalog,
+    posDiscountAmount: applied.discountAmount,
+    posDiscountType: rule.discountType,
+    discountValue: rule.discountValue,
+    promotionName: displayName,
+    campaignId: rule.campaignId ?? null,
+    campaignName,
+    source,
+    badgeLabel: posDiscountBadgeLabel(rule.discountType, rule.discountValue),
+  }
+}
+
 /**
  * Resolve POS price: product discount wins over category discount.
  * Always uses live catalogPrice — never a stored snapshot.
@@ -190,44 +315,23 @@ export function resolvePosPrice(
   catalogPrice: number,
   productId: string,
   category: string,
-  ctx: PosDiscountContext
+  ctx: PosDiscountContext,
+  customerId?: string | null
 ): AppliedPosDiscount | null {
   const catalog = roundMoney(Number(catalogPrice))
   if (!Number.isFinite(catalog) || catalog <= 0) return null
 
   const productRule = ctx.productDiscounts.get(productId)
-  if (productRule && isDiscountEffectivelyActive(productRule, ctx.now)) {
-    const applied = applyDiscountRule(catalog, productRule)
-    if (applied) {
-      return {
-        unit: applied.discountedPrice,
-        originalPrice: catalog,
-        posDiscountAmount: applied.discountAmount,
-        posDiscountType: productRule.discountType,
-        discountValue: productRule.discountValue,
-        promotionName: productRule.promotionName ?? null,
-        source: 'product',
-        badgeLabel: posDiscountBadgeLabel(productRule.discountType, productRule.discountValue),
-      }
-    }
+  if (productRule) {
+    const resolved = resolveRuleApplication(catalog, productRule, ctx, customerId, 'product')
+    if (resolved) return resolved
   }
 
   const catKey = String(category || '').trim().toLowerCase()
   const categoryRule = catKey ? ctx.categoryDiscounts.get(catKey) : undefined
-  if (categoryRule && isDiscountEffectivelyActive(categoryRule, ctx.now)) {
-    const applied = applyDiscountRule(catalog, categoryRule)
-    if (applied) {
-      return {
-        unit: applied.discountedPrice,
-        originalPrice: catalog,
-        posDiscountAmount: applied.discountAmount,
-        posDiscountType: categoryRule.discountType,
-        discountValue: categoryRule.discountValue,
-        promotionName: categoryRule.promotionName ?? null,
-        source: 'category',
-        badgeLabel: posDiscountBadgeLabel(categoryRule.discountType, categoryRule.discountValue),
-      }
-    }
+  if (categoryRule) {
+    const resolved = resolveRuleApplication(catalog, categoryRule, ctx, customerId, 'category')
+    if (resolved) return resolved
   }
 
   return null
@@ -257,6 +361,11 @@ export function serializePosDiscount(
     }
   }
 
+  const eligibility = normalizeDiscountEligibility({
+    eligibilityScope: doc.eligibilityScope as PosDiscountEligibilityScope | undefined,
+    eligibleCustomers: doc.eligibleCustomers,
+  })
+
   return {
     id: String(doc._id),
     productId: String(doc.productId),
@@ -266,6 +375,9 @@ export function serializePosDiscount(
     startAt: toIsoDate(doc.startAt),
     endAt: toIsoDate(doc.endAt),
     promotionName: doc.promotionName != null ? String(doc.promotionName) : null,
+    eligibilityScope: eligibility.scope,
+    eligibleCustomers: eligibility.eligibleCustomers,
+    campaignId: doc.campaignId != null ? String(doc.campaignId) : null,
     createdBy: doc.createdBy != null ? String(doc.createdBy) : null,
     createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt ?? ''),
     updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : String(doc.updatedAt ?? ''),
@@ -276,6 +388,11 @@ export function serializePosDiscount(
 }
 
 export function serializeCategoryDiscount(doc: Record<string, unknown>): PosCategoryDiscountPublic {
+  const eligibility = normalizeDiscountEligibility({
+    eligibilityScope: doc.eligibilityScope as PosDiscountEligibilityScope | undefined,
+    eligibleCustomers: doc.eligibleCustomers,
+  })
+
   return {
     id: String(doc._id),
     category: String(doc.category),
@@ -285,6 +402,9 @@ export function serializeCategoryDiscount(doc: Record<string, unknown>): PosCate
     startAt: toIsoDate(doc.startAt),
     endAt: toIsoDate(doc.endAt),
     promotionName: doc.promotionName != null ? String(doc.promotionName) : null,
+    eligibilityScope: eligibility.scope,
+    eligibleCustomers: eligibility.eligibleCustomers,
+    campaignId: doc.campaignId != null ? String(doc.campaignId) : null,
     createdBy: doc.createdBy != null ? String(doc.createdBy) : null,
     createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : String(doc.createdAt ?? ''),
     updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : String(doc.updatedAt ?? ''),
@@ -303,6 +423,10 @@ export async function ensurePosDiscountIndexes(db: Db): Promise<void> {
 }
 
 function mapProductDiscountRow(row: Record<string, unknown>): PosProductDiscountDoc {
+  const eligibility = normalizeDiscountEligibility({
+    eligibilityScope: row.eligibilityScope as PosDiscountEligibilityScope | undefined,
+    eligibleCustomers: row.eligibleCustomers,
+  })
   return {
     _id: row._id,
     productId: String(row.productId),
@@ -312,6 +436,9 @@ function mapProductDiscountRow(row: Record<string, unknown>): PosProductDiscount
     startAt: parseOptionalDate(row.startAt),
     endAt: parseOptionalDate(row.endAt),
     promotionName: row.promotionName != null ? String(row.promotionName) : null,
+    eligibilityScope: eligibility.scope,
+    eligibleCustomers: eligibility.eligibleCustomers,
+    campaignId: row.campaignId != null ? String(row.campaignId) : null,
     createdBy: row.createdBy != null ? String(row.createdBy) : null,
     createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(),
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(),
@@ -319,6 +446,10 @@ function mapProductDiscountRow(row: Record<string, unknown>): PosProductDiscount
 }
 
 function mapCategoryDiscountRow(row: Record<string, unknown>): PosCategoryDiscountDoc {
+  const eligibility = normalizeDiscountEligibility({
+    eligibilityScope: row.eligibilityScope as PosDiscountEligibilityScope | undefined,
+    eligibleCustomers: row.eligibleCustomers,
+  })
   return {
     _id: row._id,
     category: String(row.category).toLowerCase(),
@@ -328,6 +459,9 @@ function mapCategoryDiscountRow(row: Record<string, unknown>): PosCategoryDiscou
     startAt: parseOptionalDate(row.startAt),
     endAt: parseOptionalDate(row.endAt),
     promotionName: row.promotionName != null ? String(row.promotionName) : null,
+    eligibilityScope: eligibility.scope,
+    eligibleCustomers: eligibility.eligibleCustomers,
+    campaignId: row.campaignId != null ? String(row.campaignId) : null,
     createdBy: row.createdBy != null ? String(row.createdBy) : null,
     createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(),
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(),
@@ -336,9 +470,11 @@ function mapCategoryDiscountRow(row: Record<string, unknown>): PosCategoryDiscou
 
 /** Load all discount rules; effective filtering happens at resolve time */
 export async function loadPosDiscountContext(db: Db, now: Date = new Date()): Promise<PosDiscountContext> {
-  const [productRows, categoryRows] = await Promise.all([
+  const { loadCampaignsMap } = await import('@/lib/pos-discount-campaigns')
+  const [productRows, categoryRows, campaigns] = await Promise.all([
     db.collection(POS_DISCOUNTS_COLLECTION).find({}).toArray(),
     db.collection(POS_CATEGORY_DISCOUNTS_COLLECTION).find({}).toArray(),
+    loadCampaignsMap(db),
   ])
 
   const productDiscounts = new Map<string, PosProductDiscountDoc>()
@@ -353,7 +489,7 @@ export async function loadPosDiscountContext(db: Db, now: Date = new Date()): Pr
     if (mapped.category) categoryDiscounts.set(mapped.category, mapped)
   }
 
-  return { productDiscounts, categoryDiscounts, now }
+  return { productDiscounts, categoryDiscounts, campaigns, now }
 }
 
 /** @deprecated Use loadPosDiscountContext + resolvePosPrice */
@@ -370,18 +506,21 @@ export function applyPosDiscountToUnitPrice(
   catalogUnit: number,
   productId: string,
   category: string,
-  ctx: PosDiscountContext
+  ctx: PosDiscountContext,
+  customerId?: string | null
 ): {
   unit: number
   originalPrice?: number
   posDiscountAmount?: number
   posDiscountType?: PosDiscountType
   promotionName?: string | null
+  campaignId?: string | null
+  campaignName?: string | null
   discountValue?: number
   source?: 'product' | 'category'
   badgeLabel?: string
 } {
-  const resolved = resolvePosPrice(catalogUnit, productId, category, ctx)
+  const resolved = resolvePosPrice(catalogUnit, productId, category, ctx, customerId)
   if (!resolved) return { unit: roundMoney(catalogUnit) }
   return {
     unit: resolved.unit,
@@ -389,6 +528,8 @@ export function applyPosDiscountToUnitPrice(
     posDiscountAmount: resolved.posDiscountAmount,
     posDiscountType: resolved.posDiscountType,
     promotionName: resolved.promotionName,
+    campaignId: resolved.campaignId,
+    campaignName: resolved.campaignName,
     discountValue: resolved.discountValue,
     source: resolved.source,
     badgeLabel: resolved.badgeLabel,
@@ -397,7 +538,7 @@ export function applyPosDiscountToUnitPrice(
 
 export interface PosDiscountAuditEntry {
   action: PosDiscountAuditAction
-  targetType: 'product' | 'category'
+  targetType: 'product' | 'category' | 'campaign'
   targetId: string
   targetName: string
   actorEmail: string | null
@@ -415,9 +556,11 @@ export async function logPosDiscountAudit(db: Db, entry: PosDiscountAuditEntry):
 export function countEffectivelyActiveDiscounts(ctx: PosDiscountContext): number {
   let count = 0
   for (const rule of ctx.productDiscounts.values()) {
+    if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) continue
     if (isDiscountEffectivelyActive(rule, ctx.now)) count++
   }
   for (const rule of ctx.categoryDiscounts.values()) {
+    if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) continue
     if (isDiscountEffectivelyActive(rule, ctx.now)) count++
   }
   return count
@@ -451,6 +594,9 @@ export function buildPosDiscountContextFromApi(
     startAt?: string | null
     endAt?: string | null
     promotionName?: string | null
+    eligibilityScope?: PosDiscountEligibilityScope
+    eligibleCustomers?: string[]
+    campaignId?: string | null
   }>,
   categoryRules: Array<{
     category: string
@@ -460,11 +606,16 @@ export function buildPosDiscountContextFromApi(
     startAt?: string | null
     endAt?: string | null
     promotionName?: string | null
+    eligibilityScope?: PosDiscountEligibilityScope
+    eligibleCustomers?: string[]
+    campaignId?: string | null
   }>,
+  campaigns: Map<string, PosDiscountCampaignDoc> = new Map(),
   now: Date = new Date()
 ): PosDiscountContext {
   const productDiscounts = new Map<string, PosProductDiscountDoc>()
   for (const r of productRules) {
+    const eligibility = normalizeDiscountEligibility(r)
     productDiscounts.set(r.productId, {
       productId: r.productId,
       discountType: r.discountType,
@@ -473,6 +624,9 @@ export function buildPosDiscountContextFromApi(
       startAt: parseOptionalDate(r.startAt),
       endAt: parseOptionalDate(r.endAt),
       promotionName: r.promotionName ?? null,
+      eligibilityScope: eligibility.scope,
+      eligibleCustomers: eligibility.eligibleCustomers,
+      campaignId: r.campaignId ?? null,
       createdBy: null,
       createdAt: now,
       updatedAt: now,
@@ -482,6 +636,7 @@ export function buildPosDiscountContextFromApi(
   const categoryDiscounts = new Map<string, PosCategoryDiscountDoc>()
   for (const r of categoryRules) {
     const key = String(r.category).toLowerCase()
+    const eligibility = normalizeDiscountEligibility(r)
     categoryDiscounts.set(key, {
       category: key,
       discountType: r.discountType,
@@ -490,13 +645,16 @@ export function buildPosDiscountContextFromApi(
       startAt: parseOptionalDate(r.startAt),
       endAt: parseOptionalDate(r.endAt),
       promotionName: r.promotionName ?? null,
+      eligibilityScope: eligibility.scope,
+      eligibleCustomers: eligibility.eligibleCustomers,
+      campaignId: r.campaignId ?? null,
       createdBy: null,
       createdAt: now,
       updatedAt: now,
     })
   }
 
-  return { productDiscounts, categoryDiscounts, now }
+  return { productDiscounts, categoryDiscounts, campaigns, now }
 }
 
 export type DiscountInputPayload = {
@@ -507,6 +665,9 @@ export type DiscountInputPayload = {
   startAt?: string | null
   endAt?: string | null
   promotionName?: string | null
+  eligibilityScope?: PosDiscountEligibilityScope
+  eligibleCustomers?: string[]
+  campaignId?: string | null
 }
 
 export type CategoryDiscountInputPayload = {
@@ -517,6 +678,9 @@ export type CategoryDiscountInputPayload = {
   startAt?: string | null
   endAt?: string | null
   promotionName?: string | null
+  eligibilityScope?: PosDiscountEligibilityScope
+  eligibleCustomers?: string[]
+  campaignId?: string | null
 }
 
 export function buildDiscountDocFields(
@@ -524,6 +688,10 @@ export function buildDiscountDocFields(
   staffEmail: string | null,
   now: Date
 ) {
+  const eligibility = normalizeDiscountEligibility({
+    eligibilityScope: input.eligibilityScope,
+    eligibleCustomers: input.eligibleCustomers,
+  })
   return {
     discountType: input.discountType,
     discountValue: Number(input.discountValue),
@@ -531,7 +699,95 @@ export function buildDiscountDocFields(
     startAt: parseOptionalDate(input.startAt),
     endAt: parseOptionalDate(input.endAt),
     promotionName: input.promotionName?.trim() || null,
+    eligibilityScope: eligibility.scope,
+    eligibleCustomers: eligibility.eligibleCustomers,
+    campaignId: input.campaignId?.trim() || null,
     createdBy: staffEmail,
     updatedAt: now,
   }
+}
+
+/** Diff eligible customer IDs for audit logging */
+export function diffEligibleCustomers(
+  previous: string[] | undefined,
+  next: string[] | undefined
+): { added: string[]; removed: string[] } {
+  const prevSet = new Set(normalizeEligibleCustomerIds(previous))
+  const nextSet = new Set(normalizeEligibleCustomerIds(next))
+  const added: string[] = []
+  const removed: string[] = []
+  for (const id of nextSet) {
+    if (!prevSet.has(id)) added.push(id)
+  }
+  for (const id of prevSet) {
+    if (!nextSet.has(id)) removed.push(id)
+  }
+  return { added, removed }
+}
+
+export interface CustomerEligibleDiscount {
+  id: string
+  targetType: 'product' | 'category'
+  targetName: string
+  promotionName: string | null
+  discountType: PosDiscountType
+  discountValue: number
+  discountLabel: string
+}
+
+/** List discounts a customer is eligible for (active + scheduled within rules) */
+export function listEligibleDiscountsForCustomer(
+  customerId: string,
+  ctx: PosDiscountContext,
+  productNames: Map<string, string>,
+  categoryLabels: Map<string, string>
+): CustomerEligibleDiscount[] {
+  const normalized = normalizeCustomerIdForEligibility(customerId)
+  if (!normalized) return []
+
+  const out: CustomerEligibleDiscount[] = []
+
+  for (const rule of ctx.productDiscounts.values()) {
+    if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) continue
+    if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
+    if (!isDiscountEligibleForCustomer(rule, normalized)) continue
+    const name = productNames.get(rule.productId) || rule.productId
+    out.push({
+      id: rule.productId,
+      targetType: 'product',
+      targetName: name,
+      promotionName: rule.promotionName ?? null,
+      discountType: rule.discountType,
+      discountValue: rule.discountValue,
+      discountLabel:
+        rule.discountType === 'percentage'
+          ? `${rule.discountValue}%`
+          : `KSh ${rule.discountValue} off`,
+    })
+  }
+
+  for (const rule of ctx.categoryDiscounts.values()) {
+    if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) continue
+    if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
+    if (!isDiscountEligibleForCustomer(rule, normalized)) continue
+    const label = categoryLabels.get(rule.category) || rule.category
+    out.push({
+      id: rule.category,
+      targetType: 'category',
+      targetName: label,
+      promotionName: rule.promotionName ?? null,
+      discountType: rule.discountType,
+      discountValue: rule.discountValue,
+      discountLabel:
+        rule.discountType === 'percentage'
+          ? `${rule.discountValue}%`
+          : `KSh ${rule.discountValue} off`,
+    })
+  }
+
+  return out.sort((a, b) => {
+    const aName = a.promotionName || a.targetName
+    const bName = b.promotionName || b.targetName
+    return aName.localeCompare(bName)
+  })
 }

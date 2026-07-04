@@ -18,6 +18,7 @@ import {
   diffOrderItems,
 } from '@/lib/inventory-ops'
 import { formatCathaOrderForApi } from '@/lib/catha-order-payments'
+import { normalizeKenyaPhone } from '@/lib/phone-utils'
 import { baseLinkedListFromOrder } from '@/lib/catha-append-mpesa-payment'
 import { deleteAllAllocationsForOrder, refreshMpesaTransactionLinkMetadata } from '@/lib/catha-mpesa-order-allocations'
 import { filterInventoryStockLineItems, orderLineFingerprintParts } from '@/lib/catha-order-inventory-lines'
@@ -261,6 +262,7 @@ export async function POST(request: Request) {
       allowCustomLines,
       rejectCustomLines: false,
       applyPosDiscounts: true,
+      customerId: body.customerPhone ? normalizeKenyaPhone(String(body.customerPhone)) : null,
     })
     if (!priced.ok) {
       logOrderSecurityEvent({
@@ -625,10 +627,17 @@ export async function PUT(request: Request) {
     if (Object.prototype.hasOwnProperty.call(updateData, 'items') && Array.isArray(updateData.items)) {
       const allowCustomLines =
         role === 'SUPER_ADMIN' || hasCathaPermission(perms, 'orders', 'edit')
+      const orderCustomerPhone =
+        updateData.customerPhone != null
+          ? String(updateData.customerPhone)
+          : existingOrder.customerPhone != null
+            ? String(existingOrder.customerPhone)
+            : null
       const priced = await resolveBarOrderLines(db, updateData.items, {
         allowCustomLines,
         rejectCustomLines: false,
         applyPosDiscounts: true,
+        customerId: orderCustomerPhone ? normalizeKenyaPhone(orderCustomerPhone) : null,
       })
       if (!priced.ok) {
         logOrderSecurityEvent({

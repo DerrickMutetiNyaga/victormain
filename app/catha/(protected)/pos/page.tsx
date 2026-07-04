@@ -60,6 +60,8 @@ import {
   buildPosDiscountContextFromApi,
   resolvePosPrice,
 } from "@/lib/pos-product-discounts"
+import { buildCampaignsMapFromApi, getActiveCampaignBanners } from "@/lib/pos-discount-campaigns"
+import { PromotionCampaignBanner, type PromotionBannerData } from "@/components/pos/promotion-campaign-banner"
 
 interface CartItem extends Product {
   quantity: number
@@ -144,8 +146,6 @@ const getCategoryIcon = (categoryId: string) => {
 }
 
 // In-memory cache for instant repeat loads - short TTL to avoid wrong stock (POS-critical)
-let _productsCache: Product[] | null = null
-let _productsCacheTime = 0
 const PRODUCTS_CACHE_TTL_MS = 5_000 // 5 seconds - stock must stay near real-time
 
 type PosDiscountApiRecord = {
@@ -156,6 +156,21 @@ type PosDiscountApiRecord = {
   startAt?: string | null
   endAt?: string | null
   promotionName?: string | null
+  eligibilityScope?: "everyone" | "selected_customers" | "customer_group" | "loyalty_tier" | "membership_plan"
+  eligibleCustomers?: string[]
+  campaignId?: string | null
+}
+
+type PosCampaignApiRecord = {
+  id: string
+  name: string
+  description?: string | null
+  status: "active" | "inactive" | "archived"
+  priority: number
+  startAt?: string | null
+  endAt?: string | null
+  color?: string | null
+  icon?: string | null
 }
 
 type PosCategoryDiscountApiRecord = {
@@ -166,14 +181,30 @@ type PosCategoryDiscountApiRecord = {
   startAt?: string | null
   endAt?: string | null
   promotionName?: string | null
+  eligibilityScope?: "everyone" | "selected_customers" | "customer_group" | "loyalty_tier" | "membership_plan"
+  eligibleCustomers?: string[]
+  campaignId?: string | null
 }
+
+type PosInventoryDiscountCache = {
+  raw: unknown[]
+  productRules: PosDiscountApiRecord[]
+  categoryRules: PosCategoryDiscountApiRecord[]
+  campaigns: PosCampaignApiRecord[]
+  mappedAt: number
+}
+
+let _posInventoryDiscountCache: PosInventoryDiscountCache | null = null
 
 function mapProductsWithPosDiscounts(
   raw: unknown[],
   productRules: PosDiscountApiRecord[],
-  categoryRules: PosCategoryDiscountApiRecord[]
+  categoryRules: PosCategoryDiscountApiRecord[],
+  campaigns: PosCampaignApiRecord[],
+  customerId?: string | null
 ): Product[] {
-  const ctx = buildPosDiscountContextFromApi(productRules, categoryRules)
+  const campaignsMap = buildCampaignsMapFromApi(campaigns)
+  const ctx = buildPosDiscountContextFromApi(productRules, categoryRules, campaignsMap)
 
   return (raw || []).map((p: any) => {
     const id = p.id || p._id || p.barcode || p.name || "unknown-product"
@@ -196,7 +227,7 @@ function mapProductsWithPosDiscounts(
       size: p.size || "",
     }
 
-    const applied = resolvePosPrice(catalogPrice, id, category, ctx)
+    const applied = resolvePosPrice(catalogPrice, id, category, ctx, customerId)
     if (!applied) return base
 
     return {
@@ -248,6 +279,26 @@ export default function POSPage() {
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
   const [phoneError, setPhoneError] = useState<string | null>(null)
+  const posCustomerId = useMemo(
+    () => (customerPhone ? normalizeKenyaPhone(customerPhone) : null),
+    [customerPhone]
+  )
+  const inventoryRawRef = useRef<unknown[]>([])
+  const productRulesRef = useRef<PosDiscountApiRecord[]>([])
+  const categoryRulesRef = useRef<PosCategoryDiscountApiRecord[]>([])
+  const campaignsRef = useRef<PosCampaignApiRecord[]>([])
+
+  const promotionBanner = useMemo((): PromotionBannerData | null => {
+    const campaignsMap = buildCampaignsMapFromApi(campaignsRef.current)
+    const ctx = buildPosDiscountContextFromApi(
+      productRulesRef.current,
+      categoryRulesRef.current,
+      campaignsMap
+    )
+    const banners = getActiveCampaignBanners(ctx, posCustomerId)
+    return banners[0] ?? null
+  }, [products, posCustomerId])
+
   const [cashierId, setCashierId] = useState("1")
   const [waiterId, setWaiterId] = useState("")
   const [cart, setCart] = useState<CartItem[]>([])
@@ -434,9 +485,22 @@ export default function POSPage() {
 
   // Fetch products + POS discounts - instant from cache, then revalidate in background
   useEffect(() => {
-    const hasFreshCache = _productsCache && Date.now() - _productsCacheTime < PRODUCTS_CACHE_TTL_MS
-    if (hasFreshCache) {
-      setProducts(_productsCache!)
+    const hasFreshCache =
+      _posInventoryDiscountCache && Date.now() - _posInventoryDiscountCache.mappedAt < PRODUCTS_CACHE_TTL_MS
+    if (hasFreshCache && _posInventoryDiscountCache) {
+      inventoryRawRef.current = _posInventoryDiscountCache.raw
+      productRulesRef.current = _posInventoryDiscountCache.productRules
+      categoryRulesRef.current = _posInventoryDiscountCache.categoryRules
+      campaignsRef.current = _posInventoryDiscountCache.campaigns
+      setProducts(
+        mapProductsWithPosDiscounts(
+          _posInventoryDiscountCache.raw,
+          _posInventoryDiscountCache.productRules,
+          _posInventoryDiscountCache.categoryRules,
+          _posInventoryDiscountCache.campaigns,
+          posCustomerId
+        )
+      )
       setIsLoading(false)
     }
 
@@ -457,6 +521,7 @@ export default function POSPage() {
         const data = await inventoryRes.json()
         let productRules: PosDiscountApiRecord[] = []
         let categoryRules: PosCategoryDiscountApiRecord[] = []
+        let campaigns: PosCampaignApiRecord[] = []
         if (discountsRes.ok) {
           const discountData = await discountsRes.json()
           productRules = (discountData.discounts || []).map((d: PosDiscountApiRecord & { productId: string }) => ({
@@ -467,16 +532,39 @@ export default function POSPage() {
             startAt: d.startAt,
             endAt: d.endAt,
             promotionName: d.promotionName,
+            eligibilityScope: d.eligibilityScope,
+            eligibleCustomers: d.eligibleCustomers,
+            campaignId: d.campaignId,
           }))
-          categoryRules = discountData.categoryDiscounts || []
+          categoryRules = (discountData.categoryDiscounts || []).map((d: PosCategoryDiscountApiRecord) => ({
+            category: d.category,
+            discountType: d.discountType,
+            discountValue: d.discountValue,
+            status: d.status,
+            startAt: d.startAt,
+            endAt: d.endAt,
+            promotionName: d.promotionName,
+            eligibilityScope: d.eligibilityScope,
+            eligibleCustomers: d.eligibleCustomers,
+            campaignId: d.campaignId,
+          }))
+          campaigns = discountData.campaigns || []
         }
 
         if (cancelled) return
         if (data.success && data.products) {
-          const mapped = mapProductsWithPosDiscounts(data.products, productRules, categoryRules)
-          _productsCache = mapped
-          _productsCacheTime = Date.now()
-          setProducts(mapped)
+          inventoryRawRef.current = data.products
+          productRulesRef.current = productRules
+          categoryRulesRef.current = categoryRules
+          campaignsRef.current = campaigns
+          _posInventoryDiscountCache = {
+            raw: data.products,
+            productRules,
+            categoryRules,
+            campaigns,
+            mappedAt: Date.now(),
+          }
+          setProducts(mapProductsWithPosDiscounts(data.products, productRules, categoryRules, campaigns, posCustomerId))
         }
       } catch (error) {
         if (!cancelled) {
@@ -492,6 +580,42 @@ export default function POSPage() {
       cancelled = true
     }
   }, [])
+
+  // Re-apply customer-specific discounts when checkout customer changes
+  useEffect(() => {
+    if (inventoryRawRef.current.length === 0) return
+    setProducts(
+      mapProductsWithPosDiscounts(
+        inventoryRawRef.current,
+        productRulesRef.current,
+        categoryRulesRef.current,
+        campaignsRef.current,
+        posCustomerId
+      )
+    )
+  }, [posCustomerId])
+
+  // Sync cart line prices when customer eligibility changes
+  useEffect(() => {
+    if (cart.length === 0) return
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.isCustom) return item
+        const product = products.find((p) => {
+          const productKey = p.size ? `${p.id}-${p.size}` : p.id
+          const itemKey = item.size ? `${item.id}-${item.size}` : item.id
+          return productKey === itemKey
+        })
+        if (!product) return item
+        return {
+          ...item,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          posDiscount: product.posDiscount,
+        }
+      })
+    )
+  }, [products, posCustomerId])
 
   // Load order data for editing
   useEffect(() => {
@@ -1847,6 +1971,11 @@ export default function POSPage() {
                 >
                   <X className="h-5 w-5" />
                 </button>
+              </div>
+            )}
+            {promotionBanner && (
+              <div className="mb-3 px-1">
+                <PromotionCampaignBanner banner={promotionBanner} />
               </div>
             )}
             {isLoading ? (

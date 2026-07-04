@@ -36,6 +36,8 @@ export type ResolvedOrderLine = {
   posDiscountAmount?: number
   posDiscountType?: 'percentage' | 'fixed'
   posPromotionName?: string | null
+  posCampaignId?: string | null
+  posCampaignName?: string | null
 }
 
 export type ResolveBarOrderLinesContext = {
@@ -45,6 +47,8 @@ export type ResolveBarOrderLinesContext = {
   rejectCustomLines: boolean
   /** When true, apply active pos_product_discounts (Catha POS orders only) */
   applyPosDiscounts?: boolean
+  /** Normalized customer phone for customer-specific POS discounts */
+  customerId?: string | null
 }
 
 function roundMoney(n: number): number {
@@ -202,7 +206,8 @@ export async function resolveBarOrderLines(
           catalogUnit,
           skuId,
           String(doc.category ?? ''),
-          posDiscountCtx
+          posDiscountCtx,
+          ctx.customerId
         )
       : { unit: catalogUnit }
 
@@ -223,6 +228,8 @@ export async function resolveBarOrderLines(
             posDiscountAmount: posApplied.posDiscountAmount,
             posDiscountType: posApplied.posDiscountType,
             posPromotionName: posApplied.promotionName ?? null,
+            posCampaignId: posApplied.campaignId ?? null,
+            posCampaignName: posApplied.campaignName ?? null,
           }
         : {}),
     })

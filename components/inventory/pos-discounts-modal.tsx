@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import Image from "next/image"
 import {
   Dialog,
@@ -31,6 +31,14 @@ import {
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { validateDiscountInput } from "@/lib/pos-product-discounts"
+import {
+  DiscountEligibilityFields,
+  defaultEligibilityState,
+  eligibilityPayloadFromState,
+  type DiscountEligibilityState,
+} from "@/components/inventory/discount-eligibility-fields"
+import { PromotionCampaignsTab, CampaignSelect, type CampaignRow } from "@/components/inventory/promotion-campaigns-tab"
+import { PromotionAnalyticsTab } from "@/components/inventory/promotion-analytics-tab"
 
 type DiscountType = "percentage" | "fixed"
 type DiscountStatus = "active" | "inactive"
@@ -56,6 +64,10 @@ interface ActiveDiscount {
   startAt: string | null
   endAt: string | null
   promotionName: string | null
+  eligibilityScope?: string
+  eligibleCustomers?: string[]
+  campaignId?: string | null
+  campaignName?: string | null
   effectivelyActive: boolean
   catalogPrice?: number
   discountedPrice?: number
@@ -79,6 +91,10 @@ interface CategoryDiscount {
   startAt: string | null
   endAt: string | null
   promotionName: string | null
+  eligibilityScope?: string
+  eligibleCustomers?: string[]
+  campaignId?: string | null
+  campaignName?: string | null
   effectivelyActive: boolean
 }
 
@@ -133,7 +149,28 @@ function auditSummary(entry: AuditEntry) {
     enabled: "Turned on",
     deleted: "Removed",
     category_applied: "Category set",
+    eligibility_changed: "Eligibility changed",
+    campaign_created: "Campaign created",
+    campaign_updated: "Campaign updated",
+    campaign_activated: "Campaign activated",
+    campaign_disabled: "Campaign disabled",
+    campaign_archived: "Campaign archived",
+    campaign_deleted: "Campaign deleted",
   }
+
+  if (entry.action === "eligibility_changed") {
+    const change = d.change === "removed" ? "Removed" : "Added"
+    const customer = String(d.customerName ?? d.customerId ?? "Customer")
+    const promo = String(d.promotionName ?? entry.targetName)
+    return {
+      who: entry.actorName || entry.actorEmail || "Unknown",
+      action: `${change} ${customer} ${d.change === "removed" ? "from" : "to"} ${promo}`,
+      product: entry.targetName,
+      value: "—",
+      when: new Date(entry.createdAt).toLocaleString(),
+    }
+  }
+
   return {
     who: entry.actorName || entry.actorEmail || "Unknown",
     action: actionLabels[entry.action] || entry.action,
@@ -296,6 +333,7 @@ export function PosDiscountsModal({
   const [isSearching, setIsSearching] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkFields, setBulkFields] = useState<DiscountFields>(defaultFields())
+  const [bulkEligibility, setBulkEligibility] = useState<DiscountEligibilityState>(defaultEligibilityState())
   const [isBulkSaving, setIsBulkSaving] = useState(false)
 
   const [activeDiscounts, setActiveDiscounts] = useState<ActiveDiscount[]>([])
@@ -306,8 +344,22 @@ export function PosDiscountsModal({
   const [categoryOptions, setCategoryOptions] = useState<{ id: string; label: string }[]>([])
   const [newCategory, setNewCategory] = useState("")
   const [categoryFields, setCategoryFields] = useState<DiscountFields>(defaultFields())
+  const [categoryEligibility, setCategoryEligibility] = useState<DiscountEligibilityState>(defaultEligibilityState())
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([])
+  const [selectedCampaignId, setSelectedCampaignId] = useState("")
+  const [categoryCampaignId, setCategoryCampaignId] = useState("")
 
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
+
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/catha/pos-discounts/campaigns", { cache: "no-store" })
+      const data = await res.json()
+      if (res.ok) setCampaigns(data.campaigns || [])
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const loadActiveDiscounts = useCallback(async () => {
     setIsLoadingActive(true)
@@ -349,8 +401,9 @@ export function PosDiscountsModal({
     if (!open) return
     loadActiveDiscounts()
     loadCategoryDiscounts()
+    loadCampaigns()
     loadAudit()
-  }, [open, loadActiveDiscounts, loadCategoryDiscounts, loadAudit])
+  }, [open, loadActiveDiscounts, loadCategoryDiscounts, loadCampaigns, loadAudit])
 
   useEffect(() => {
     if (!open) {
@@ -406,6 +459,7 @@ export function PosDiscountsModal({
     if (selectedIds.size === 0) return
     setIsBulkSaving(true)
     try {
+      const eligibility = eligibilityPayloadFromState(bulkEligibility)
       const res = await fetch("/api/catha/pos-discounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -418,6 +472,8 @@ export function PosDiscountsModal({
           startAt: bulkFields.startAt || null,
           endAt: bulkFields.endAt || null,
           promotionName: bulkFields.promotionName || null,
+          ...eligibility,
+          campaignId: selectedCampaignId || null,
         }),
       })
       const data = await res.json()
@@ -435,6 +491,7 @@ export function PosDiscountsModal({
 
   const saveSingleProduct = async (product: SearchProduct) => {
     try {
+      const eligibility = eligibilityPayloadFromState(bulkEligibility)
       const res = await fetch("/api/catha/pos-discounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -448,6 +505,8 @@ export function PosDiscountsModal({
               startAt: bulkFields.startAt || null,
               endAt: bulkFields.endAt || null,
               promotionName: bulkFields.promotionName || null,
+              ...eligibility,
+              campaignId: selectedCampaignId || null,
             },
           ],
         }),
@@ -482,6 +541,7 @@ export function PosDiscountsModal({
   const saveCategoryDiscount = async () => {
     if (!newCategory) return
     try {
+      const eligibility = eligibilityPayloadFromState(categoryEligibility)
       const res = await fetch("/api/catha/pos-discounts/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -493,6 +553,8 @@ export function PosDiscountsModal({
           startAt: categoryFields.startAt || null,
           endAt: categoryFields.endAt || null,
           promotionName: categoryFields.promotionName || null,
+          ...eligibility,
+          campaignId: categoryCampaignId || null,
         }),
       })
       const data = await res.json()
@@ -511,6 +573,50 @@ export function PosDiscountsModal({
     if (activeFilter === "scheduled") return d.status === "active" && !d.effectivelyActive && d.startAt
     return true
   })
+
+  const groupedActive = useMemo(() => {
+    const groups = new Map<string, { title: string; items: ActiveDiscount[] }>()
+    const ungrouped: ActiveDiscount[] = []
+    for (const d of filteredActive) {
+      if (d.campaignId && d.campaignName) {
+        const g = groups.get(d.campaignId) || { title: d.campaignName, items: [] }
+        g.items.push(d)
+        groups.set(d.campaignId, g)
+      } else {
+        ungrouped.push(d)
+      }
+    }
+    return { groups: [...groups.values()], ungrouped }
+  }, [filteredActive])
+
+  const renderActiveRow = (d: ActiveDiscount) => (
+    <div key={d.id} className="rounded-lg border p-3 space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium break-words">{d.product?.name ?? d.productId}</p>
+          {d.promotionName && !d.campaignName && (
+            <p className="text-xs text-muted-foreground mt-0.5">{d.promotionName}</p>
+          )}
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
+          </p>
+        </div>
+        <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px] shrink-0">
+          {d.effectivelyActive ? "Live" : d.status}
+        </Badge>
+      </div>
+      <div className="flex gap-2">
+        {d.status === "active" && (
+          <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => disableDiscount(d)}>
+            Turn off
+          </Button>
+        )}
+        <Button size="sm" variant="outline" className="h-9 text-destructive px-3" onClick={() => deleteDiscount(d)}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
 
   const hasSearchCriteria =
     debouncedSearch.trim() ||
@@ -536,7 +642,7 @@ export function PosDiscountsModal({
           )}
         >
           <Flame className={cn("text-amber-600", size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4")} />
-          {size === "sm" ? "Discounts" : "POS Discounts"}
+          {size === "sm" ? "Promotions" : "Promotions"}
         </Button>
       </DialogTrigger>
 
@@ -548,22 +654,26 @@ export function PosDiscountsModal({
         )}
       >
         <DialogHeader className="px-4 py-3 sm:px-5 sm:py-4 border-b shrink-0 pr-12">
-          <DialogTitle className="text-base sm:text-lg font-semibold">POS Discounts</DialogTitle>
+          <DialogTitle className="text-base sm:text-lg font-semibold">Promotions</DialogTitle>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 leading-snug">
-            Temporary POS prices only. Catalog prices stay unchanged.
+            Product discounts, category discounts, campaigns, and schedules. Catalog prices stay unchanged.
           </p>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div className="shrink-0 border-b overflow-x-auto">
             <TabsList className="inline-flex w-max min-w-full h-11 rounded-none bg-transparent px-4 gap-1 sm:gap-4">
-              {(["search", "active", "categories", "history"] as const).map((v) => (
+              {(["search", "active", "categories", "campaigns", "analytics", "history"] as const).map((v) => (
                 <TabsTrigger
                   key={v}
                   value={v}
                   className="rounded-none border-b-2 border-transparent px-3 sm:px-0 pb-3 pt-2 text-sm whitespace-nowrap data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none shrink-0"
                 >
-                  {v === "search" ? "Apply" : v.charAt(0).toUpperCase() + v.slice(1)}
+                  {v === "search"
+                    ? "Apply"
+                    : v === "analytics"
+                      ? "Reports"
+                      : v.charAt(0).toUpperCase() + v.slice(1)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -579,6 +689,10 @@ export function PosDiscountsModal({
                   onChange={(p) => setBulkFields((f) => ({ ...f, ...p }))}
                   originalPrice={previewPrice}
                 />
+                <div className="mt-4 pt-4 border-t space-y-4">
+                  <CampaignSelect value={selectedCampaignId} onChange={setSelectedCampaignId} campaigns={campaigns} />
+                  <DiscountEligibilityFields value={bulkEligibility} onChange={setBulkEligibility} />
+                </div>
                 {selectedIds.size > 0 && (
                   <Button
                     onClick={saveBulk}
@@ -746,107 +860,93 @@ export function PosDiscountsModal({
               ) : filteredActive.length === 0 ? (
                 <p className="py-16 text-center text-sm text-muted-foreground">No discounts yet.</p>
               ) : (
-                <>
-                  <div className="md:hidden space-y-3">
-                    {filteredActive.map((d) => (
-                      <div key={d.id} className="rounded-lg border p-3 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="font-medium break-words">{d.product?.name ?? d.productId}</p>
-                            {d.promotionName && (
-                              <p className="text-xs text-muted-foreground mt-0.5">{d.promotionName}</p>
-                            )}
-                          </div>
-                          <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px] shrink-0">
-                            {d.effectivelyActive ? "Live" : d.status}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                          <div className="rounded-md bg-muted/40 p-2">
-                            <p className="text-muted-foreground mb-0.5">Catalog</p>
-                            <p className="font-medium tabular-nums line-through text-muted-foreground">
-                              {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
-                            </p>
-                          </div>
-                          <div className="rounded-md bg-emerald-50 p-2">
-                            <p className="text-emerald-700 mb-0.5">POS</p>
-                            <p className="font-bold tabular-nums text-emerald-700">
-                              {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
-                            </p>
-                          </div>
-                          <div className="rounded-md bg-muted/40 p-2">
-                            <p className="text-muted-foreground mb-0.5">Off</p>
-                            <p className="font-medium tabular-nums">
+                <div className="space-y-6">
+                  {groupedActive.groups.map((group) => (
+                    <section key={group.title}>
+                      <h4 className="text-sm font-bold mb-2 flex items-center gap-2">
+                        {group.title}
+                        <Badge variant="outline" className="text-[10px]">{group.items.length}</Badge>
+                      </h4>
+                      <div className="space-y-2">
+                        {group.items.map((d) => (
+                          <div key={d.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                            <span className="font-medium">{d.product?.name ?? d.productId}</span>
+                            <span className="tabular-nums text-emerald-700 font-semibold">
                               {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
-                            </p>
+                            </span>
                           </div>
-                        </div>
-                        <div className="flex gap-2">
-                          {d.status === "active" && (
-                            <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => disableDiscount(d)}>
-                              Turn off
-                            </Button>
-                          )}
-                          <Button size="sm" variant="outline" className="h-9 text-destructive px-3" onClick={() => deleteDiscount(d)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="hidden md:block rounded-lg border overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                          <th className="p-3 font-medium">Product</th>
-                          <th className="p-3 font-medium text-right">Catalog</th>
-                          <th className="p-3 font-medium text-right">POS price</th>
-                          <th className="p-3 font-medium text-right">Discount</th>
-                          <th className="p-3 font-medium text-center">Status</th>
-                          <th className="p-3 w-24" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredActive.map((d) => (
-                          <tr key={d.id} className="border-b last:border-b-0 hover:bg-muted/30">
-                            <td className="p-3">
-                              <p className="font-medium">{d.product?.name ?? d.productId}</p>
-                              {d.promotionName && (
-                                <p className="text-xs text-muted-foreground">{d.promotionName}</p>
-                              )}
-                            </td>
-                            <td className="p-3 text-right tabular-nums text-muted-foreground">
-                              {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
-                            </td>
-                            <td className="p-3 text-right tabular-nums font-semibold text-emerald-700">
-                              {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
-                            </td>
-                            <td className="p-3 text-right tabular-nums">
-                              {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
-                            </td>
-                            <td className="p-3 text-center">
-                              <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
-                                {d.effectivelyActive ? "Live" : d.status}
-                              </Badge>
-                            </td>
-                            <td className="p-3">
-                              <div className="flex justify-end gap-1">
-                                {d.status === "active" && (
-                                  <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => disableDiscount(d)}>
-                                    Off
-                                  </Button>
-                                )}
-                                <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => deleteDiscount(d)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                      </div>
+                    </section>
+                  ))}
+                  {groupedActive.ungrouped.length > 0 && (
+                    <section>
+                      {groupedActive.groups.length > 0 && (
+                        <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Other discounts</h4>
+                      )}
+                      <div className="md:hidden space-y-3">
+                        {groupedActive.ungrouped.map(renderActiveRow)}
+                      </div>
+                      <div className="hidden md:block rounded-lg border overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                              <th className="p-3 font-medium">Product</th>
+                              <th className="p-3 font-medium text-right">Catalog</th>
+                              <th className="p-3 font-medium text-right">POS price</th>
+                              <th className="p-3 font-medium text-right">Discount</th>
+                              <th className="p-3 font-medium text-center">Status</th>
+                              <th className="p-3 w-24" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {groupedActive.ungrouped.map((d) => (
+                              <tr key={d.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                                <td className="p-3">
+                                  <p className="font-medium">{d.product?.name ?? d.productId}</p>
+                                  {d.promotionName && (
+                                    <p className="text-xs text-muted-foreground">{d.promotionName}</p>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right tabular-nums text-muted-foreground">
+                                  {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
+                                </td>
+                                <td className="p-3 text-right tabular-nums font-semibold text-emerald-700">
+                                  {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
+                                </td>
+                                <td className="p-3 text-right tabular-nums">
+                                  {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
+                                    {d.effectivelyActive ? "Live" : d.status}
+                                  </Badge>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex justify-end gap-1">
+                                    {d.status === "active" && (
+                                      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => disableDiscount(d)}>
+                                        Off
+                                      </Button>
+                                    )}
+                                    <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => deleteDiscount(d)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                  {groupedActive.groups.length === 0 && groupedActive.ungrouped.length > 0 && (
+                    <div className="md:hidden space-y-3">
+                      {groupedActive.ungrouped.map(renderActiveRow)}
+                    </div>
+                  )}
+                </div>
               )}
             </TabsContent>
 
@@ -872,6 +972,10 @@ export function PosDiscountsModal({
                   fields={categoryFields}
                   onChange={(p) => setCategoryFields((f) => ({ ...f, ...p }))}
                 />
+                <div className="mt-4 pt-4 border-t space-y-4">
+                  <CampaignSelect value={categoryCampaignId} onChange={setCategoryCampaignId} campaigns={campaigns} />
+                  <DiscountEligibilityFields value={categoryEligibility} onChange={setCategoryEligibility} />
+                </div>
                 <Button onClick={saveCategoryDiscount} disabled={!newCategory} className="mt-4 gap-2 w-full sm:w-auto">
                   <Save className="h-4 w-4" /> Save category discount
                 </Button>
@@ -893,6 +997,13 @@ export function PosDiscountsModal({
                             {c.discountType === "percentage" ? `${c.discountValue}% off` : `${formatKsh(c.discountValue)} off`}
                             {c.promotionName ? ` · ${c.promotionName}` : ""}
                           </p>
+                          {c.eligibilityScope === "selected_customers" &&
+                            (c.eligibleCustomers?.length ?? 0) > 0 && (
+                              <Badge variant="outline" className="text-[10px] mt-1">
+                                {c.eligibleCustomers!.length} customer
+                                {c.eligibleCustomers!.length !== 1 ? "s" : ""}
+                              </Badge>
+                            )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge variant={c.effectivelyActive ? "default" : "secondary"}>
@@ -916,6 +1027,14 @@ export function PosDiscountsModal({
                   </div>
                 )}
               </section>
+            </TabsContent>
+
+            <TabsContent value="campaigns" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionCampaignsTab onChanged={() => { loadCampaigns(); loadActiveDiscounts(); loadAudit() }} />
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionAnalyticsTab />
             </TabsContent>
 
             {/* ——— HISTORY ——— */}

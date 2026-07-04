@@ -1312,7 +1312,7 @@ const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
   myShift: 'My Shift Access',
   users: 'User Management',
   pos: 'POS Sales',
-  posDiscounts: 'POS Discounts (Manage)',
+  posDiscounts: 'Promotions (Manage)',
   orders: 'Orders',
   payments: 'Payments (Manual M-Pesa)',
   inventory: 'Inventory',

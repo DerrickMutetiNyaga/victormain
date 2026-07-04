@@ -14,9 +14,19 @@ import {
   loadPosDiscountContext,
   countEffectivelyActiveDiscounts,
   sumPosDiscountSavingsFromOrders,
+  diffEligibleCustomers,
+  normalizeEligibleCustomerIds,
   type DiscountInputPayload,
   type PosDiscountStatus,
 } from '@/lib/pos-product-discounts'
+import {
+  getPromotionDashboardStats,
+  serializeCampaign,
+  isCampaignEffectivelyActive,
+  getActiveCampaignBanners,
+  ensureCampaignIndexes,
+  isCampaignAllowingDiscount,
+} from '@/lib/pos-discount-campaigns'
 import {
   canManagePosDiscounts,
   canViewPosDiscountsForPos,
@@ -24,6 +34,98 @@ import {
 } from '@/lib/pos-discount-permissions'
 import type { Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
+import { normalizeKenyaPhone } from '@/lib/phone-utils'
+
+const CLIENTS_META_COLLECTION = 'catha_clients'
+
+async function resolveCustomerDisplayNames(
+  db: Db,
+  customerIds: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (customerIds.length === 0) return map
+
+  const phoneVariants = new Set<string>()
+  for (const id of customerIds) {
+    phoneVariants.add(id)
+    const m = /^\+254(\d{9})$/.exec(id)
+    if (m) phoneVariants.add(`0${m[1]}`)
+    const m2 = /^0(\d{9})$/.exec(id)
+    if (m2) phoneVariants.add(`+254${m2[1]}`)
+  }
+
+  const metaDocs = await db
+    .collection(CLIENTS_META_COLLECTION)
+    .find({ phone: { $in: [...phoneVariants] } })
+    .project({ phone: 1, name: 1 })
+    .toArray()
+
+  for (const doc of metaDocs) {
+    const key = normalizeKenyaPhone(String(doc.phone)) || String(doc.phone)
+    if (key && doc.name) map.set(key, String(doc.name))
+  }
+
+  for (const id of customerIds) {
+    if (!map.has(id)) map.set(id, id)
+  }
+  return map
+}
+
+async function logEligibilityAuditIfChanged(
+  db: Db,
+  opts: {
+    existing: Record<string, unknown> | null
+    nextEligible: string[]
+    promotionName: string | null
+    targetType: 'product' | 'category'
+    targetId: string
+    targetName: string
+    actorEmail: string | null
+    actorName: string | null
+  }
+) {
+  const prev = normalizeEligibleCustomerIds(
+    opts.existing?.eligibleCustomers as string[] | undefined
+  )
+  const { added, removed } = diffEligibleCustomers(prev, opts.nextEligible)
+  if (added.length === 0 && removed.length === 0) return
+
+  const nameMap = await resolveCustomerDisplayNames(db, [...added, ...removed])
+  const promotion = opts.promotionName || opts.targetName
+
+  for (const id of added) {
+    await logPosDiscountAudit(db, {
+      action: 'eligibility_changed',
+      targetType: opts.targetType,
+      targetId: opts.targetId,
+      targetName: opts.targetName,
+      actorEmail: opts.actorEmail,
+      actorName: opts.actorName,
+      details: {
+        change: 'added',
+        customerId: id,
+        customerName: nameMap.get(id) || id,
+        promotionName: promotion,
+      },
+    })
+  }
+  for (const id of removed) {
+    await logPosDiscountAudit(db, {
+      action: 'eligibility_changed',
+      targetType: opts.targetType,
+      targetId: opts.targetId,
+      targetName: opts.targetName,
+      actorEmail: opts.actorEmail,
+      actorName: opts.actorName,
+      details: {
+        change: 'removed',
+        customerId: id,
+        customerName: nameMap.get(id) || id,
+        promotionName: promotion,
+      },
+    })
+  }
+}
 
 export const runtime = 'nodejs'
 
@@ -64,6 +166,7 @@ export async function GET(request: Request) {
     const client = await clientPromise
     const db = client.db('infusion_jaba')
     await ensurePosDiscountIndexes(db)
+    await ensureCampaignIndexes(db)
     const now = new Date()
 
     if (statsOnly) {
@@ -82,16 +185,22 @@ export async function GET(request: Request) {
         .project({ items: 1, timestamp: 1 })
         .toArray()
 
+      const promotionStats = getPromotionDashboardStats(ctx, todayOrders, todayStart, tomorrowStart)
+
       return NextResponse.json({
         success: true,
         stats: {
           activeCount: countEffectivelyActiveDiscounts(ctx),
           productRules: ctx.productDiscounts.size,
           categoryRules: ctx.categoryDiscounts.size,
-          todayDiscountGiven: sumPosDiscountSavingsFromOrders(todayOrders, todayStart, tomorrowStart),
+          ...promotionStats,
         },
       })
     }
+
+    const ctx = await loadPosDiscountContext(db, now)
+    const campaignNameById = new Map<string, string>()
+    for (const [id, c] of ctx.campaigns) campaignNameById.set(id, c.name)
 
     const statusFilter = searchParams.get('status') // active | inactive | all
     const effectiveFilter = searchParams.get('effective') // active_now | scheduled | expired
@@ -120,19 +229,20 @@ export async function GET(request: Request) {
     let enriched = discounts.map((d) => {
       const product = productMap.get(String(d.productId))
       const catalogPrice = product ? Number(product.price ?? 0) : undefined
+      const campaignId = d.campaignId != null ? String(d.campaignId) : null
+      const discountActive = isDiscountEffectivelyActive(
+        { status: d.status as PosDiscountStatus, startAt: d.startAt, endAt: d.endAt },
+        now
+      )
+      const campaignOk = isCampaignAllowingDiscount(campaignId, ctx.campaigns, now)
       return {
         ...serializePosDiscount(d, catalogPrice),
-        effectivelyActive: isDiscountEffectivelyActive(
-          {
-            status: d.status as PosDiscountStatus,
-            startAt: d.startAt,
-            endAt: d.endAt,
-          },
-          now
-        ),
+        campaignId,
+        campaignName: campaignId ? campaignNameById.get(campaignId) ?? null : null,
+        effectivelyActive: discountActive && campaignOk,
         product: product
           ? {
-              id: product._id.toString(),
+              id: String(product._id),
               name: String(product.name ?? ''),
               category: String(product.category ?? ''),
               price: Number(product.price ?? 0),
@@ -162,16 +272,37 @@ export async function GET(request: Request) {
 
       const categoryRows = await db.collection('pos_category_discounts').find({}).toArray()
       const categoryDiscounts = categoryRows
-        .map((d) => ({
-          ...serializeCategoryDiscount(d),
-          effectivelyActive: isDiscountEffectivelyActive(
+        .map((d) => {
+          const campaignId = d.campaignId != null ? String(d.campaignId) : null
+          const discountActive = isDiscountEffectivelyActive(
             { status: d.status as PosDiscountStatus, startAt: d.startAt, endAt: d.endAt },
             now
-          ),
-        }))
+          )
+          const campaignOk = isCampaignAllowingDiscount(campaignId, ctx.campaigns, now)
+          return {
+            ...serializeCategoryDiscount(d),
+            campaignId,
+            campaignName: campaignId ? campaignNameById.get(campaignId) ?? null : null,
+            effectivelyActive: discountActive && campaignOk,
+          }
+        })
         .filter((d) => d.effectivelyActive)
 
-      return NextResponse.json({ success: true, discounts: enriched, categoryDiscounts })
+      const campaigns = [...ctx.campaigns.entries()]
+        .filter(([, c]) => isCampaignEffectivelyActive(c, now))
+        .map(([id, c]) =>
+          serializeCampaign({ _id: id, ...c } as Record<string, unknown>, { effectivelyActive: true })
+        )
+
+      const banners = getActiveCampaignBanners(ctx)
+
+      return NextResponse.json({
+        success: true,
+        discounts: enriched,
+        categoryDiscounts,
+        campaigns,
+        banners,
+      })
     }
 
     return NextResponse.json({ success: true, discounts: enriched })
@@ -222,6 +353,17 @@ async function upsertProductDiscount(
   )
 
   if (result) {
+    await logEligibilityAuditIfChanged(db, {
+      existing,
+      nextEligible: fields.eligibleCustomers,
+      promotionName: fields.promotionName,
+      targetType: 'product',
+      targetId: productId,
+      targetName: String(product.name ?? 'Product'),
+      actorEmail: staffEmail,
+      actorName,
+    })
+
     await logPosDiscountAudit(db, {
       action: existing ? auditAction : 'created',
       targetType: 'product',
@@ -276,6 +418,9 @@ export async function POST(request: Request) {
         startAt: body.startAt,
         endAt: body.endAt,
         promotionName: body.promotionName,
+        eligibilityScope: body.eligibilityScope,
+        eligibleCustomers: body.eligibleCustomers,
+        campaignId: body.campaignId,
       }
 
       const saved = []

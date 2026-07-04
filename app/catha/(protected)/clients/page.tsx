@@ -26,6 +26,15 @@ interface ClientRow {
   lastOrderAt: string | null
 }
 
+interface EligibleCampaignRow {
+  id: string
+  name: string
+  description: string | null
+  icon: string | null
+  color: string | null
+  discountSummary: string
+}
+
 export default function ClientsPage() {
   const { canEdit, canDelete } = useCathaPermissions("clients")
   const [clients, setClients] = useState<ClientRow[]>([])
@@ -37,6 +46,8 @@ export default function ClientsPage() {
   const [editName, setEditName] = useState("")
   const [editStatus, setEditStatus] = useState("")
   const [saving, setSaving] = useState(false)
+  const [eligibleCampaigns, setEligibleCampaigns] = useState<EligibleCampaignRow[]>([])
+  const [loadingDiscounts, setLoadingDiscounts] = useState(false)
 
   const fetchClients = async () => {
     try {
@@ -90,6 +101,17 @@ export default function ClientsPage() {
     setEditingClient(client)
     setEditName(client.name)
     setEditStatus(client.status)
+    setEligibleCampaigns([])
+    setLoadingDiscounts(true)
+    fetch(`/api/catha/clients/eligible-discounts?phone=${encodeURIComponent(client.phone)}`, {
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success) setEligibleCampaigns(data.campaigns || [])
+      })
+      .catch(() => setEligibleCampaigns([]))
+      .finally(() => setLoadingDiscounts(false))
   }
 
   const saveEdit = async () => {
@@ -275,10 +297,9 @@ export default function ClientsPage() {
       <Dialog open={!!editingClient} onOpenChange={() => setEditingClient(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit client</DialogTitle>
+            <DialogTitle>Client details</DialogTitle>
             <DialogDescription>
-              Update the display name and status label for this client. Order history and totals are
-              still calculated from real orders.
+              View customer profile, eligible POS discounts, and update display name or status.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -292,7 +313,7 @@ export default function ClientsPage() {
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Name
               </label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={!canEdit} />
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
@@ -302,7 +323,34 @@ export default function ClientsPage() {
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value)}
                 placeholder="e.g. Active, Prospect, VIP"
+                disabled={!canEdit}
               />
+            </div>
+
+            <div className="rounded-xl border bg-muted/30 p-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Eligible Campaigns
+              </p>
+              {loadingDiscounts ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading…
+                </div>
+              ) : eligibleCampaigns.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active promotion campaigns for this customer.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {eligibleCampaigns.map((c) => (
+                    <li key={c.id} className="text-sm flex items-start gap-2">
+                      <span>{c.icon || "🔥"}</span>
+                      <div>
+                        <p className="font-medium text-foreground">{c.name}</p>
+                        <p className="text-muted-foreground">{c.discountSummary}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
@@ -311,8 +359,9 @@ export default function ClientsPage() {
               onClick={() => setEditingClient(null)}
               className="rounded-xl h-10"
             >
-              Cancel
+              {canEdit ? "Cancel" : "Close"}
             </Button>
+            {canEdit && (
             <Button
               onClick={saveEdit}
               disabled={saving}
@@ -320,6 +369,7 @@ export default function ClientsPage() {
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
