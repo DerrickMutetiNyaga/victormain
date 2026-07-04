@@ -25,7 +25,7 @@ import {
   type EcommerceOpeningHoursSettings,
 } from "@/lib/ecommerce-opening-hours"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
-import { normalizePhoneNumbers } from "@/lib/jaba-sms"
+import { normalizePhoneNumbers } from "@/lib/phone-normalize"
 import Link from "next/link"
 
 const EO_DAY_DEFS: { value: number; label: string }[] = [

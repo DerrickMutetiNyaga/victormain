@@ -1,5 +1,5 @@
 import type { Db } from 'mongodb'
-import { normalizePhoneNumbers } from '@/lib/jaba-sms'
+import { normalizePhoneNumbers } from '@/lib/phone-normalize'
 
 export type CathaNotificationSettings = {
   lowStockAlerts: boolean
