@@ -42,7 +42,7 @@ interface AnalyticsPayload {
     topSearches: Array<{ query: string; count: number }>
     noResultSearches: Array<{ query: string; count: number }>
   }
-  liveActivity: Array<{ id: string; label: string; when: string; city: string; deviceType: string; path: string }>
+  liveActivity: Array<{ id: string; label: string; when: string; city: string | null; deviceType: string; path: string }>
   geoDevice: {
     countries: Array<{ name: string; count: number }>
     cities: Array<{ name: string; count: number }>
@@ -97,6 +97,20 @@ export function CommerceIntelligenceSection() {
     ]
   }, [data])
 
+  const hasProductInterest = Boolean(
+    data && (
+      data.products.mostViewedProducts.length > 0
+      || data.products.mostAddedToCart.length > 0
+      || data.products.mostWishlisted.length > 0
+      || data.products.mostPurchased.length > 0
+      || data.products.highViewsLowPurchases.length > 0
+    )
+  )
+
+  const hasSearchData = Boolean(
+    data && (data.search.topSearches.length > 0 || data.search.noResultSearches.length > 0)
+  )
+
   return (
     <AISection
       id="catha-commerce-intelligence"
@@ -148,7 +162,7 @@ export function CommerceIntelligenceSection() {
               <MetricCard label="Bounce Rate %" value={`${data.dashboard.bounceRate}%`} icon={ArrowDownRight} />
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className={`grid grid-cols-1 ${hasProductInterest ? 'xl:grid-cols-2' : ''} gap-4`}>
               <Panel title="Page Visit Intelligence" icon={Timer}>
                 {data.pageVisits.slice(0, 8).map((item) => (
                   <div key={item.name} className="grid grid-cols-4 gap-2 py-1.5 text-xs border-b border-border/20 last:border-0">
@@ -159,25 +173,27 @@ export function CommerceIntelligenceSection() {
                   </div>
                 ))}
               </Panel>
-              <Panel title="Product Interest Tracking" icon={ShoppingCart}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <SimpleList title="Most viewed" items={data.products.mostViewedProducts.map((x) => `${x.name} (${x.count})`)} />
-                  <SimpleList title="Most added to cart" items={data.products.mostAddedToCart.map((x) => `${x.name} (${x.count})`)} />
-                  <SimpleList title="Most wishlisted" items={data.products.mostWishlisted.map((x) => `${x.name} (${x.count})`)} />
-                  <SimpleList title="Most purchased" items={data.products.mostPurchased.map((x) => `${x.name} (${x.count})`)} />
-                </div>
-                {data.products.highViewsLowPurchases.length > 0 && (
-                  <div className="mt-3 rounded-lg border border-amber-300/40 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-xs">
-                    <p className="font-semibold text-foreground mb-1">High views, low purchases</p>
-                    {data.products.highViewsLowPurchases.slice(0, 3).map((x) => (
-                      <p key={x.name} className="text-muted-foreground">{x.name}: {x.count} views / {x.purchaseCount} purchases</p>
-                    ))}
+              {hasProductInterest && (
+                <Panel title="Product Interest Tracking" icon={ShoppingCart}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <SimpleList title="Most viewed" items={data.products.mostViewedProducts.map((x) => `${x.name} (${x.count})`)} />
+                    <SimpleList title="Most added to cart" items={data.products.mostAddedToCart.map((x) => `${x.name} (${x.count})`)} />
+                    <SimpleList title="Most wishlisted" items={data.products.mostWishlisted.map((x) => `${x.name} (${x.count})`)} />
+                    <SimpleList title="Most purchased" items={data.products.mostPurchased.map((x) => `${x.name} (${x.count})`)} />
                   </div>
-                )}
-              </Panel>
+                  {data.products.highViewsLowPurchases.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-amber-300/40 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-xs">
+                      <p className="font-semibold text-foreground mb-1">High views, low purchases</p>
+                      {data.products.highViewsLowPurchases.slice(0, 3).map((x) => (
+                        <p key={x.name} className="text-muted-foreground">{x.name}: {x.count} views / {x.purchaseCount} purchases</p>
+                      ))}
+                    </div>
+                  )}
+                </Panel>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className={`grid grid-cols-1 ${hasSearchData ? 'xl:grid-cols-2' : ''} gap-4`}>
               <Panel title="Sales Conversion Funnel" icon={ArrowUpRight}>
                 <div className="space-y-2">
                   {funnelSteps.map((step, idx) => {
@@ -197,12 +213,14 @@ export function CommerceIntelligenceSection() {
                   })}
                 </div>
               </Panel>
-              <Panel title="Search Intelligence" icon={Search}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <SimpleList title="Top keywords" items={data.search.topSearches.map((x) => `${x.query} (${x.count})`)} />
-                  <SimpleList title="No-result searches" items={data.search.noResultSearches.map((x) => `${x.query} (${x.count})`)} />
-                </div>
-              </Panel>
+              {hasSearchData && (
+                <Panel title="Search Intelligence" icon={Search}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <SimpleList title="Top keywords" items={data.search.topSearches.map((x) => `${x.query} (${x.count})`)} />
+                    <SimpleList title="No-result searches" items={data.search.noResultSearches.map((x) => `${x.query} (${x.count})`)} />
+                  </div>
+                </Panel>
+              )}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -211,7 +229,11 @@ export function CommerceIntelligenceSection() {
                   {data.liveActivity.map((item) => (
                     <div key={item.id} className="rounded-lg border border-border/30 bg-background/60 px-3 py-2 text-xs">
                       <p className="text-foreground font-medium">{item.label}</p>
-                      <p className="text-muted-foreground">{new Date(item.when).toLocaleTimeString()} · {item.city} · {item.deviceType}</p>
+                      <p className="text-muted-foreground">
+                        {new Date(item.when).toLocaleTimeString()}
+                        {item.city ? ` · ${item.city}` : ''}
+                        {` · ${item.deviceType}`}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -268,16 +290,15 @@ function Panel({ title, icon: Icon, children }: { title: string; icon: React.Com
 }
 
 function SimpleList({ title, items }: { title: string; items: string[] }) {
+  const clean = items.filter((item) => item && !/\bunknown\b/i.test(item))
+  if (clean.length === 0) return null
+
   return (
     <div className="rounded-lg border border-border/30 bg-muted/10 p-2.5">
       <p className="text-[11px] font-semibold text-foreground mb-1.5">{title}</p>
-      {items.length === 0 ? (
-        <p className="text-muted-foreground">No data yet.</p>
-      ) : (
-        <div className="space-y-1">
-          {items.slice(0, 5).map((item) => <p key={item} className="text-muted-foreground">{item}</p>)}
-        </div>
-      )}
+      <div className="space-y-1">
+        {clean.slice(0, 5).map((item) => <p key={item} className="text-muted-foreground">{item}</p>)}
+      </div>
     </div>
   )
 }

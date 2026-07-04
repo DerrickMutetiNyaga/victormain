@@ -107,8 +107,8 @@ export async function trackAnalyticsEvent(db: Db, request: Request, input: Analy
   const pageName = input.pageName?.trim() || getPageNameFromPath(path)
   const sessionId = input.sessionId?.trim() || `anon:${getClientIp(request)}`
   const userAgent = request.headers.get('user-agent')
-  const forwardedCountry = request.headers.get('x-vercel-ip-country') || request.headers.get('cf-ipcountry') || 'Unknown'
-  const forwardedCity = request.headers.get('x-vercel-ip-city') || 'Unknown'
+  const forwardedCountry = request.headers.get('x-vercel-ip-country') || request.headers.get('cf-ipcountry') || null
+  const forwardedCity = request.headers.get('x-vercel-ip-city') || null
   const ip = getClientIp(request)
   const ua = parseUserAgent(userAgent)
 

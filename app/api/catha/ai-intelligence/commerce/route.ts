@@ -38,6 +38,47 @@ function toPercent(num: number, den: number) {
   return Math.round((num / den) * 100)
 }
 
+function isUnknownLabel(value: unknown) {
+  const text = String(value || '').trim().toLowerCase()
+  return !text || text === 'unknown' || text === 'unknown product'
+}
+
+function normalizeGeoLabel(value: unknown) {
+  const text = String(value || '').trim()
+  if (!text || text.toLowerCase() === 'unknown') return null
+  return text
+}
+
+async function buildProductNameMap(db: Awaited<ReturnType<typeof getDatabase>>) {
+  const products = await db.collection('bar_inventory').find(
+    { type: 'bar', deleted: { $ne: true } },
+    { projection: { name: 1 } }
+  ).toArray()
+  const map = new Map<string, string>()
+  for (const product of products) {
+    const id = String(product._id)
+    const name = String(product.name || '').trim()
+    if (name && !isUnknownLabel(name)) map.set(id, name)
+  }
+  return map
+}
+
+function resolveProductLabel(event: any, productNameMap: Map<string, string>) {
+  const direct = String(event.productName || '').trim()
+  if (direct && !isUnknownLabel(direct)) return direct
+
+  const productId = String(event.productId || '').trim()
+  if (productId && productNameMap.has(productId)) return productNameMap.get(productId)!
+
+  const path = String(event.path || '')
+  if (path.startsWith('/product/')) {
+    const fromPath = path.replace('/product/', '').split('/')[0]?.trim()
+    if (fromPath && productNameMap.has(fromPath)) return productNameMap.get(fromPath)!
+  }
+
+  return null
+}
+
 export async function GET(request: Request) {
   const [, errResp] = await requireSuperAdminApi()
   if (errResp) return errResp
@@ -52,6 +93,8 @@ export async function GET(request: Request) {
     const events = await db.collection(collections.events).find({
       createdAt: { $gte: from, $lte: to },
     }).sort({ createdAt: -1 }).toArray()
+
+    const productNameMap = await buildProductNameMap(db)
 
     const sessionsInWindow = new Set(events.map((e: any) => String(e.sessionId || '')))
     const activeSince = new Date(Date.now() - 5 * 60 * 1000)
@@ -103,16 +146,24 @@ export async function GET(request: Request) {
       purchased: {},
     }
     for (const e of events) {
-      const name = String(e.productName || e.productId || 'Unknown')
+      if (!['product_view', 'add_to_cart', 'wishlist_add', 'purchase'].includes(e.eventType)) continue
+      const name = resolveProductLabel(e, productNameMap)
+      if (!name) continue
       if (e.eventType === 'product_view') productByMetric.viewed[name] = { count: (productByMetric.viewed[name]?.count || 0) + 1, purchases: 0 }
       if (e.eventType === 'add_to_cart') productByMetric.added[name] = { count: (productByMetric.added[name]?.count || 0) + 1, purchases: 0 }
       if (e.eventType === 'wishlist_add') productByMetric.wishlisted[name] = { count: (productByMetric.wishlisted[name]?.count || 0) + 1, purchases: 0 }
       if (e.eventType === 'purchase') productByMetric.purchased[name] = { count: (productByMetric.purchased[name]?.count || 0) + 1, purchases: 0 }
     }
-    const mostViewedProducts = Object.entries(productByMetric.viewed).map(([name, v]) => ({ name, count: v.count })).sort((a, b) => b.count - a.count).slice(0, 8)
-    const mostAddedToCart = Object.entries(productByMetric.added).map(([name, v]) => ({ name, count: v.count })).sort((a, b) => b.count - a.count).slice(0, 8)
-    const mostWishlisted = Object.entries(productByMetric.wishlisted).map(([name, v]) => ({ name, count: v.count })).sort((a, b) => b.count - a.count).slice(0, 8)
-    const mostPurchased = Object.entries(productByMetric.purchased).map(([name, v]) => ({ name, count: v.count })).sort((a, b) => b.count - a.count).slice(0, 8)
+    const toRanked = (bucket: Record<string, { count: number; purchases: number }>) =>
+      Object.entries(bucket)
+        .map(([name, v]) => ({ name, count: v.count }))
+        .filter((item) => !isUnknownLabel(item.name))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8)
+    const mostViewedProducts = toRanked(productByMetric.viewed)
+    const mostAddedToCart = toRanked(productByMetric.added)
+    const mostWishlisted = toRanked(productByMetric.wishlisted)
+    const mostPurchased = toRanked(productByMetric.purchased)
 
     const purchasedByName = new Map(mostPurchased.map((p) => [p.name, p.count]))
     const highViewsLowPurchases = mostViewedProducts
@@ -153,14 +204,17 @@ export async function GET(request: Request) {
     const topSearches = Object.entries(searchMap).map(([query, count]) => ({ query, count })).sort((a, b) => b.count - a.count).slice(0, 10)
     const noResultSearches = Object.entries(noResultSearchMap).map(([query, count]) => ({ query, count })).sort((a, b) => b.count - a.count).slice(0, 10)
 
-    const liveActivity = events.slice(0, 25).map((e: any) => ({
-      id: String(e._id),
-      label: `${String(e.eventType).replace(/_/g, ' ')}${e.productName ? ` · ${e.productName}` : ''}`,
-      when: new Date(e.createdAt).toISOString(),
-      city: e.city || 'Unknown',
-      deviceType: e.deviceType || 'desktop',
-      path: e.path || '/',
-    }))
+    const liveActivity = events.slice(0, 25).map((e: any) => {
+      const productLabel = resolveProductLabel(e, productNameMap)
+      return {
+        id: String(e._id),
+        label: `${String(e.eventType).replace(/_/g, ' ')}${productLabel ? ` · ${productLabel}` : ''}`,
+        when: new Date(e.createdAt).toISOString(),
+        city: normalizeGeoLabel(e.city),
+        deviceType: e.deviceType || 'desktop',
+        path: e.path || '/',
+      }
+    })
 
     const geoMap: Record<string, number> = {}
     const cityMap: Record<string, number> = {}
@@ -168,18 +222,21 @@ export async function GET(request: Request) {
     const browserMap: Record<string, number> = {}
     const osMap: Record<string, number> = {}
     events.forEach((e: any) => {
-      geoMap[String(e.country || 'Unknown')] = (geoMap[String(e.country || 'Unknown')] || 0) + 1
-      cityMap[String(e.city || 'Unknown')] = (cityMap[String(e.city || 'Unknown')] || 0) + 1
+      const country = normalizeGeoLabel(e.country)
+      const city = normalizeGeoLabel(e.city)
+      if (country) geoMap[country] = (geoMap[country] || 0) + 1
+      if (city) cityMap[city] = (cityMap[city] || 0) + 1
       deviceMap[String(e.deviceType || 'desktop')] = (deviceMap[String(e.deviceType || 'desktop')] || 0) + 1
       browserMap[String(e.browser || 'Other')] = (browserMap[String(e.browser || 'Other')] || 0) + 1
       osMap[String(e.os || 'Other')] = (osMap[String(e.os || 'Other')] || 0) + 1
     })
 
+    const topCity = Object.entries(cityMap).sort((a, b) => b[1] - a[1])[0]
     const aiInsights = [
       mostViewedProducts[0] ? `Product ${mostViewedProducts[0].name} is trending fast in this period.` : null,
       funnel.dropOff.checkoutToCompleted > 50 ? 'Checkout abandonment increased and needs immediate review.' : null,
       (deviceMap.mobile || 0) > (deviceMap.desktop || 0) ? 'Mobile users are currently converting better than desktop users.' : null,
-      Object.entries(cityMap).sort((a, b) => b[1] - a[1])[0] ? `${Object.entries(cityMap).sort((a, b) => b[1] - a[1])[0][0]} currently has the highest buying activity.` : null,
+      topCity ? `${topCity[0]} currently has the highest buying activity.` : null,
       'Best selling window is currently observed between 7PM and 9PM.',
       highViewsLowPurchases[0] ? `Product ${highViewsLowPurchases[0].name} has high views but low purchases; review pricing and PDP content.` : null,
     ].filter(Boolean)

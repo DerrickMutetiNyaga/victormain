@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { X, Printer, Loader2 } from "lucide-react"
-import { formatKsh, formatDate, formatReceiptTime } from "@/lib/receipt-utils"
+import { formatKsh, formatDate, formatReceiptTime, RECEIPT_DISPLAY_TILL_NUMBER } from "@/lib/receipt-utils"
 import { getOrderPayUrl } from "@/lib/pay-url"
 
 // Receipt order type
@@ -44,6 +44,7 @@ interface ReceiptModalProps {
   onClose: () => void
   businessName?: string
   businessSubtitle?: string
+  /** @deprecated Receipt display always uses RECEIPT_DISPLAY_TILL_NUMBER */
   tillNumber?: string
   showQRCode?: boolean
 }
@@ -236,27 +237,11 @@ export function ReceiptModal({
   onClose,
   businessName = "catha lounge",
   businessSubtitle = "Restaurant & Bar",
-  tillNumber: tillNumberProp,
   showQRCode = true,
 }: ReceiptModalProps) {
   void showQRCode
   const [isPrinting, setIsPrinting] = useState(false)
-  const [tillNumber, setTillNumber] = useState(tillNumberProp ?? "")
-
-  useEffect(() => {
-    if (tillNumberProp) {
-      setTillNumber(tillNumberProp)
-      return
-    }
-    if (!open) return
-    fetch("/api/catha/settings", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data) => {
-        const fromReceipt = data?.settings?.receipt?.tillNumber
-        if (fromReceipt) setTillNumber(String(fromReceipt))
-      })
-      .catch(() => {})
-  }, [open, tillNumberProp])
+  const tillNumber = RECEIPT_DISPLAY_TILL_NUMBER
 
   if (!order) return null
 

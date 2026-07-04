@@ -83,15 +83,18 @@ export async function POST(request: Request) {
     }
     const items = Array.from(existingMap.values()) as ShopCartResolvedLine[]
     const updated = await upsertCart(customerId, items)
-    await trackAnalyticsEvent(db, request, {
-      eventType: 'add_to_cart',
-      sessionId: customerId.toString(),
-      path: '/cart',
-      pageName: 'Cart',
-      quantity: resolved.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
-      value: resolved.items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.price) || 0)), 0),
-      metadata: { itemCount: resolved.items.length },
-    })
+    for (const item of resolved.items) {
+      await trackAnalyticsEvent(db, request, {
+        eventType: 'add_to_cart',
+        sessionId: customerId.toString(),
+        path: '/cart',
+        pageName: 'Cart',
+        productId: item.id,
+        productName: item.name,
+        quantity: Number(item.quantity) || 1,
+        value: (Number(item.quantity) || 1) * (Number(item.price) || 0),
+      })
+    }
     return NextResponse.json({ success: true, items: updated.items }, { headers: NO_STORE })
   } catch (error) {
     console.error('[ecommerce/cart/items] POST error:', error)

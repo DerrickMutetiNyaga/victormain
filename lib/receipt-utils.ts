@@ -2,6 +2,9 @@
  * Receipt formatting utilities
  */
 
+/** Hardcoded till shown on thermal receipt preview/print only — not from settings. */
+export const RECEIPT_DISPLAY_TILL_NUMBER = "5694492"
+
 /**
  * Format money amount in Kenyan Shillings (always 2 decimals)
  * @example formatKsh(1160) -> "KSh 1,160.00"
