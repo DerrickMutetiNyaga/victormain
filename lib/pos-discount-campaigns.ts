@@ -1,25 +1,28 @@
 /**
- * POS promotion campaigns — groups product/category discounts under named campaigns.
- * Campaign schedule/status is checked before individual discount rules apply.
+ * POS promotion campaigns — server entry + re-exports.
+ * Client components must import from `@/lib/pos-discount-client` instead.
  */
 
 import type { Db } from 'mongodb'
-import { ObjectId } from 'mongodb'
+import type {
+  PosCampaignStatus,
+  PosDiscountCampaignDoc,
+  PosDiscountContext,
+  PosDiscountType,
+} from '@/lib/pos-discount-types'
 import {
-  POS_DISCOUNTS_COLLECTION,
-  POS_CATEGORY_DISCOUNTS_COLLECTION,
   parseOptionalDate,
-  isDiscountEffectivelyActive,
-  isDiscountEligibleForCustomer,
-  normalizeCustomerIdForEligibility,
   sumPosDiscountSavingsFromOrders,
-  type PosDiscountContext,
-  type PosDiscountType,
-} from '@/lib/pos-product-discounts'
+} from '@/lib/pos-discount-rules'
+import {
+  isCampaignEffectivelyActive,
+  formatDiscountLabel,
+} from '@/lib/pos-discount-campaign-ui'
+
+export * from '@/lib/pos-discount-campaign-ui'
+export type { PosDiscountCampaignDoc } from '@/lib/pos-discount-types'
 
 export const POS_DISCOUNT_CAMPAIGNS_COLLECTION = 'pos_discount_campaigns'
-
-export type PosCampaignStatus = 'active' | 'inactive' | 'archived'
 
 export type PosCampaignAuditAction =
   | 'campaign_created'
@@ -28,21 +31,6 @@ export type PosCampaignAuditAction =
   | 'campaign_disabled'
   | 'campaign_archived'
   | 'campaign_deleted'
-
-export interface PosDiscountCampaignDoc {
-  _id?: unknown
-  name: string
-  description?: string | null
-  status: PosCampaignStatus
-  priority: number
-  startAt?: Date | null
-  endAt?: Date | null
-  color?: string | null
-  icon?: string | null
-  createdBy: string | null
-  createdAt: Date
-  updatedAt: Date
-}
 
 export interface PosDiscountCampaignPublic {
   id: string
@@ -60,17 +48,6 @@ export interface PosDiscountCampaignPublic {
   effectivelyActive?: boolean
   linkedProductCount?: number
   linkedCategoryCount?: number
-}
-
-export interface PosCampaignBanner {
-  id: string
-  name: string
-  icon: string | null
-  color: string | null
-  headline: string
-  subline: string | null
-  endsAt: string | null
-  priority: number
 }
 
 export interface CampaignAnalyticsRow {
@@ -127,40 +104,17 @@ export function serializeCampaign(
   }
 }
 
-/** Campaign must be active and within schedule window */
-export function isCampaignEffectivelyActive(
-  campaign: Pick<PosDiscountCampaignDoc, 'status' | 'startAt' | 'endAt'>,
-  now: Date = new Date()
-): boolean {
-  if (campaign.status !== 'active') return false
-  const start = parseOptionalDate(campaign.startAt)
-  const end = parseOptionalDate(campaign.endAt)
-  if (start && now < start) return false
-  if (end && now > end) return false
-  return true
-}
-
-export function isCampaignAllowingDiscount(
-  campaignId: string | null | undefined,
-  campaigns: Map<string, PosDiscountCampaignDoc>,
-  now: Date,
-  disabledCampaignIds?: Set<string>
-): boolean {
-  if (!campaignId) return true
-  if (disabledCampaignIds?.has(campaignId)) return false
-  const campaign = campaigns.get(campaignId)
-  if (!campaign) return false
-  return isCampaignEffectivelyActive(campaign, now)
-}
-
 export async function ensureCampaignIndexes(db: Db): Promise<void> {
+  const { POS_DISCOUNTS_COLLECTION, POS_CATEGORY_DISCOUNTS_COLLECTION } = await import(
+    '@/lib/pos-discount-types'
+  )
   try {
     await db.collection(POS_DISCOUNT_CAMPAIGNS_COLLECTION).createIndex({ status: 1, startAt: 1, endAt: 1 })
     await db.collection(POS_DISCOUNT_CAMPAIGNS_COLLECTION).createIndex({ priority: -1 })
     await db.collection(POS_DISCOUNTS_COLLECTION).createIndex({ campaignId: 1 })
     await db.collection(POS_CATEGORY_DISCOUNTS_COLLECTION).createIndex({ campaignId: 1 })
   } catch {
-    // indexes may already exist
+    /* exists */
   }
 }
 
@@ -172,145 +126,6 @@ export async function loadCampaignsMap(db: Db): Promise<Map<string, PosDiscountC
     map.set(String(row._id), mapped)
   }
   return map
-}
-
-export function buildCampaignsMapFromApi(
-  campaigns: Array<{
-    id: string
-    name: string
-    description?: string | null
-    status: PosCampaignStatus
-    priority: number
-    startAt?: string | null
-    endAt?: string | null
-    color?: string | null
-    icon?: string | null
-  }>,
-  now: Date = new Date()
-): Map<string, PosDiscountCampaignDoc> {
-  const map = new Map<string, PosDiscountCampaignDoc>()
-  for (const c of campaigns) {
-    map.set(c.id, {
-      name: c.name,
-      description: c.description ?? null,
-      status: c.status,
-      priority: c.priority,
-      startAt: parseOptionalDate(c.startAt),
-      endAt: parseOptionalDate(c.endAt),
-      color: c.color ?? null,
-      icon: c.icon ?? null,
-      createdBy: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-  }
-  return map
-}
-
-export function getActiveCampaignBanners(
-  ctx: PosDiscountContext,
-  customerId?: string | null
-): PosCampaignBanner[] {
-  const banners: PosCampaignBanner[] = []
-
-  for (const [campaignId, campaign] of ctx.campaigns) {
-    if (!isCampaignEffectivelyActive(campaign, ctx.now)) continue
-    if (ctx.disabledCampaignIds?.has(campaignId)) continue
-
-    let hasVisibleDiscount = false
-    let maxPct = 0
-    let sampleLabel = ''
-
-    for (const rule of ctx.productDiscounts.values()) {
-      if (rule.campaignId !== campaignId) continue
-      if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
-      if (!isDiscountEligibleForCustomer(rule, customerId)) continue
-      hasVisibleDiscount = true
-      if (rule.discountType === 'percentage' && rule.discountValue > maxPct) {
-        maxPct = rule.discountValue
-        sampleLabel = `${Math.round(rule.discountValue)}% OFF Selected Drinks`
-      }
-    }
-    for (const rule of ctx.categoryDiscounts.values()) {
-      if (rule.campaignId !== campaignId) continue
-      if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
-      if (!isDiscountEligibleForCustomer(rule, customerId)) continue
-      hasVisibleDiscount = true
-      if (rule.discountType === 'percentage' && rule.discountValue > maxPct) {
-        maxPct = rule.discountValue
-        sampleLabel = `${Math.round(rule.discountValue)}% OFF Selected Categories`
-      }
-    }
-
-    if (!hasVisibleDiscount) continue
-
-    banners.push({
-      id: campaignId,
-      name: campaign.name,
-      icon: campaign.icon ?? '🔥',
-      color: campaign.color ?? null,
-      headline: campaign.name.toUpperCase(),
-      subline: sampleLabel || campaign.description || null,
-      endsAt: campaign.endAt ? campaign.endAt.toISOString() : null,
-      priority: campaign.priority,
-    })
-  }
-
-  return banners.sort((a, b) => b.priority - a.priority)
-}
-
-export interface CustomerEligibleCampaign {
-  id: string
-  name: string
-  description: string | null
-  icon: string | null
-  color: string | null
-  discountSummary: string
-}
-
-export function listEligibleCampaignsForCustomer(
-  customerId: string,
-  ctx: PosDiscountContext
-): CustomerEligibleCampaign[] {
-  const normalized = normalizeCustomerIdForEligibility(customerId)
-  if (!normalized) return []
-
-  const out: CustomerEligibleCampaign[] = []
-
-  for (const [campaignId, campaign] of ctx.campaigns) {
-    if (!isCampaignEffectivelyActive(campaign, ctx.now)) continue
-
-    let eligible = false
-    let maxPct = 0
-
-    for (const rule of ctx.productDiscounts.values()) {
-      if (rule.campaignId !== campaignId) continue
-      if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
-      if (!isDiscountEligibleForCustomer(rule, normalized)) continue
-      eligible = true
-      if (rule.discountType === 'percentage') maxPct = Math.max(maxPct, rule.discountValue)
-    }
-    for (const rule of ctx.categoryDiscounts.values()) {
-      if (rule.campaignId !== campaignId) continue
-      if (!isDiscountEffectivelyActive(rule, ctx.now)) continue
-      if (!isDiscountEligibleForCustomer(rule, normalized)) continue
-      eligible = true
-      if (rule.discountType === 'percentage') maxPct = Math.max(maxPct, rule.discountValue)
-    }
-
-    if (!eligible) continue
-
-    out.push({
-      id: campaignId,
-      name: campaign.name,
-      description: campaign.description ?? null,
-      icon: campaign.icon ?? null,
-      color: campaign.color ?? null,
-      discountSummary: maxPct > 0 ? `Up to ${Math.round(maxPct)}% off` : 'Special pricing',
-    })
-  }
-
-  return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function attributeLineToCampaign(
@@ -347,6 +162,8 @@ export async function computeCampaignAnalytics(
   rangeStart: Date,
   rangeEnd: Date
 ): Promise<CampaignAnalyticsRow[]> {
+  const { ObjectId } = await import('mongodb')
+
   const orders = await db
     .collection('orders')
     .find({
@@ -398,16 +215,12 @@ export async function computeCampaignAnalytics(
   let orderIdx = 0
   for (const order of orders) {
     const orderId = String(order._id ?? orderIdx++)
-    const orderTotal = Number(order.total ?? 0)
-    let orderAttributed = false
-
     for (const raw of (order.items as Record<string, unknown>[]) ?? []) {
       const campaignId = attributeLineToCampaign(raw, ctx, productCategoryMap)
       if (!campaignId || !stats.has(campaignId)) continue
 
       const row = stats.get(campaignId)!
       row.orders.add(orderId)
-      orderAttributed = true
 
       const qty = Number(raw.quantity ?? 1)
       const unit = Number(raw.price ?? 0)
@@ -421,10 +234,6 @@ export async function computeCampaignAnalytics(
       cur.quantity += qty
       cur.revenue += unit * qty
       row.products.set(pid, cur)
-    }
-
-    if (orderAttributed && orderTotal > 0) {
-      // revenue already summed per line
     }
   }
 
@@ -533,6 +342,4 @@ export function buildCampaignDocFields(
   }
 }
 
-export function formatDiscountLabel(type: PosDiscountType, value: number): string {
-  return type === 'percentage' ? `${value}%` : `KSh ${value} off`
-}
+export { formatDiscountLabel }

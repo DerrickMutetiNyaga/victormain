@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
 import { Loader2, Search, X } from "lucide-react"
-import type { PosDiscountEligibilityScope } from "@/lib/pos-product-discounts"
+import type { PosDiscountEligibilityScope } from "@/lib/pos-discount-client"
 
 export interface EligibleCustomerOption {
   id: string

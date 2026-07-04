@@ -59,9 +59,10 @@ import { toast } from "sonner"
 import {
   buildPosDiscountContextFromApi,
   resolvePosPrice,
+  buildCampaignsMapFromApi,
+  getActiveCampaignBanners,
   type PromotionConflictMode,
-} from "@/lib/pos-product-discounts"
-import { buildCampaignsMapFromApi, getActiveCampaignBanners } from "@/lib/pos-discount-campaigns"
+} from "@/lib/pos-discount-client"
 import { PromotionCampaignBanner, type PromotionBannerData } from "@/components/pos/promotion-campaign-banner"
 
 interface CartItem extends Product {
