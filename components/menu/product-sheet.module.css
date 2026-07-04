@@ -1,0 +1,277 @@
+/* Scoped styles for ProductSheet - Premium luxury design */
+
+.sheetContent {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0;
+  overflow: hidden;
+  background: linear-gradient(to bottom, #FAFAF7, #F8F7F4);
+  max-height: 85vh;
+  border-radius: 24px 24px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheetWrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.imageSection {
+  position: relative;
+  height: 14rem;
+  width: 100%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #F8F7F4, #FAFAF7);
+  flex-shrink: 0;
+}
+
+.productImage {
+  object-fit: cover;
+}
+
+.imageGradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(250, 250, 247, 0.9) 0%, transparent 40%);
+}
+
+.closeButton {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  height: 3rem;
+  width: 3rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s;
+  touch-action: manipulation;
+  z-index: 20;
+}
+
+.closeButton:hover {
+  background: white;
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+}
+
+.tagBadge {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid;
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 20;
+}
+
+.tagPopular {
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.15), rgba(16, 185, 129, 0.15));
+  color: #16A34A;
+  border-color: #16A34A;
+}
+
+.tagBestSeller {
+  background: linear-gradient(135deg, rgba(182, 139, 46, 0.15), rgba(245, 158, 11, 0.15));
+  color: #B68B2E;
+  border-color: #B68B2E;
+}
+
+.tagPremium {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.15));
+  color: #8B5CF6;
+  border-color: #8B5CF6;
+}
+
+.tagHouseFavorite {
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(251, 113, 133, 0.15));
+  color: #F43F5E;
+  border-color: #F43F5E;
+}
+
+.tagStaffPick {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(96, 165, 250, 0.15));
+  color: #3B82F6;
+  border-color: #3B82F6;
+}
+
+.tagBestValue {
+  background: linear-gradient(135deg, rgba(182, 139, 46, 0.15), rgba(245, 158, 11, 0.15));
+  color: #B68B2E;
+  border-color: #B68B2E;
+}
+
+.contentSection {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 1.5rem;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+}
+
+.brandName {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #16A34A;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.25rem;
+}
+
+.productTitle {
+  font-size: 1.375rem;
+  font-weight: 800;
+  color: #111827;
+  text-align: left;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  margin-bottom: 0.25rem;
+}
+
+.productDescription {
+  color: #6B7280;
+  line-height: 1.5;
+  font-size: 0.875rem;
+}
+
+.pairingBox {
+  border-radius: 12px;
+  background: linear-gradient(135deg, #F8F7F4, #FAFAF7);
+  padding: 0.875rem 1rem;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.pairingTitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.375rem;
+  letter-spacing: -0.01em;
+}
+
+.pairingText {
+  font-size: 0.75rem;
+  color: #6B7280;
+  line-height: 1.5;
+}
+
+.priceSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid #E8E6E1;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.priceLabel {
+  font-size: 0.8125rem;
+  color: #6B7280;
+  font-weight: 500;
+  margin-bottom: 0.125rem;
+}
+
+.priceAmount {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.03em;
+}
+
+.quantityControls {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.quantityButton {
+  height: 3rem;
+  width: 3rem;
+  min-width: 3rem;
+  border-radius: 50%;
+  border: 2px solid #E8E6E1;
+  color: #111827;
+  transition: all 0.15s;
+  background: white;
+  touch-action: manipulation;
+  font-weight: 600;
+}
+
+.quantityButton:hover {
+  background: #F8F7F4;
+  border-color: #16A34A;
+  color: #16A34A;
+  transform: scale(1.1);
+}
+
+.quantityButton:active {
+  transform: scale(0.95);
+}
+
+.quantityValue {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #111827;
+  min-width: 2rem;
+  text-align: center;
+  letter-spacing: -0.02em;
+}
+
+.addButton {
+  height: 3rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+  color: white;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.3), 0 2px 8px rgba(22, 163, 74, 0.2);
+  transition: all 0.2s;
+  letter-spacing: 0.01em;
+  touch-action: manipulation;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.addButton:hover {
+  background: linear-gradient(135deg, #15803D, #16A34A);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(22, 163, 74, 0.4), 0 4px 12px rgba(22, 163, 74, 0.25);
+}
+
+.addButton:active {
+  transform: translateY(0);
+}
+
+.outOfStockBox {
+  border-radius: 18px;
+  background: linear-gradient(135deg, #FEF2F2, #FECACA);
+  border: 1px solid #FECACA;
+  padding: 1rem;
+  text-align: center;
+}
+
+.outOfStockText {
+  font-size: 0.9375rem;
+  color: #DC2626;
+  font-weight: 600;
+}

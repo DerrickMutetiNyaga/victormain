@@ -1,0 +1,183 @@
+import { getCathaSession } from '@/lib/catha-auth'
+import { getCathaUserByEmail, getCathaUserById } from '@/lib/models/catha-user'
+import { getActiveStaffShiftByUserId } from '@/lib/models/staff-shift'
+import { getDatabase } from '@/lib/mongodb'
+import { EAT_TIME_ZONE, evaluateLateness, getEatBusinessDate, getScheduledEatDate, isEarlyExit, isOvertime } from '@/lib/catha-shift-time'
+import type { StaffShiftStatus } from '@/lib/models/staff-shift'
+import { calculateShiftOrderStatsFromRows } from '@/lib/catha-shift-order-stats'
+import { runFirstRequestBacklogSweep } from '@/lib/catha-shift-auto-close'
+
+export async function requireShiftSessionUser() {
+  await runFirstRequestBacklogSweep().catch((error: any) => {
+    console.error('[shift-auto-close] first-request sweep failed', error?.message || error)
+  })
+  const session = await getCathaSession()
+  if (!session?.user?.email) return { ok: false as const, status: 401, error: 'Unauthorized' }
+  const user = await getCathaUserByEmail(session.user.email)
+  if (!user?._id) return { ok: false as const, status: 404, error: 'User not found' }
+  return {
+    ok: true as const,
+    session,
+    user,
+    userId: user._id.toString(),
+    email: user.email || session.user.email,
+    role: String(user.role || '').toUpperCase(),
+    name: user.name || session.user.name || session.user.email || 'Staff',
+  }
+}
+
+export async function requireActiveShiftByEmail(email: string, options?: { allowSuperAdmin?: boolean }) {
+  const user = await getCathaUserByEmail(email)
+  if (!user?._id) return { ok: false as const, status: 404, error: 'User not found' }
+  const role = String(user.role || '').trim().toUpperCase()
+  if (options?.allowSuperAdmin && role === 'SUPER_ADMIN') {
+    return { ok: true as const, userId: user._id.toString(), role, shift: null, user }
+  }
+  const shift = await getActiveStaffShiftByUserId(user._id.toString())
+  if (!shift) {
+    return { ok: false as const, status: 403, error: 'Active shift required before performing this action.' }
+  }
+  return { ok: true as const, userId: user._id.toString(), role, shift, user }
+}
+
+type ShiftGuardOptions = {
+  allowSuperAdmin?: boolean
+  allowedStatuses?: StaffShiftStatus[]
+}
+
+export async function requireActiveShiftForSessionUser(
+  sessionUser: { email?: string | null; userId?: string | null; id?: string | null; _id?: string | null },
+  options?: ShiftGuardOptions
+) {
+  const idCandidate = String(sessionUser.userId || sessionUser.id || sessionUser._id || '').trim()
+  const email = String(sessionUser.email || '').trim()
+  const user =
+    (idCandidate ? await getCathaUserById(idCandidate) : null) ??
+    (email ? await getCathaUserByEmail(email) : null)
+
+  if (!user?._id) return { ok: false as const, status: 404, error: 'User not found' }
+
+  const role = String(user.role || '').trim().toUpperCase()
+  if (options?.allowSuperAdmin && role === 'SUPER_ADMIN') {
+    return { ok: true as const, userId: user._id.toString(), role, shift: null, user }
+  }
+
+  const shift = await getActiveStaffShiftByUserId(user._id.toString())
+  if (!shift) {
+    return { ok: false as const, status: 403, error: 'Active shift required before performing this action.' }
+  }
+  const allowedStatuses = options?.allowedStatuses ?? ['ACTIVE', 'PENDING_CLOSURE']
+  if (!allowedStatuses.includes(shift.status)) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: `Shift status ${shift.status} does not allow this action.`,
+    }
+  }
+
+  return { ok: true as const, userId: user._id.toString(), role, shift, user }
+}
+
+export function getDeviceFingerprint(headers: Headers): string {
+  const ua = headers.get('user-agent') || 'unknown'
+  const lang = headers.get('accept-language') || 'unknown'
+  const forwarded = headers.get('x-forwarded-for') || 'unknown'
+  return `${ua.slice(0, 60)}|${lang}|${forwarded}`.slice(0, 180)
+}
+
+export function deriveShiftStatusOnClose(params: {
+  scheduledEndAt: Date
+  endedAt: Date
+  pendingClosure: boolean
+}): StaffShiftStatus {
+  if (params.pendingClosure) return 'FORGOT_CLOCK_OUT'
+  if (isEarlyExit(params.scheduledEndAt, params.endedAt)) return 'EARLY_EXIT'
+  if (isOvertime(params.scheduledEndAt, params.endedAt)) return 'OVERTIME'
+  return 'COMPLETED'
+}
+
+export function getScheduleForNow(openingTime: string, closingTime: string) {
+  const now = new Date()
+  const scheduledStartAt = getScheduledEatDate(openingTime, now)
+  const scheduledEndAt = getScheduledEatDate(closingTime, now)
+  return {
+    now,
+    scheduledStartAt,
+    scheduledEndAt,
+    businessDate: getEatBusinessDate(now),
+    timezone: EAT_TIME_ZONE,
+    latenessBand: evaluateLateness(scheduledStartAt, now),
+  }
+}
+
+export function computeShiftLatenessBand(startedAt: Date, openingTime: string) {
+  const scheduledStartAt = getScheduledEatDate(openingTime, startedAt)
+  return evaluateLateness(scheduledStartAt, startedAt)
+}
+
+function uniqueCashierKeys(keys: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      keys
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function extractOrderTime(row: Record<string, unknown>): Date | null {
+  const candidates = [
+    row.timestamp,
+    row.createdAt,
+    row.paidAt,
+    row.updatedAt,
+  ]
+  for (const value of candidates) {
+    if (!value) continue
+    const date = value instanceof Date ? value : new Date(String(value))
+    if (!Number.isNaN(date.getTime())) return date
+  }
+  return null
+}
+
+export async function aggregateShiftOrderStats(
+  staffName: string,
+  startedAt: Date,
+  endedAt: Date = new Date(),
+  extraCashierKeys: string[] = [],
+  staffUserId?: string
+) {
+  const db = await getDatabase('infusion_jaba')
+  const cashierKeys = uniqueCashierKeys([staffName, ...extraCashierKeys])
+  const cashierMatchers = cashierKeys.map((key) => ({ cashier: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const cashierNameMatchers = cashierKeys.map((key) => ({ cashierName: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const waiterMatchers = cashierKeys.map((key) => ({ waiter: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const receivedByMatchers = cashierKeys.map((key) => ({ receivedBy: { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const serverNameMatchers = cashierKeys.map((key) => ({ 'server.name': { $regex: `^${escapeRegex(key)}$`, $options: 'i' } }))
+  const userIdKey = String(staffUserId ?? '').trim()
+  const attributions: Array<Record<string, unknown>> = [
+    ...cashierMatchers,
+    ...cashierNameMatchers,
+    ...waiterMatchers,
+    ...receivedByMatchers,
+    ...serverNameMatchers,
+  ]
+  if (userIdKey) attributions.push({ cashierUserId: userIdKey })
+  if (!attributions.length) return calculateShiftOrderStatsFromRows([])
+  const rows = await db
+    .collection('orders')
+    .find({
+      $or: attributions,
+    })
+    .toArray()
+  const rowsInShift = rows.filter((row) => {
+    const eventTime = extractOrderTime(row as Record<string, unknown>)
+    if (!eventTime) return false
+    return eventTime >= startedAt && eventTime <= endedAt
+  })
+  return calculateShiftOrderStatsFromRows(rowsInShift)
+}

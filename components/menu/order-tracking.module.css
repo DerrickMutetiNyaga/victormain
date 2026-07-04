@@ -1,0 +1,270 @@
+/* Scoped styles for OrderTracking - Premium luxury design */
+
+.orderCard {
+  background: white;
+  border: 1px solid #E8E6E1;
+  border-radius: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0;
+}
+
+.backButton {
+  height: 44px;
+  width: 44px;
+  border-radius: 50%;
+  background: #F8F7F4;
+  border: 1px solid #E8E6E1;
+  transition: all 0.2s;
+}
+
+.backButton:hover {
+  background: #F3F4F6;
+  border-color: #D1CFC8;
+  transform: scale(1.05);
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.02em;
+}
+
+.cardHeader {
+  padding: 1.5rem 1.5rem 1rem;
+}
+
+.orderHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.orderLabel {
+  font-size: 0.875rem;
+  color: #6B7280;
+  font-weight: 500;
+  margin-bottom: 0.375rem;
+}
+
+.orderNumber {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  font-family: monospace;
+  letter-spacing: -0.01em;
+}
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.5rem 0.875rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.cardContent {
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #E8E6E1;
+}
+
+@media (min-width: 640px) {
+  .infoGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.infoLabel {
+  font-size: 0.8125rem;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.infoValue {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.infoValueAmount {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.01em;
+}
+
+.paymentBadge {
+  width: fit-content;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.375rem 0.75rem;
+}
+
+.itemsSection {
+  margin-bottom: 1.5rem;
+}
+
+.itemsTitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.itemsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.itemRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #F8F7F4;
+  border-radius: 12px;
+  border: 1px solid #E8E6E1;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.itemName {
+  font-size: 0.875rem;
+  color: #111827;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 0.5rem;
+}
+
+.itemPrice {
+  font-size: 0.875rem;
+  color: #6B7280;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.successBox {
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.1), rgba(16, 185, 129, 0.1));
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  border-radius: 14px;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.successIcon {
+  height: 2.5rem;
+  width: 2.5rem;
+  color: #16A34A;
+  margin: 0 auto 0.75rem;
+}
+
+.successText {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #16A34A;
+}
+
+.actionsBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid #E8E6E1;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .actionsBox {
+    flex-direction: row;
+    width: auto;
+  }
+}
+
+.addItemsButton {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid #E8E6E1;
+  background: white;
+  color: #111827;
+  transition: all 0.2s;
+}
+
+.addItemsButton:hover {
+  background: #F8F7F4;
+  border-color: #D1CFC8;
+  transform: translateY(-1px);
+}
+
+.payButton {
+  flex: 1;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #16A34A, #22C55E);
+  color: white;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  touch-action: manipulation;
+  border: none;
+}
+
+@media (min-width: 640px) {
+  .payButton {
+    height: 44px;
+    min-height: 44px;
+    font-size: 0.9375rem;
+  }
+}
+
+.payButton:hover {
+  background: linear-gradient(135deg, #15803D, #16A34A);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.4);
+}
+

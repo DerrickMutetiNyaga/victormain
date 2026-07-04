@@ -1,0 +1,157 @@
+/* Scoped styles for PopularRow - Ultra premium with auto-scroll */
+
+.popularSection {
+  margin-bottom: 2.5rem;
+  background: white;
+  border-radius: 20px;
+  padding: 1.75rem 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+.popularHeader {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .popularHeader {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .popularHeader {
+    padding-left: 2.5rem;
+    padding-right: 2.5rem;
+  }
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.headerAccent {
+  height: 3.5rem;
+  width: 0.5rem;
+  background: #16A34A;
+  border-radius: 9999px;
+}
+
+.popularTitle {
+  font-size: 1.625rem;
+  font-weight: 800;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  letter-spacing: -0.025em;
+}
+
+.sparkleIcon {
+  height: 1.625rem;
+  width: 1.625rem;
+  color: #B68B2E;
+  animation: sparkleRotate 3s ease-in-out infinite;
+}
+
+@keyframes sparkleRotate {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(10deg) scale(1.1); }
+  50% { transform: rotate(-10deg) scale(1); }
+  75% { transform: rotate(10deg) scale(1.1); }
+}
+
+.popularSubtitle {
+  font-size: 0.9375rem;
+  color: #6B7280;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.scrollContainer {
+  position: relative;
+}
+
+.fadeLeft {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2rem;
+  background: linear-gradient(to right, white, transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.fadeRight {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2rem;
+  background: linear-gradient(to left, white, transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.scrollContent {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  padding-bottom: 1rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+  /* Auto-scroll controlled via JS */
+  scroll-snap-type: x proximity;
+}
+
+@media (min-width: 640px) {
+  .scrollContent {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .scrollContent {
+    padding-left: 2.5rem;
+    padding-right: 2.5rem;
+  }
+}
+
+.scrollContent::-webkit-scrollbar {
+  display: none;
+}
+
+.popularCardWrapper {
+  flex-shrink: 0;
+  width: calc(50vw - 1.5rem);
+  max-width: 280px;
+  scroll-snap-align: start;
+}
+
+@media (min-width: 640px) {
+  .popularCardWrapper {
+    width: calc(33.333vw - 1.75rem);
+    max-width: 300px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .popularCardWrapper {
+    width: calc(25vw - 2rem);
+    max-width: 280px;
+  }
+}
+
+/* Pause auto-scroll animation class */
+.scrollContent.paused {
+  scroll-behavior: smooth;
+}
