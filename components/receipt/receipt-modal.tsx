@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -50,6 +50,7 @@ interface ReceiptModalProps {
   onClose: () => void
   businessName?: string
   businessSubtitle?: string
+  tillNumber?: string
   showQRCode?: boolean
 }
 
@@ -57,13 +58,30 @@ export function ReceiptModal({
   order,
   open,
   onClose,
-  businessName = "CATHA LODGE",
+  businessName = "catha lounge",
   businessSubtitle = "Restaurant & Bar",
+  tillNumber: tillNumberProp,
   showQRCode = true,
 }: ReceiptModalProps) {
   const printMode = "thermal" // 80mm only
   const [colorMode, setColorMode] = useState<"colored" | "bw">("colored")
   const [isPrinting, setIsPrinting] = useState(false)
+  const [tillNumber, setTillNumber] = useState(tillNumberProp ?? "")
+
+  useEffect(() => {
+    if (tillNumberProp) {
+      setTillNumber(tillNumberProp)
+      return
+    }
+    if (!open) return
+    fetch("/api/catha/settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        const fromReceipt = data?.settings?.receipt?.tillNumber
+        if (fromReceipt) setTillNumber(String(fromReceipt))
+      })
+      .catch(() => {})
+  }, [open, tillNumberProp])
 
   if (!order) return null
 
@@ -436,6 +454,14 @@ export function ReceiptModal({
                   <span class="meta-label">Cashier</span>
                   <span class="meta-value">${order.cashier || "—"}</span>
                 </div>
+                ${
+                  tillNumber
+                    ? `<div class="meta-row">
+                        <span class="meta-label">Till No.</span>
+                        <span class="meta-value">${tillNumber}</span>
+                      </div>`
+                    : ""
+                }
                 <div class="meta-row">
                   <span class="meta-label">Payment</span>
                   <span class="payment-badge ${
@@ -641,6 +667,7 @@ export function ReceiptModal({
                 ...(order.customerPhone ? [{ label: "Phone", value: order.customerPhone }] : []),
                 { label: "Server", value: order.waiter || "—" },
                 { label: "Cashier", value: order.cashier || "—" },
+                ...(tillNumber ? [{ label: "Till No.", value: tillNumber }] : []),
               ]}
               paymentMethod={order.paymentMethod}
               mpesaReceiptCode={order.mpesaReceiptNumber}

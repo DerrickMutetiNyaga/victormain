@@ -74,7 +74,7 @@ async function fetchReceipt(orderId: string): Promise<PublicReceipt | null> {
 }
 
 export const metadata = {
-  title: "Receipt | Catha Lodge",
+  title: "Receipt | catha lounge",
   robots: { index: false, follow: false },
 }
 
@@ -208,7 +208,7 @@ export default async function PublicReceiptPage({ params }: { params: Promise<{ 
             <div className="mt-6 text-center">
               <p className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900 sm:text-[28px]">
                 <Leaf className="h-6 w-6 text-emerald-700 sm:h-7 sm:w-7" />
-                Catha Lodge
+                catha lounge
               </p>
               <p className="mt-1 text-xs text-slate-500 sm:text-base">Good Food • Great Moments • Always</p>
             </div>

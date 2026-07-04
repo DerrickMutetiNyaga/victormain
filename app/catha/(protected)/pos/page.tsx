@@ -2246,8 +2246,8 @@ export default function POSPage() {
           vat: 0,
           total: lastCartSnapshot.reduce((sum, item) => sum + item.price * item.quantity, 0),
         } : null}
-        businessName="CATHA LOUNGE"
-        businessSubtitle="Premium Bar & Lounge"
+        businessName="catha lounge"
+        businessSubtitle="Restaurant & Bar"
         showQRCode={true}
       />
 

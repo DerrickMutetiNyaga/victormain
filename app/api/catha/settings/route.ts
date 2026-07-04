@@ -29,6 +29,7 @@ export interface Settings {
     autoPrint: boolean
     includeVatBreakdown: boolean
     footerMessage: string
+    tillNumber?: string
   }
   notifications?: {
     lowStockAlerts: boolean
@@ -209,10 +210,18 @@ export async function GET() {
       }
     }
     
+    const receiptTillNumber = String(
+      settings.receipt?.tillNumber || settings.mpesa?.shortcode || ""
+    ).trim()
+
     // Merge with defaults to ensure all fields exist
     const mergedSettings = {
       businessInfo: { ...defaultSettings.businessInfo, ...(settings.businessInfo || {}) },
-      receipt: { ...defaultSettings.receipt, ...(settings.receipt || {}) },
+      receipt: {
+        ...defaultSettings.receipt,
+        ...(settings.receipt || {}),
+        ...(receiptTillNumber ? { tillNumber: receiptTillNumber } : {}),
+      },
       notifications: sanitizeNotificationsForClient({
         ...defaultSettings.notifications,
         ...(settings.notifications || {}),

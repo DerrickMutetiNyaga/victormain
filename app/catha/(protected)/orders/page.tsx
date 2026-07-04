@@ -3586,7 +3586,7 @@ export default function OrdersPage() {
         })() : null}
         open={!!printingOrder}
         onClose={() => setPrintingOrder(null)}
-        businessName="CATHA LODGE"
+        businessName="catha lounge"
         businessSubtitle="Restaurant & Bar"
         showQRCode={true}
       />

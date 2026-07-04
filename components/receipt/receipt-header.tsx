@@ -13,7 +13,7 @@ interface ReceiptHeaderProps {
 }
 
 export function ReceiptHeader({
-  businessName = "CATHA LODGE",
+  businessName = "catha lounge",
   businessSubtitle = "Restaurant & Bar",
   orderId,
   status,

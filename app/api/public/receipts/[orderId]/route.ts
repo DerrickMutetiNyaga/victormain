@@ -64,8 +64,17 @@ export async function GET(
       return NextResponse.json({ error: "Receipt not found" }, { status: 404 })
     }
 
+    const settingsDoc = await db.collection("catha_settings").findOne(
+      {},
+      { projection: { "receipt.tillNumber": 1, "mpesa.shortcode": 1 } }
+    )
+    const tillNumber = String(
+      settingsDoc?.receipt?.tillNumber || settingsDoc?.mpesa?.shortcode || ""
+    ).trim()
+
     const payload = {
-      businessName: "Catha Lodge",
+      businessName: "catha lounge",
+      ...(tillNumber ? { tillNumber } : {}),
       orderId: order.id,
       timestamp: order.timestamp,
       paymentMethod: order.paymentMethod || null,
