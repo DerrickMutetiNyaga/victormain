@@ -440,18 +440,18 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
       <Shell>
         <div className="overflow-hidden rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)]">
           {/* Gold success banner */}
-          <div className="relative bg-gradient-to-b from-emerald-900 via-emerald-950 to-stone-950 px-6 pb-8 pt-9 text-center">
-            <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-emerald-400/20 blur-[70px]" />
+          <div className="relative bg-gradient-to-b from-stone-900 via-stone-950 to-black px-6 pb-8 pt-9 text-center">
+            <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-amber-500/15 blur-[70px]" />
             <div className="relative mx-auto mb-5 flex h-24 w-24 items-center justify-center">
-              <span className="absolute inset-0 rounded-full bg-emerald-400/25 animate-ping" />
+              <span className="absolute inset-0 rounded-full bg-amber-400/20 animate-ping" />
               <span className="absolute inset-[-8px] rounded-full border border-amber-400/30" />
-              <span className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-emerald-300 bg-emerald-400/15 shadow-[0_0_40px_rgba(52,211,153,0.35)]">
-                <CheckCircle2 className="h-12 w-12 text-emerald-200" />
+              <span className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-amber-300 bg-amber-400/10 shadow-[0_0_40px_rgba(251,191,36,0.3)]">
+                <CheckCircle2 className="h-12 w-12 text-amber-200" />
               </span>
             </div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-emerald-300/90">Success</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-amber-300/90">Success</p>
             <h1 className="mt-1 font-serif text-[2rem] leading-tight text-amber-50">Payment received</h1>
-            <p className="mt-3 font-serif text-4xl tabular-nums text-emerald-200">
+            <p className="mt-3 font-serif text-4xl tabular-nums text-amber-100">
               {formatKsh(data.orderTotal || data.totalPaid)}
             </p>
             <div className="mx-auto mt-4 h-px w-24 bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
@@ -476,8 +476,8 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
               </div>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-stone-500">Status</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-emerald-800">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-stone-900 px-2.5 py-0.5 text-xs font-bold uppercase tracking-widest text-amber-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                   Paid
                 </span>
               </div>
