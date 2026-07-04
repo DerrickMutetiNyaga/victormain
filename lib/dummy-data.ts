@@ -16,6 +16,7 @@ export interface Product {
   supplier: string
   isJaba?: boolean
   batchNumber?: string
+<<<<<<< HEAD
   /** POS-only: catalog price when a POS discount is active */
   originalPrice?: number
   /** POS-only discount metadata for display */
@@ -27,6 +28,8 @@ export interface Product {
     promotionName?: string | null
     source?: 'product' | 'category'
   }
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 }
 
 export interface Category {

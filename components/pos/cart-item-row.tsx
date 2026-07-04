@@ -12,12 +12,15 @@ interface CartItemRowProps {
     size?: string
     image?: string
     stock?: number
+<<<<<<< HEAD
     originalPrice?: number
     posDiscount?: {
       discountAmount: number
       badgeLabel?: string
       promotionName?: string | null
     }
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   }
   onUpdateQuantity: (id: string, quantity: number, size?: string) => void
   onRemove: (id: string, size?: string) => void
@@ -31,7 +34,10 @@ export function CartItemRow({
   className,
 }: CartItemRowProps) {
   const lineTotal = item.price * item.quantity
+<<<<<<< HEAD
   const hasPosDiscount = Boolean(item.originalPrice != null && item.posDiscount)
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 
   const formatKsh = (amount: number) =>
     `KSh ${amount.toLocaleString("en-KE", {
@@ -46,6 +52,10 @@ export function CartItemRow({
         className
       )}
     >
+<<<<<<< HEAD
+=======
+      {/* Top Row: Image, Details, Price */}
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
       <div className="flex items-start gap-2.5">
         <div className="h-10 w-10 rounded-lg bg-muted overflow-hidden flex-shrink-0">
           <img
@@ -56,6 +66,7 @@ export function CartItemRow({
         </div>
 
         <div className="flex-1 min-w-0">
+<<<<<<< HEAD
           <div className="flex items-center gap-1.5 flex-wrap">
             <h4 className="text-xs font-semibold text-foreground leading-tight line-clamp-2">
               {item.name}
@@ -66,11 +77,17 @@ export function CartItemRow({
               </span>
             )}
           </div>
+=======
+          <h4 className="text-xs font-semibold text-foreground leading-tight line-clamp-2">
+            {item.name}
+          </h4>
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
           {item.size && (
             <span className="inline-block mt-0.5 text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
               {item.size}
             </span>
           )}
+<<<<<<< HEAD
 
           {hasPosDiscount ? (
             <div className="mt-1 space-y-0.5 rounded-md bg-white/60 border border-border/40 px-2 py-1.5">
@@ -107,11 +124,24 @@ export function CartItemRow({
 
         <div className="text-right flex-shrink-0">
           <p className="text-sm font-bold text-emerald-700 tabular-nums">
+=======
+          <p className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
+            {formatKsh(item.price)} each
+          </p>
+        </div>
+
+        <div className="text-right flex-shrink-0">
+          <p className="text-sm font-bold text-foreground tabular-nums">
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
             {formatKsh(lineTotal)}
           </p>
         </div>
       </div>
 
+<<<<<<< HEAD
+=======
+      {/* Bottom Row: Quantity (+ / -) min 44px touch + Remove */}
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
       <div className="flex items-center justify-between pt-1.5 border-t border-border">
         <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5">
           <button
@@ -156,3 +186,7 @@ export function CartItemRow({
     </div>
   )
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d

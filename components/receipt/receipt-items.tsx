@@ -7,9 +7,12 @@ interface ReceiptItem {
   name: string
   quantity: number
   price: number
+<<<<<<< HEAD
   originalPrice?: number
   posDiscountAmount?: number
   promotionName?: string | null
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 }
 
 interface ReceiptItemsProps {
@@ -28,10 +31,15 @@ export function ReceiptItems({ items, className }: ReceiptItemsProps) {
 
   return (
     <div className={cn("py-4 border-b border-[#e5e7eb]", className)}>
+<<<<<<< HEAD
+=======
+      {/* Section Title */}
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
       <h3 className="text-xs font-semibold text-[#64748b] uppercase tracking-wider mb-3">
         Items
       </h3>
 
+<<<<<<< HEAD
       <div className="space-y-0">
         {items.map((item, idx) => {
           const hasDiscount =
@@ -40,10 +48,17 @@ export function ReceiptItems({ items, className }: ReceiptItemsProps) {
             item.posDiscountAmount > 0
           const itemTotal = (item.price ?? 0) * (item.quantity ?? 0)
 
+=======
+      {/* Items List */}
+      <div className="space-y-0">
+        {items.map((item, idx) => {
+          const itemTotal = (item.price ?? 0) * (item.quantity ?? 0)
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
           return (
             <div
               key={idx}
               className={cn(
+<<<<<<< HEAD
                 "py-2.5",
                 idx < items.length - 1 && "border-b border-dashed border-[#e5e7eb]"
               )}
@@ -81,6 +96,21 @@ export function ReceiptItems({ items, className }: ReceiptItemsProps) {
                   {formatKsh(itemTotal)}
                 </p>
               </div>
+=======
+                "flex justify-between items-start py-2.5",
+                idx < items.length - 1 && "border-b border-dashed border-[#e5e7eb]"
+              )}
+            >
+              <div className="flex-1 pr-4">
+                <p className="text-sm font-medium text-[#0f172a]">{item.name}</p>
+                <p className="text-xs text-[#64748b] mt-0.5 tabular-nums">
+                  {item.quantity} × {formatKsh(item.price)}
+                </p>
+              </div>
+              <p className="text-sm font-semibold text-[#0f172a] tabular-nums whitespace-nowrap">
+                {formatKsh(itemTotal)}
+              </p>
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
             </div>
           )
         })}
@@ -88,3 +118,7 @@ export function ReceiptItems({ items, className }: ReceiptItemsProps) {
     </div>
   )
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d

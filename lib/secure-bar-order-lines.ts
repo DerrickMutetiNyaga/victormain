@@ -7,7 +7,10 @@
 
 import type { Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
+<<<<<<< HEAD
 import { loadPosDiscountContext, applyPosDiscountToUnitPrice } from '@/lib/pos-product-discounts'
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 
 /** Same family as inventory-ops (stock); archived items excluded from new sales. */
 const PRODUCT_QUERY_SALE = {
@@ -30,12 +33,15 @@ export type ResolvedOrderLine = {
   /** Original DB _id string for inventory rows */
   skuId?: string
   size?: string
+<<<<<<< HEAD
   /** POS-only: catalog price before POS discount */
   originalPrice?: number
   /** POS-only: per-unit discount amount */
   posDiscountAmount?: number
   posDiscountType?: 'percentage' | 'fixed'
   posPromotionName?: string | null
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 }
 
 export type ResolveBarOrderLinesContext = {
@@ -43,8 +49,11 @@ export type ResolveBarOrderLinesContext = {
   allowCustomLines: boolean
   /** When true, reject custom lines entirely (public menu / e-commerce) */
   rejectCustomLines: boolean
+<<<<<<< HEAD
   /** When true, apply active pos_product_discounts (Catha POS orders only) */
   applyPosDiscounts?: boolean
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 }
 
 function roundMoney(n: number): number {
@@ -121,8 +130,11 @@ export async function resolveBarOrderLines(
   const dbPricesBySku: Record<string, number> = {}
   let subtotal = 0
 
+<<<<<<< HEAD
   const posDiscountCtx = ctx.applyPosDiscounts ? await loadPosDiscountContext(db) : null
 
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   for (const raw of rawItems) {
     const row = raw as Record<string, unknown>
     if (!row) continue
@@ -192,6 +204,7 @@ export async function resolveBarOrderLines(
     }
 
     const { doc, skuId } = found
+<<<<<<< HEAD
     const catalogUnit = roundMoney(Number(doc.price ?? 0))
     if (!Number.isFinite(catalogUnit) || catalogUnit <= 0) {
       return { ok: false, code: 'BAD_DB_PRICE', error: `Invalid database price for product ${doc.name}` }
@@ -208,6 +221,14 @@ export async function resolveBarOrderLines(
 
     const unit = posApplied.unit
     dbPricesBySku[skuId] = catalogUnit
+=======
+    const unit = roundMoney(Number(doc.price ?? 0))
+    if (!Number.isFinite(unit) || unit <= 0) {
+      return { ok: false, code: 'BAD_DB_PRICE', error: `Invalid database price for product ${doc.name}` }
+    }
+
+    dbPricesBySku[skuId] = unit
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
     const name = String(doc.name || 'Product').trim() || 'Product'
     subtotal += roundMoney(unit * qty)
     out.push({
@@ -217,6 +238,7 @@ export async function resolveBarOrderLines(
       quantity: qty,
       price: unit,
       size: doc.size ? String(doc.size) : undefined,
+<<<<<<< HEAD
       ...(posApplied.originalPrice != null && posApplied.posDiscountAmount != null
         ? {
             originalPrice: posApplied.originalPrice,
@@ -225,6 +247,8 @@ export async function resolveBarOrderLines(
             posPromotionName: posApplied.promotionName ?? null,
           }
         : {}),
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
     })
   }
 

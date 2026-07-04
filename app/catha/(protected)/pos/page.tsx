@@ -56,10 +56,13 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+<<<<<<< HEAD
 import {
   buildPosDiscountContextFromApi,
   resolvePosPrice,
 } from "@/lib/pos-product-discounts"
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 
 interface CartItem extends Product {
   quantity: number
@@ -148,6 +151,7 @@ let _productsCache: Product[] | null = null
 let _productsCacheTime = 0
 const PRODUCTS_CACHE_TTL_MS = 5_000 // 5 seconds - stock must stay near real-time
 
+<<<<<<< HEAD
 type PosDiscountApiRecord = {
   productId: string
   discountType: "percentage" | "fixed"
@@ -215,6 +219,8 @@ function mapProductsWithPosDiscounts(
   })
 }
 
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 // Colorful icon backgrounds per category
 const categoryIconColors: Record<string, string> = {
   whiskey: "bg-amber-500/15 text-amber-700",
@@ -432,8 +438,32 @@ export default function POSPage() {
     }
   }, [cart.length, editingOrderId, pendingMpesaOrderId])
 
+<<<<<<< HEAD
   // Fetch products + POS discounts - instant from cache, then revalidate in background
   useEffect(() => {
+=======
+  // Fetch products - instant from cache, then revalidate in background
+  useEffect(() => {
+    const mapProducts = (raw: any[]): Product[] =>
+      (raw || []).map((p: any) => ({
+        id: p.id || p._id || p.barcode || p.name || 'unknown-product',
+        name: p.name || 'Unknown Product',
+        category: p.category || 'other',
+        price: p.price || 0,
+        cost: p.cost || 0,
+        stock: p.stock || 0,
+        minStock: p.minStock || 0,
+        image: p.image || '/placeholder.svg?height=150&width=200&query=drink bottle',
+        barcode: p.barcode || '',
+        unit: p.unit || 'item',
+        supplier: p.supplier || 'Unknown',
+        isJaba: p.isJaba || false,
+        batchNumber: p.batch || undefined,
+        size: p.size || '',
+      }))
+
+    // Instant: show cached data immediately on repeat visits (timestamp from last successful fetch)
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
     const hasFreshCache = _productsCache && Date.now() - _productsCacheTime < PRODUCTS_CACHE_TTL_MS
     if (hasFreshCache) {
       setProducts(_productsCache!)
@@ -444,6 +474,7 @@ export default function POSPage() {
     const fetchProducts = async () => {
       try {
         if (!hasFreshCache) setIsLoading(true)
+<<<<<<< HEAD
         const [inventoryRes, discountsRes] = await Promise.all([
           fetch("/api/catha/inventory", {
             cache: "default",
@@ -474,13 +505,30 @@ export default function POSPage() {
         if (cancelled) return
         if (data.success && data.products) {
           const mapped = mapProductsWithPosDiscounts(data.products, productRules, categoryRules)
+=======
+        const response = await fetch('/api/catha/inventory', {
+          cache: 'default',
+          headers: { 'Cache-Control': 'max-age=5, stale-while-revalidate=10' },
+        })
+        if (cancelled) return
+        if (!response.ok) throw new Error('Failed to fetch inventory')
+        const data = await response.json()
+        if (cancelled) return
+        // Only update cache + timestamp on successful response + parse (never on error)
+        if (data.success && data.products) {
+          const mapped = mapProducts(data.products)
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
           _productsCache = mapped
           _productsCacheTime = Date.now()
           setProducts(mapped)
         }
       } catch (error) {
         if (!cancelled) {
+<<<<<<< HEAD
           console.error("Error fetching products:", error)
+=======
+          console.error('Error fetching products:', error)
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
           if (!hasFreshCache) setProducts([])
         }
       } finally {
@@ -488,9 +536,13 @@ export default function POSPage() {
       }
     }
     fetchProducts()
+<<<<<<< HEAD
     return () => {
       cancelled = true
     }
+=======
+    return () => { cancelled = true }
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   }, [])
 
   // Load order data for editing
@@ -2238,9 +2290,12 @@ export default function POSPage() {
             name: item.name,
             quantity: item.quantity,
             price: item.price,
+<<<<<<< HEAD
             originalPrice: item.originalPrice,
             posDiscountAmount: item.posDiscount?.discountAmount,
             promotionName: item.posDiscount?.promotionName,
+=======
+>>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
           })),
           subtotal: lastCartSnapshot.reduce((sum, item) => sum + item.price * item.quantity, 0),
           vat: 0,
