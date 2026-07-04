@@ -59,6 +59,7 @@ import { toast } from "sonner"
 import {
   buildPosDiscountContextFromApi,
   resolvePosPrice,
+  type PromotionConflictMode,
 } from "@/lib/pos-product-discounts"
 import { buildCampaignsMapFromApi, getActiveCampaignBanners } from "@/lib/pos-discount-campaigns"
 import { PromotionCampaignBanner, type PromotionBannerData } from "@/components/pos/promotion-campaign-banner"
@@ -191,6 +192,8 @@ type PosInventoryDiscountCache = {
   productRules: PosDiscountApiRecord[]
   categoryRules: PosCategoryDiscountApiRecord[]
   campaigns: PosCampaignApiRecord[]
+  conflictMode: PromotionConflictMode
+  disabledCampaignIds: string[]
   mappedAt: number
 }
 
@@ -201,10 +204,19 @@ function mapProductsWithPosDiscounts(
   productRules: PosDiscountApiRecord[],
   categoryRules: PosCategoryDiscountApiRecord[],
   campaigns: PosCampaignApiRecord[],
-  customerId?: string | null
+  customerId?: string | null,
+  conflictMode: PromotionConflictMode = "never_stack",
+  disabledCampaignIds: string[] = []
 ): Product[] {
   const campaignsMap = buildCampaignsMapFromApi(campaigns)
-  const ctx = buildPosDiscountContextFromApi(productRules, categoryRules, campaignsMap)
+  const ctx = buildPosDiscountContextFromApi(
+    productRules,
+    categoryRules,
+    campaignsMap,
+    new Date(),
+    conflictMode,
+    new Set(disabledCampaignIds)
+  )
 
   return (raw || []).map((p: any) => {
     const id = p.id || p._id || p.barcode || p.name || "unknown-product"
@@ -287,13 +299,19 @@ export default function POSPage() {
   const productRulesRef = useRef<PosDiscountApiRecord[]>([])
   const categoryRulesRef = useRef<PosCategoryDiscountApiRecord[]>([])
   const campaignsRef = useRef<PosCampaignApiRecord[]>([])
+  const conflictModeRef = useRef<PromotionConflictMode>("never_stack")
+  const disabledCampaignIdsRef = useRef<string[]>([])
+  const [products, setProducts] = useState<Product[]>([])
 
   const promotionBanner = useMemo((): PromotionBannerData | null => {
     const campaignsMap = buildCampaignsMapFromApi(campaignsRef.current)
     const ctx = buildPosDiscountContextFromApi(
       productRulesRef.current,
       categoryRulesRef.current,
-      campaignsMap
+      campaignsMap,
+      new Date(),
+      conflictModeRef.current,
+      new Set(disabledCampaignIdsRef.current)
     )
     const banners = getActiveCampaignBanners(ctx, posCustomerId)
     return banners[0] ?? null
@@ -307,7 +325,6 @@ export default function POSPage() {
   const [showCategories, setShowCategories] = useState(false)
   const [lastPaymentMethod, setLastPaymentMethod] = useState("")
   const [lastTransactionId, setLastTransactionId] = useState("")
-  const [products, setProducts] = useState<Product[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
@@ -317,6 +334,19 @@ export default function POSPage() {
   const productsPerLoad = 20 // Load 20 more products each time
   const [barcodeInput, setBarcodeInput] = useState("")
   const [isScanning, setIsScanning] = useState(false)
+  const [promoCodeInput, setPromoCodeInput] = useState("")
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(null)
+  const [orderPreview, setOrderPreview] = useState<{
+    subtotal: number
+    total: number
+    posOrderDiscount: number
+    bundleDiscount: number
+    spendDiscount: number
+    couponDiscount: number
+    spendPromotionName: string | null
+    promoCodeLabel: string | null
+  } | null>(null)
+  const [promoPreviewLoading, setPromoPreviewLoading] = useState(false)
   const [lastScanTime, setLastScanTime] = useState(0)
   const [lastWiFiScanCheck, setLastWiFiScanCheck] = useState<Date>(new Date())
   // WiFi scanner is disabled by default - enable only if you're using WiFi scanners
@@ -492,13 +522,17 @@ export default function POSPage() {
       productRulesRef.current = _posInventoryDiscountCache.productRules
       categoryRulesRef.current = _posInventoryDiscountCache.categoryRules
       campaignsRef.current = _posInventoryDiscountCache.campaigns
+      conflictModeRef.current = _posInventoryDiscountCache.conflictMode
+      disabledCampaignIdsRef.current = _posInventoryDiscountCache.disabledCampaignIds
       setProducts(
         mapProductsWithPosDiscounts(
           _posInventoryDiscountCache.raw,
           _posInventoryDiscountCache.productRules,
           _posInventoryDiscountCache.categoryRules,
           _posInventoryDiscountCache.campaigns,
-          posCustomerId
+          posCustomerId,
+          _posInventoryDiscountCache.conflictMode,
+          _posInventoryDiscountCache.disabledCampaignIds
         )
       )
       setIsLoading(false)
@@ -522,8 +556,14 @@ export default function POSPage() {
         let productRules: PosDiscountApiRecord[] = []
         let categoryRules: PosCategoryDiscountApiRecord[] = []
         let campaigns: PosCampaignApiRecord[] = []
+        let conflictMode: PromotionConflictMode = "never_stack"
+        let disabledCampaignIds: string[] = []
         if (discountsRes.ok) {
           const discountData = await discountsRes.json()
+          conflictMode = discountData.conflictMode || "never_stack"
+          disabledCampaignIds = discountData.disabledCampaignIds || []
+          conflictModeRef.current = conflictMode
+          disabledCampaignIdsRef.current = disabledCampaignIds
           productRules = (discountData.discounts || []).map((d: PosDiscountApiRecord & { productId: string }) => ({
             productId: d.productId,
             discountType: d.discountType,
@@ -562,9 +602,21 @@ export default function POSPage() {
             productRules,
             categoryRules,
             campaigns,
+            conflictMode,
+            disabledCampaignIds,
             mappedAt: Date.now(),
           }
-          setProducts(mapProductsWithPosDiscounts(data.products, productRules, categoryRules, campaigns, posCustomerId))
+          setProducts(
+            mapProductsWithPosDiscounts(
+              data.products,
+              productRules,
+              categoryRules,
+              campaigns,
+              posCustomerId,
+              conflictMode,
+              disabledCampaignIds
+            )
+          )
         }
       } catch (error) {
         if (!cancelled) {
@@ -590,10 +642,60 @@ export default function POSPage() {
         productRulesRef.current,
         categoryRulesRef.current,
         campaignsRef.current,
-        posCustomerId
+        posCustomerId,
+        conflictModeRef.current,
+        disabledCampaignIdsRef.current
       )
     )
   }, [posCustomerId])
+
+  // Preview order-level promotions (bundles, spend, coupon)
+  useEffect(() => {
+    if (cart.length === 0) {
+      setOrderPreview(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setPromoPreviewLoading(true)
+      try {
+        const res = await fetch("/api/catha/pos-discounts/preview-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: mapCartToOrderLineItems(cart),
+            customerPhone: customerPhone ? normalizeKenyaPhone(customerPhone) : null,
+            promoCode: appliedPromoCode,
+          }),
+        })
+        const data = await res.json()
+        if (cancelled) return
+        if (res.ok) {
+          setOrderPreview({
+            subtotal: data.subtotal,
+            total: data.total,
+            posOrderDiscount: data.posOrderDiscount ?? 0,
+            bundleDiscount: data.bundleDiscount ?? 0,
+            spendDiscount: data.spendDiscount ?? 0,
+            couponDiscount: data.couponDiscount ?? 0,
+            spendPromotionName: data.spendPromotionName ?? null,
+            promoCodeLabel: data.promoCodeLabel ?? null,
+          })
+        } else {
+          setOrderPreview(null)
+          if (appliedPromoCode) toast.error(data?.error || "Promo code invalid")
+        }
+      } catch {
+        if (!cancelled) setOrderPreview(null)
+      } finally {
+        if (!cancelled) setPromoPreviewLoading(false)
+      }
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [cart, appliedPromoCode, customerPhone])
 
   // Sync cart line prices when customer eligibility changes
   useEffect(() => {
@@ -1320,6 +1422,7 @@ export default function POSPage() {
       status: "pending" as const,
       customerName: customerName || null,
       customerPhone: promptNorm,
+      promoCode: appliedPromoCode,
     }
 
     let orderId =
@@ -1461,6 +1564,7 @@ export default function POSPage() {
       waiter: waiterId ? extendedStaff.find((s) => s.id === waiterId)?.name || session?.user?.name || "Unknown" : session?.user?.name || "Unknown",
       status: "completed",
       customerPhone: normalizedPhone,
+      promoCode: appliedPromoCode,
     }
 
     try {
@@ -1586,6 +1690,7 @@ export default function POSPage() {
       status: method === "pay-later" ? "pending" : "completed",
       customerName: customerName || null,
       customerPhone: normalizedPhone,
+      promoCode: appliedPromoCode,
     }
 
     // Snapshot cart BEFORE clearing so the receipt can display items
@@ -1747,9 +1852,11 @@ export default function POSPage() {
   }
 
   // Prices are VAT-inclusive in this app; do not add tax on top.
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const lineSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const subtotal = orderPreview?.subtotal ?? lineSubtotal
+  const orderDiscount = orderPreview?.posOrderDiscount ?? 0
   const vat = 0
-  const total = subtotal
+  const total = orderPreview?.total ?? lineSubtotal
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0)
 
   return (
@@ -2232,6 +2339,43 @@ export default function POSPage() {
               }}
               phoneError={phoneError}
             />
+
+            {cart.length > 0 && (
+              <div className="mt-3 flex gap-2">
+                <Input
+                  value={promoCodeInput}
+                  onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                  placeholder="Promo code"
+                  className="h-9 text-sm uppercase"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 shrink-0"
+                  disabled={!promoCodeInput.trim() || promoPreviewLoading}
+                  onClick={() => {
+                    const code = promoCodeInput.trim()
+                    if (!code) return
+                    setAppliedPromoCode(code)
+                  }}
+                >
+                  Apply
+                </Button>
+                {appliedPromoCode && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-9 shrink-0 text-muted-foreground"
+                    onClick={() => {
+                      setAppliedPromoCode(null)
+                      setPromoCodeInput("")
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sticky checkout footer - totals + payment buttons */}
@@ -2246,6 +2390,28 @@ export default function POSPage() {
                     KSh {subtotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
+                {orderDiscount > 0 && (
+                  <>
+                    {(orderPreview?.bundleDiscount ?? 0) > 0 && (
+                      <div className="flex items-center justify-between text-xs mt-0.5 text-emerald-700">
+                        <span>Bundle savings</span>
+                        <span className="tabular-nums">− KSh {(orderPreview?.bundleDiscount ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {(orderPreview?.spendDiscount ?? 0) > 0 && (
+                      <div className="flex items-center justify-between text-xs mt-0.5 text-emerald-700">
+                        <span>{orderPreview?.spendPromotionName || "Spend promo"}</span>
+                        <span className="tabular-nums">− KSh {(orderPreview?.spendDiscount ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {(orderPreview?.couponDiscount ?? 0) > 0 && (
+                      <div className="flex items-center justify-between text-xs mt-0.5 text-emerald-700">
+                        <span>{orderPreview?.promoCodeLabel || appliedPromoCode}</span>
+                        <span className="tabular-nums">− KSh {(orderPreview?.couponDiscount ?? 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="flex items-center justify-between text-xs mt-0.5">
                   {/* VAT is already included in item prices; no separate tax line */}
                 </div>

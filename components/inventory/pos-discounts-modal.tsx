@@ -39,6 +39,10 @@ import {
 } from "@/components/inventory/discount-eligibility-fields"
 import { PromotionCampaignsTab, CampaignSelect, type CampaignRow } from "@/components/inventory/promotion-campaigns-tab"
 import { PromotionAnalyticsTab } from "@/components/inventory/promotion-analytics-tab"
+import { PromotionCouponsTab } from "@/components/inventory/promotion-coupons-tab"
+import { PromotionBundlesTab } from "@/components/inventory/promotion-bundles-tab"
+import { PromotionSpendTab } from "@/components/inventory/promotion-spend-tab"
+import { PromotionSettingsTab } from "@/components/inventory/promotion-settings-tab"
 
 type DiscountType = "percentage" | "fixed"
 type DiscountStatus = "active" | "inactive"
@@ -663,7 +667,7 @@ export function PosDiscountsModal({
         <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div className="shrink-0 border-b overflow-x-auto">
             <TabsList className="inline-flex w-max min-w-full h-11 rounded-none bg-transparent px-4 gap-1 sm:gap-4">
-              {(["search", "active", "categories", "campaigns", "analytics", "history"] as const).map((v) => (
+              {(["search", "active", "categories", "campaigns", "coupons", "bundles", "spend", "settings", "analytics", "history"] as const).map((v) => (
                 <TabsTrigger
                   key={v}
                   value={v}
@@ -673,7 +677,9 @@ export function PosDiscountsModal({
                     ? "Apply"
                     : v === "analytics"
                       ? "Reports"
-                      : v.charAt(0).toUpperCase() + v.slice(1)}
+                      : v === "settings"
+                        ? "Rules"
+                        : v.charAt(0).toUpperCase() + v.slice(1)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -1031,6 +1037,22 @@ export function PosDiscountsModal({
 
             <TabsContent value="campaigns" className="mt-0 flex-1 min-h-0 overflow-y-auto">
               <PromotionCampaignsTab onChanged={() => { loadCampaigns(); loadActiveDiscounts(); loadAudit() }} />
+            </TabsContent>
+
+            <TabsContent value="coupons" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionCouponsTab campaigns={campaigns} />
+            </TabsContent>
+
+            <TabsContent value="bundles" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionBundlesTab campaigns={campaigns} />
+            </TabsContent>
+
+            <TabsContent value="spend" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionSpendTab campaigns={campaigns} />
+            </TabsContent>
+
+            <TabsContent value="settings" className="mt-0 flex-1 min-h-0 overflow-y-auto">
+              <PromotionSettingsTab />
             </TabsContent>
 
             <TabsContent value="analytics" className="mt-0 flex-1 min-h-0 overflow-y-auto">

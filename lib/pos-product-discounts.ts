@@ -10,6 +10,8 @@ import {
   isCampaignAllowingDiscount,
   type PosDiscountCampaignDoc,
 } from '@/lib/pos-discount-campaigns'
+import type { PromotionConflictMode } from '@/lib/pos-promotion-settings'
+export type { PromotionConflictMode }
 
 export const POS_DISCOUNTS_COLLECTION = 'pos_product_discounts'
 export const POS_CATEGORY_DISCOUNTS_COLLECTION = 'pos_category_discounts'
@@ -33,6 +35,18 @@ export type PosDiscountAuditAction =
   | 'campaign_disabled'
   | 'campaign_archived'
   | 'campaign_deleted'
+  | 'promotion_settings_updated'
+  | 'coupon_created'
+  | 'coupon_updated'
+  | 'coupon_deleted'
+  | 'bundle_created'
+  | 'bundle_updated'
+  | 'bundle_deleted'
+  | 'spend_promo_created'
+  | 'spend_promo_updated'
+  | 'spend_promo_deleted'
+  | 'campaign_override_created'
+  | 'campaign_override_removed'
 
 /** Who may receive a discount — extensible for future loyalty / membership scopes */
 export type PosDiscountEligibilityScope =
@@ -129,6 +143,8 @@ export interface PosDiscountContext {
   categoryDiscounts: Map<string, PosCategoryDiscountDoc>
   campaigns: Map<string, PosDiscountCampaignDoc>
   now: Date
+  conflictMode?: PromotionConflictMode
+  disabledCampaignIds?: Set<string>
 }
 
 function roundMoney(n: number): number {
@@ -274,14 +290,27 @@ export function applyDiscountRule(
   return { discountedPrice: validated.discountedPrice, discountAmount }
 }
 
+function getRulePriority(
+  ctx: PosDiscountContext,
+  rule: PosDiscountRule & { campaignId?: string | null },
+  source: 'product' | 'category'
+): number {
+  const campaign = rule.campaignId ? ctx.campaigns.get(rule.campaignId) : undefined
+  const base = campaign?.priority ?? 0
+  return source === 'product' ? base + 1000 : base
+}
+
 function resolveRuleApplication(
   catalog: number,
   rule: PosDiscountRule & { campaignId?: string | null },
   ctx: PosDiscountContext,
   customerId: string | null | undefined,
   source: 'product' | 'category'
-): AppliedPosDiscount | null {
-  if (rule.campaignId && !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now)) {
+): (AppliedPosDiscount & { priority: number }) | null {
+  if (
+    rule.campaignId &&
+    !isCampaignAllowingDiscount(rule.campaignId, ctx.campaigns, ctx.now, ctx.disabledCampaignIds)
+  ) {
     return null
   }
   if (!isDiscountEffectivelyActive(rule, ctx.now)) return null
@@ -304,12 +333,66 @@ function resolveRuleApplication(
     campaignName,
     source,
     badgeLabel: posDiscountBadgeLabel(rule.discountType, rule.discountValue),
+    priority: getRulePriority(ctx, rule, source),
   }
 }
 
+function pickLineDiscount(
+  candidates: Array<AppliedPosDiscount & { priority: number }>,
+  catalog: number,
+  mode: PromotionConflictMode,
+  ctx: PosDiscountContext,
+  productRule?: PosProductDiscountDoc,
+  categoryRule?: PosCategoryDiscountDoc,
+  customerId?: string | null
+): AppliedPosDiscount | null {
+  if (candidates.length === 0) return null
+
+  if (mode === 'allow_stacking' && productRule && categoryRule) {
+    let price = catalog
+    let totalDiscount = 0
+    let meta: AppliedPosDiscount | null = null
+
+    const productApplied = resolveRuleApplication(catalog, productRule, ctx, customerId, 'product')
+    if (productApplied) {
+      totalDiscount += productApplied.posDiscountAmount
+      price = productApplied.unit
+      meta = productApplied
+    }
+
+    const catApplied = resolveRuleApplication(price, categoryRule, ctx, customerId, 'category')
+    if (catApplied) {
+      totalDiscount += catApplied.posDiscountAmount
+      price = catApplied.unit
+      meta = catApplied
+    }
+
+    if (!meta || totalDiscount <= 0) return candidates[0] ?? null
+    return {
+      ...meta,
+      unit: roundMoney(price),
+      originalPrice: catalog,
+      posDiscountAmount: roundMoney(totalDiscount),
+      badgeLabel: totalDiscount > 0 ? 'Stacked Offer' : meta.badgeLabel,
+    }
+  }
+
+  if (mode === 'best_discount') {
+    return candidates.reduce((best, c) =>
+      c.posDiscountAmount > best.posDiscountAmount ? c : best
+    )
+  }
+
+  if (mode === 'highest_priority') {
+    return candidates.reduce((best, c) => (c.priority > best.priority ? c : best))
+  }
+
+  // never_stack: product candidate listed first
+  return candidates[0]
+}
+
 /**
- * Resolve POS price: product discount wins over category discount.
- * Always uses live catalogPrice — never a stored snapshot.
+ * Resolve POS price with configurable conflict resolution.
  */
 export function resolvePosPrice(
   catalogPrice: number,
@@ -321,20 +404,39 @@ export function resolvePosPrice(
   const catalog = roundMoney(Number(catalogPrice))
   if (!Number.isFinite(catalog) || catalog <= 0) return null
 
-  const productRule = ctx.productDiscounts.get(productId)
-  if (productRule) {
-    const resolved = resolveRuleApplication(catalog, productRule, ctx, customerId, 'product')
-    if (resolved) return resolved
-  }
+  const mode = ctx.conflictMode ?? 'never_stack'
+  const candidates: Array<AppliedPosDiscount & { priority: number }> = []
 
+  const productRule = ctx.productDiscounts.get(productId)
   const catKey = String(category || '').trim().toLowerCase()
   const categoryRule = catKey ? ctx.categoryDiscounts.get(catKey) : undefined
-  if (categoryRule) {
-    const resolved = resolveRuleApplication(catalog, categoryRule, ctx, customerId, 'category')
-    if (resolved) return resolved
+
+  if (productRule) {
+    const resolved = resolveRuleApplication(catalog, productRule, ctx, customerId, 'product')
+    if (resolved) candidates.push(resolved)
   }
 
-  return null
+  if (categoryRule) {
+    const resolved = resolveRuleApplication(catalog, categoryRule, ctx, customerId, 'category')
+    if (resolved) candidates.push(resolved)
+  }
+
+  if (candidates.length === 0) return null
+
+  if (mode === 'never_stack' && candidates.length > 1) {
+    const productFirst = candidates.find((c) => c.source === 'product')
+    return productFirst ?? candidates[0]
+  }
+
+  return pickLineDiscount(
+    candidates,
+    catalog,
+    mode,
+    ctx,
+    productRule,
+    categoryRule,
+    customerId
+  )
 }
 
 function toIsoDate(value: unknown): string | null {
@@ -471,10 +573,16 @@ function mapCategoryDiscountRow(row: Record<string, unknown>): PosCategoryDiscou
 /** Load all discount rules; effective filtering happens at resolve time */
 export async function loadPosDiscountContext(db: Db, now: Date = new Date()): Promise<PosDiscountContext> {
   const { loadCampaignsMap } = await import('@/lib/pos-discount-campaigns')
-  const [productRows, categoryRows, campaigns] = await Promise.all([
+  const { loadPromotionSettings } = await import('@/lib/pos-promotion-settings')
+  const { loadDisabledCampaignIdsForDate, dateKeyForNow } = await import('@/lib/pos-campaign-overrides')
+  const dateKey = dateKeyForNow(now)
+
+  const [productRows, categoryRows, campaigns, conflictMode, disabledCampaignIds] = await Promise.all([
     db.collection(POS_DISCOUNTS_COLLECTION).find({}).toArray(),
     db.collection(POS_CATEGORY_DISCOUNTS_COLLECTION).find({}).toArray(),
     loadCampaignsMap(db),
+    loadPromotionSettings(db),
+    loadDisabledCampaignIdsForDate(db, dateKey),
   ])
 
   const productDiscounts = new Map<string, PosProductDiscountDoc>()
@@ -489,7 +597,7 @@ export async function loadPosDiscountContext(db: Db, now: Date = new Date()): Pr
     if (mapped.category) categoryDiscounts.set(mapped.category, mapped)
   }
 
-  return { productDiscounts, categoryDiscounts, campaigns, now }
+  return { productDiscounts, categoryDiscounts, campaigns, now, conflictMode, disabledCampaignIds }
 }
 
 /** @deprecated Use loadPosDiscountContext + resolvePosPrice */
@@ -538,7 +646,7 @@ export function applyPosDiscountToUnitPrice(
 
 export interface PosDiscountAuditEntry {
   action: PosDiscountAuditAction
-  targetType: 'product' | 'category' | 'campaign'
+  targetType: 'product' | 'category' | 'campaign' | 'settings' | 'coupon' | 'bundle' | 'spend_promotion' | 'campaign_override'
   targetId: string
   targetName: string
   actorEmail: string | null
@@ -611,7 +719,9 @@ export function buildPosDiscountContextFromApi(
     campaignId?: string | null
   }>,
   campaigns: Map<string, PosDiscountCampaignDoc> = new Map(),
-  now: Date = new Date()
+  now: Date = new Date(),
+  conflictMode?: PromotionConflictMode,
+  disabledCampaignIds?: Set<string>
 ): PosDiscountContext {
   const productDiscounts = new Map<string, PosProductDiscountDoc>()
   for (const r of productRules) {
@@ -654,7 +764,14 @@ export function buildPosDiscountContextFromApi(
     })
   }
 
-  return { productDiscounts, categoryDiscounts, campaigns, now }
+  return {
+    productDiscounts,
+    categoryDiscounts,
+    campaigns,
+    now,
+    conflictMode,
+    disabledCampaignIds,
+  }
 }
 
 export type DiscountInputPayload = {

@@ -27,6 +27,7 @@ import {
   ensureCampaignIndexes,
   isCampaignAllowingDiscount,
 } from '@/lib/pos-discount-campaigns'
+import { CONFLICT_MODE_LABELS } from '@/lib/pos-promotion-settings'
 import {
   canManagePosDiscounts,
   canViewPosDiscountsForPos,
@@ -234,7 +235,12 @@ export async function GET(request: Request) {
         { status: d.status as PosDiscountStatus, startAt: d.startAt, endAt: d.endAt },
         now
       )
-      const campaignOk = isCampaignAllowingDiscount(campaignId, ctx.campaigns, now)
+      const campaignOk = isCampaignAllowingDiscount(
+        campaignId,
+        ctx.campaigns,
+        now,
+        ctx.disabledCampaignIds
+      )
       return {
         ...serializePosDiscount(d, catalogPrice),
         campaignId,
@@ -269,6 +275,7 @@ export async function GET(request: Request) {
 
     if (activeOnly) {
       enriched = enriched.filter((d) => d.effectivelyActive)
+      const disabledCampaignIds = ctx.disabledCampaignIds ?? new Set<string>()
 
       const categoryRows = await db.collection('pos_category_discounts').find({}).toArray()
       const categoryDiscounts = categoryRows
@@ -278,7 +285,12 @@ export async function GET(request: Request) {
             { status: d.status as PosDiscountStatus, startAt: d.startAt, endAt: d.endAt },
             now
           )
-          const campaignOk = isCampaignAllowingDiscount(campaignId, ctx.campaigns, now)
+          const campaignOk = isCampaignAllowingDiscount(
+            campaignId,
+            ctx.campaigns,
+            now,
+            disabledCampaignIds
+          )
           return {
             ...serializeCategoryDiscount(d),
             campaignId,
@@ -289,7 +301,7 @@ export async function GET(request: Request) {
         .filter((d) => d.effectivelyActive)
 
       const campaigns = [...ctx.campaigns.entries()]
-        .filter(([, c]) => isCampaignEffectivelyActive(c, now))
+        .filter(([id, c]) => isCampaignEffectivelyActive(c, now) && !disabledCampaignIds.has(id))
         .map(([id, c]) =>
           serializeCampaign({ _id: id, ...c } as Record<string, unknown>, { effectivelyActive: true })
         )
@@ -302,6 +314,9 @@ export async function GET(request: Request) {
         categoryDiscounts,
         campaigns,
         banners,
+        conflictMode: ctx.conflictMode ?? 'never_stack',
+        conflictModeLabel: CONFLICT_MODE_LABELS[ctx.conflictMode ?? 'never_stack'],
+        disabledCampaignIds: [...disabledCampaignIds],
       })
     }
 

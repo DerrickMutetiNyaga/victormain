@@ -143,9 +143,11 @@ export function isCampaignEffectivelyActive(
 export function isCampaignAllowingDiscount(
   campaignId: string | null | undefined,
   campaigns: Map<string, PosDiscountCampaignDoc>,
-  now: Date
+  now: Date,
+  disabledCampaignIds?: Set<string>
 ): boolean {
   if (!campaignId) return true
+  if (disabledCampaignIds?.has(campaignId)) return false
   const campaign = campaigns.get(campaignId)
   if (!campaign) return false
   return isCampaignEffectivelyActive(campaign, now)
@@ -213,6 +215,7 @@ export function getActiveCampaignBanners(
 
   for (const [campaignId, campaign] of ctx.campaigns) {
     if (!isCampaignEffectivelyActive(campaign, ctx.now)) continue
+    if (ctx.disabledCampaignIds?.has(campaignId)) continue
 
     let hasVisibleDiscount = false
     let maxPct = 0

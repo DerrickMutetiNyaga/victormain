@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Save, Trash2 } from "lucide-react"
+import { Loader2, Save, Trash2, Ban } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -57,6 +57,51 @@ export function PromotionCampaignsTab({
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(defaultForm())
+  const [disabledToday, setDisabledToday] = useState<Set<string>>(new Set())
+
+  const loadOverrides = async () => {
+    try {
+      const res = await fetch("/api/catha/pos-discounts/overrides", { cache: "no-store" })
+      const data = await res.json()
+      if (res.ok) {
+        setDisabledToday(new Set((data.overrides || []).map((o: { campaignId: string }) => o.campaignId)))
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const disableForToday = async (campaign: CampaignRow) => {
+    const reason = window.prompt(`Disable "${campaign.name}" for today? Optional reason:`) 
+    if (reason === null) return
+    const res = await fetch("/api/catha/pos-discounts/overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ campaignId: campaign.id, reason: reason || "Manual override" }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      toast.error(data?.error || "Failed to disable campaign")
+      return
+    }
+    toast.success(`"${campaign.name}" disabled for today`)
+    loadOverrides()
+    onChanged?.()
+  }
+
+  const enableForToday = async (campaignId: string) => {
+    const res = await fetch(`/api/catha/pos-discounts/overrides?campaignId=${encodeURIComponent(campaignId)}`, {
+      method: "DELETE",
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      toast.error(data?.error || "Failed to remove override")
+      return
+    }
+    toast.success("Today's override removed")
+    loadOverrides()
+    onChanged?.()
+  }
 
   const load = async () => {
     setLoading(true)
@@ -74,6 +119,7 @@ export function PromotionCampaignsTab({
 
   useEffect(() => {
     load()
+    loadOverrides()
   }, [])
 
   const resetForm = () => {
@@ -238,7 +284,7 @@ export function PromotionCampaignsTab({
                     <span className="text-lg">{c.icon || "🔥"}</span>
                     <p className="font-semibold">{c.name}</p>
                     <Badge variant={c.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
-                      {c.effectivelyActive ? "Live" : c.status}
+                      {disabledToday.has(c.id) ? "Paused today" : c.effectivelyActive ? "Live" : c.status}
                     </Badge>
                   </div>
                   {c.description && <p className="text-sm text-muted-foreground mt-1">{c.description}</p>}
@@ -250,6 +296,15 @@ export function PromotionCampaignsTab({
                   <Button size="sm" variant="outline" onClick={() => startEdit(c)}>Edit</Button>
                   {c.status !== "active" && (
                     <Button size="sm" variant="outline" onClick={() => setStatus(c, "active")}>Activate</Button>
+                  )}
+                  {c.status === "active" && !disabledToday.has(c.id) && (
+                    <Button size="sm" variant="outline" onClick={() => disableForToday(c)} className="gap-1">
+                      <Ban className="h-3.5 w-3.5" />
+                      Pause today
+                    </Button>
+                  )}
+                  {disabledToday.has(c.id) && (
+                    <Button size="sm" variant="outline" onClick={() => enableForToday(c.id)}>Resume today</Button>
                   )}
                   {c.status === "active" && (
                     <Button size="sm" variant="outline" onClick={() => setStatus(c, "inactive")}>Deactivate</Button>

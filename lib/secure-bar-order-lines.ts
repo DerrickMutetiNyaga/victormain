@@ -7,7 +7,8 @@
 
 import type { Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
-import { loadPosDiscountContext, applyPosDiscountToUnitPrice } from '@/lib/pos-product-discounts'
+import { loadFullPromotionContext, resolveOrderPromotions } from '@/lib/pos-promotion-resolve'
+import { applyPosDiscountToUnitPrice } from '@/lib/pos-product-discounts'
 
 /** Same family as inventory-ops (stock); archived items excluded from new sales. */
 const PRODUCT_QUERY_SALE = {
@@ -38,6 +39,8 @@ export type ResolvedOrderLine = {
   posPromotionName?: string | null
   posCampaignId?: string | null
   posCampaignName?: string | null
+  /** POS-only: inventory category for promo code scoping */
+  category?: string
 }
 
 export type ResolveBarOrderLinesContext = {
@@ -49,6 +52,8 @@ export type ResolveBarOrderLinesContext = {
   applyPosDiscounts?: boolean
   /** Normalized customer phone for customer-specific POS discounts */
   customerId?: string | null
+  /** Promo code entered at checkout (POS only) */
+  promoCode?: string | null
 }
 
 function roundMoney(n: number): number {
@@ -100,6 +105,16 @@ export type ResolveBarOrderLinesResult =
       vat: number
       total: number
       dbPricesBySku: Record<string, number>
+      posOrderDiscount?: number
+      bundleDiscount?: number
+      spendDiscount?: number
+      couponDiscount?: number
+      appliedBundles?: string[]
+      spendPromotionName?: string | null
+      spendPromotionId?: string | null
+      promoCode?: string | null
+      promoCodeId?: string | null
+      promoCodeLabel?: string | null
     }
   | { ok: false; code: string; error: string }
 
@@ -125,7 +140,7 @@ export async function resolveBarOrderLines(
   const dbPricesBySku: Record<string, number> = {}
   let subtotal = 0
 
-  const posDiscountCtx = ctx.applyPosDiscounts ? await loadPosDiscountContext(db) : null
+  const posDiscountCtx = ctx.applyPosDiscounts ? await loadFullPromotionContext(db) : null
 
   for (const raw of rawItems) {
     const row = raw as Record<string, unknown>
@@ -222,6 +237,7 @@ export async function resolveBarOrderLines(
       quantity: qty,
       price: unit,
       size: doc.size ? String(doc.size) : undefined,
+      category: String(doc.category ?? ''),
       ...(posApplied.originalPrice != null && posApplied.posDiscountAmount != null
         ? {
             originalPrice: posApplied.originalPrice,
@@ -238,6 +254,61 @@ export async function resolveBarOrderLines(
   subtotal = roundMoney(subtotal)
   if (subtotal > MAX_ORDER_TOTAL_KES) {
     return { ok: false, code: 'TOTAL_CAP', error: `Order subtotal exceeds maximum (${MAX_ORDER_TOTAL_KES} KES)` }
+  }
+
+  if (posDiscountCtx && ctx.applyPosDiscounts) {
+    const promoCode = ctx.promoCode?.trim() || null
+    if (promoCode) {
+      const promoLines = out
+        .filter((item) => item.productId && !item.isCustomItem)
+        .map((item) => ({
+          productId: item.productId!,
+          category: item.category ?? '',
+          quantity: item.quantity,
+          unitPrice: item.price,
+          catalogPrice: item.originalPrice ?? item.price,
+        }))
+      const { validatePromoCode } = await import('@/lib/pos-promo-codes')
+      const preview = await validatePromoCode(db, promoCode, {
+        customerId: ctx.customerId,
+        lines: promoLines,
+        subtotal,
+        campaigns: posDiscountCtx.campaigns,
+        disabledCampaignIds: posDiscountCtx.disabledCampaignIds,
+        now: posDiscountCtx.now,
+      })
+      if (!preview.ok) {
+        return { ok: false, code: 'INVALID_PROMO_CODE', error: preview.error }
+      }
+    }
+
+    const orderPromos = await resolveOrderPromotions(db, {
+      items: out,
+      subtotal,
+      customerId: ctx.customerId,
+      promoCode,
+      promotionCtx: posDiscountCtx,
+      now: posDiscountCtx.now,
+    })
+
+    return {
+      ok: true,
+      items: out,
+      subtotal,
+      vat: 0,
+      total: orderPromos.total,
+      dbPricesBySku,
+      posOrderDiscount: orderPromos.orderDiscount,
+      bundleDiscount: orderPromos.bundleDiscount,
+      spendDiscount: orderPromos.spendDiscount,
+      couponDiscount: orderPromos.couponDiscount,
+      appliedBundles: orderPromos.appliedBundles,
+      spendPromotionName: orderPromos.spendPromotionName,
+      spendPromotionId: orderPromos.spendPromotionId,
+      promoCode: orderPromos.promoCode,
+      promoCodeId: orderPromos.promoCodeId,
+      promoCodeLabel: orderPromos.promoCodeLabel,
+    }
   }
 
   return {

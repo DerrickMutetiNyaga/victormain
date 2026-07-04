@@ -54,6 +54,7 @@ export const cathaStaffOrderCreateSchema = z
     waiter: z.union([z.string().max(200), z.null()]).optional(),
     customerName: z.union([z.string().max(300), z.null()]).optional(),
     customerPhone: z.union([z.string().max(40), z.null()]).optional(),
+    promoCode: z.union([z.string().max(64), z.null()]).optional(),
     status: z.enum(['pending', 'completed', 'cancelled', 'voided', 'deleted']).optional(),
     /** Accepted for compatibility then discarded — server sets `timestamp` */
     timestamp: z.union([z.string(), z.number(), z.date()]).optional(),
@@ -83,6 +84,7 @@ export const cathaStaffOrderUpdateSchema = z
     waiter: z.union([z.string().max(200), z.null()]).optional(),
     customerName: z.union([z.string().max(300), z.null()]).optional(),
     customerPhone: z.union([z.string().max(40), z.null()]).optional(),
+    promoCode: z.union([z.string().max(64), z.null()]).optional(),
     mpesaTransactionId: z.union([z.string().max(128), z.null()]).optional(),
     mpesaReceiptNumber: z.union([z.string().max(64), z.null()]).optional(),
     linkedAt: z.union([z.string(), z.date(), z.null()]).optional(),

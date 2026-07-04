@@ -263,6 +263,7 @@ export async function POST(request: Request) {
       rejectCustomLines: false,
       applyPosDiscounts: true,
       customerId: body.customerPhone ? normalizeKenyaPhone(String(body.customerPhone)) : null,
+      promoCode: body.promoCode ?? null,
     })
     if (!priced.ok) {
       logOrderSecurityEvent({
@@ -294,6 +295,16 @@ export async function POST(request: Request) {
       subtotal: priced.subtotal,
       vat: priced.vat,
       total: priced.total,
+      posOrderDiscount: priced.posOrderDiscount ?? 0,
+      bundleDiscount: priced.bundleDiscount ?? 0,
+      spendDiscount: priced.spendDiscount ?? 0,
+      couponDiscount: priced.couponDiscount ?? 0,
+      appliedBundles: priced.appliedBundles ?? [],
+      spendPromotionName: priced.spendPromotionName ?? null,
+      spendPromotionId: priced.spendPromotionId ?? null,
+      promoCode: priced.promoCode ?? null,
+      promoCodeId: priced.promoCodeId ?? null,
+      promoCodeLabel: priced.promoCodeLabel ?? null,
       paymentMethod: body.paymentMethod,
       paymentStatus,
       glovoOrderNumber: typeof body.glovoOrderNumber === 'string' ? body.glovoOrderNumber.trim() || null : null,
@@ -405,6 +416,21 @@ export async function POST(request: Request) {
     }
 
     const insertResult = await db.collection('orders').insertOne(order)
+
+    if (order.promoCodeId && order.promoCode && order.couponDiscount > 0) {
+      const { recordPromoRedemption } = await import('@/lib/pos-promo-codes')
+      try {
+        await recordPromoRedemption(db, {
+          promoCodeId: String(order.promoCodeId),
+          code: String(order.promoCode),
+          orderId: order.id,
+          customerId: order.customerPhone ? normalizeKenyaPhone(String(order.customerPhone)) : null,
+          discountAmount: Number(order.couponDiscount),
+        })
+      } catch (e) {
+        console.error('[Orders API] Promo redemption failed:', e)
+      }
+    }
     
     if (!insertResult.insertedId) {
       if (deducted.length > 0) {
@@ -633,11 +659,18 @@ export async function PUT(request: Request) {
           : existingOrder.customerPhone != null
             ? String(existingOrder.customerPhone)
             : null
+      const promoCode =
+        updateData.promoCode != null
+          ? String(updateData.promoCode)
+          : existingOrder.promoCode != null
+            ? String(existingOrder.promoCode)
+            : null
       const priced = await resolveBarOrderLines(db, updateData.items, {
         allowCustomLines,
         rejectCustomLines: false,
         applyPosDiscounts: true,
         customerId: orderCustomerPhone ? normalizeKenyaPhone(orderCustomerPhone) : null,
+        promoCode,
       })
       if (!priced.ok) {
         logOrderSecurityEvent({
@@ -657,6 +690,16 @@ export async function PUT(request: Request) {
       updateData.subtotal = priced.subtotal
       updateData.vat = priced.vat
       updateData.total = priced.total
+      updateData.posOrderDiscount = priced.posOrderDiscount ?? 0
+      updateData.bundleDiscount = priced.bundleDiscount ?? 0
+      updateData.spendDiscount = priced.spendDiscount ?? 0
+      updateData.couponDiscount = priced.couponDiscount ?? 0
+      updateData.appliedBundles = priced.appliedBundles ?? []
+      updateData.spendPromotionName = priced.spendPromotionName ?? null
+      updateData.spendPromotionId = priced.spendPromotionId ?? null
+      updateData.promoCode = priced.promoCode ?? null
+      updateData.promoCodeId = priced.promoCodeId ?? null
+      updateData.promoCodeLabel = priced.promoCodeLabel ?? null
       logOrderSecurityEvent({
         route: '/api/catha/orders',
         action: 'PUT_items',
