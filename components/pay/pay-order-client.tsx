@@ -1,10 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Loader2, CheckCircle2, Smartphone, Zap } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Loader2, CheckCircle2, Smartphone, ShieldCheck, Wine } from "lucide-react"
 import { formatKsh } from "@/lib/receipt-utils"
 import { normalizeKenyaPhone, getPhoneValidationError } from "@/lib/phone-utils"
 import { toast } from "sonner"
@@ -23,12 +20,46 @@ type PayOrderData = {
   items: Array<{ name: string; quantity: number; price: number }>
 }
 
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative min-h-screen bg-[#0c0a09] text-stone-100 overflow-hidden">
+      {/* Ambient gold glow */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[420px] w-[620px] -translate-x-1/2 rounded-full bg-amber-500/15 blur-[120px]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-64 w-64 rounded-full bg-amber-700/10 blur-[100px]" />
+
+      <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-8 sm:pt-12">
+        {/* Brand */}
+        <header className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10">
+            <Wine className="h-5 w-5 text-amber-300" />
+          </div>
+          <p className="font-serif text-2xl tracking-[0.3em] text-amber-100 uppercase">
+            Catha Lounge
+          </p>
+          <div className="mx-auto mt-2 h-px w-16 bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
+          <p className="mt-2 text-[11px] uppercase tracking-[0.35em] text-stone-400">
+            Infusion Jaba
+          </p>
+        </header>
+
+        <main className="flex-1">{children}</main>
+
+        <footer className="mt-8 flex items-center justify-center gap-1.5 text-[11px] text-stone-500">
+          <ShieldCheck className="h-3.5 w-3.5 text-amber-500/70" />
+          Secured by M-Pesa · infusionjaba.co.ke
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 export function PayOrderClient({ orderId }: { orderId: string }) {
   const [data, setData] = useState<PayOrderData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [phone, setPhone] = useState("")
   const [paying, setPaying] = useState(false)
+  const [awaitingPin, setAwaitingPin] = useState(false)
   const [paid, setPaid] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -61,15 +92,20 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
       attempts += 1
       if (attempts > 40) {
         if (pollRef.current) clearInterval(pollRef.current)
+        setAwaitingPin(false)
         return
       }
-      const res = await fetch(`/api/public/pay/${encodeURIComponent(orderId)}`, { cache: "no-store" })
-      const json = await res.json()
-      if (json.isPaid) {
-        setPaid(true)
-        setData(json)
-        if (pollRef.current) clearInterval(pollRef.current)
-        toast.success("Payment received!")
+      try {
+        const res = await fetch(`/api/public/pay/${encodeURIComponent(orderId)}`, { cache: "no-store" })
+        const json = await res.json()
+        if (json.isPaid) {
+          setPaid(true)
+          setData(json)
+          setAwaitingPin(false)
+          if (pollRef.current) clearInterval(pollRef.current)
+        }
+      } catch {
+        // transient network error — keep polling
       }
     }, 3000)
   }, [orderId])
@@ -100,7 +136,7 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Could not send M-Pesa prompt")
       }
-      toast.success("Check your phone — enter M-Pesa PIN", { duration: 8000 })
+      setAwaitingPin(true)
       startPolling()
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Payment failed")
@@ -111,135 +147,187 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-emerald-800">
-        <Loader2 className="h-10 w-10 animate-spin" />
-        <p className="text-sm font-medium">Loading your bill…</p>
-      </div>
+      <Shell>
+        <div className="rounded-3xl border border-stone-800 bg-stone-900/60 p-6 backdrop-blur">
+          <div className="animate-pulse space-y-4">
+            <div className="mx-auto h-6 w-40 rounded-full bg-stone-800" />
+            <div className="mx-auto h-12 w-32 rounded-xl bg-stone-800" />
+            <div className="space-y-2 pt-2">
+              <div className="h-4 w-full rounded bg-stone-800" />
+              <div className="h-4 w-3/4 rounded bg-stone-800" />
+            </div>
+            <div className="h-12 w-full rounded-xl bg-stone-800" />
+          </div>
+          <p className="mt-5 text-center text-xs tracking-widest text-stone-500 uppercase">
+            Preparing your bill…
+          </p>
+        </div>
+      </Shell>
     )
   }
 
   if (error || !data) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <p className="text-lg font-semibold text-slate-900">Order not found</p>
-        <p className="text-sm text-slate-600 mt-2">{error || "This link may be invalid or expired."}</p>
-      </div>
+      <Shell>
+        <div className="rounded-3xl border border-stone-800 bg-stone-900/60 p-8 text-center backdrop-blur">
+          <p className="font-serif text-xl text-stone-100">Order not found</p>
+          <p className="mt-2 text-sm text-stone-400">{error || "This link may be invalid or expired."}</p>
+          <p className="mt-4 font-mono text-xs text-stone-500 break-all">{orderId}</p>
+        </div>
+      </Shell>
     )
   }
 
   if (paid || data.isPaid) {
     return (
-      <div className="mx-auto max-w-md px-4 py-10 text-center space-y-4">
-        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
-          <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+      <Shell>
+        <div className="rounded-3xl border border-amber-400/30 bg-stone-900/70 p-8 text-center backdrop-blur">
+          <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center">
+            <span className="absolute inset-0 rounded-full bg-amber-400/20 animate-ping" />
+            <span className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-amber-400 bg-amber-400/10">
+              <CheckCircle2 className="h-10 w-10 text-amber-300" />
+            </span>
+          </div>
+          <h1 className="font-serif text-3xl text-amber-100">Payment received</h1>
+          <p className="mt-2 font-mono text-sm font-bold tracking-wider text-stone-300">#{data.orderId}</p>
+          <p className="mt-3 text-sm text-stone-400">
+            Thank you for choosing Catha Lounge. Enjoy your evening.
+          </p>
+          <a
+            href={`/r/${encodeURIComponent(data.orderId)}`}
+            className="mt-6 inline-block rounded-full border border-amber-400/40 px-6 py-2.5 text-sm font-semibold text-amber-200 transition hover:bg-amber-400/10"
+          >
+            View receipt
+          </a>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900">Paid!</h1>
-        <p className="font-mono text-lg font-bold text-emerald-700">#{data.orderId}</p>
-        <p className="text-slate-600">Thank you — your payment was received.</p>
-        <a
-          href={`/r/${encodeURIComponent(data.orderId)}`}
-          className="inline-block text-sm font-semibold text-emerald-700 underline"
-        >
-          View receipt
-        </a>
-      </div>
+      </Shell>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-950 via-emerald-900 to-slate-950">
-      <div className="mx-auto max-w-lg px-4 py-6 sm:py-10">
-        <div className="text-center text-white mb-6">
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-emerald-300/90">catha lounge</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight flex items-center justify-center gap-2">
-            <Zap className="h-7 w-7 text-amber-400" />
-            Quick Pay
-          </h1>
-          <p className="mt-1 text-sm text-emerald-200/80">M-Pesa — takes seconds</p>
+    <Shell>
+      {/* Ivory bill card */}
+      <div className="overflow-hidden rounded-3xl bg-[#faf7f0] text-stone-900 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)]">
+        {/* Order strip */}
+        <div className="flex items-center justify-between border-b border-stone-200 bg-white/60 px-5 py-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Your order</p>
+            <p className="font-mono text-lg font-black tracking-tight break-all">#{data.orderId}</p>
+          </div>
+          <span className="rounded-full bg-stone-900 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-200">
+            Bill
+          </span>
         </div>
 
-        <div className="rounded-2xl bg-white shadow-2xl shadow-emerald-950/50 overflow-hidden">
-          <div className="bg-gradient-to-r from-amber-500 to-amber-400 px-4 py-3 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-950/80">Your order</p>
-            <p className="font-mono text-2xl font-black text-amber-950 break-all">#{data.orderId}</p>
-          </div>
-
-          <div className="p-4 sm:p-5 space-y-4">
-            {data.items.length > 0 && (
-              <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-sm space-y-1.5 max-h-32 overflow-y-auto">
-                {data.items.map((item, i) => (
-                  <div key={i} className="flex justify-between gap-2">
-                    <span className="text-slate-700 truncate">{item.quantity}× {item.name}</span>
-                    <span className="font-semibold tabular-nums shrink-0">{formatKsh(item.price * item.quantity)}</span>
-                  </div>
-                ))}
-                {data.itemCount > data.items.length && (
-                  <p className="text-xs text-slate-500">+{data.itemCount - data.items.length} more items</p>
-                )}
-              </div>
-            )}
-
-            <div className="text-center py-2">
-              <p className="text-xs uppercase font-semibold text-slate-500">Amount to pay</p>
-              <p className="text-4xl font-black text-emerald-700 tabular-nums">{formatKsh(data.amountDue)}</p>
-              {data.totalPaid > 0 && (
-                <p className="text-xs text-slate-500 mt-1">
-                  {formatKsh(data.totalPaid)} already paid · {formatKsh(data.orderTotal)} total
-                </p>
+        <div className="px-5 py-4">
+          {/* Items */}
+          {data.items.length > 0 && (
+            <div className="mb-4 max-h-36 space-y-2 overflow-y-auto text-sm">
+              {data.items.map((item, i) => (
+                <div key={i} className="flex items-baseline gap-2">
+                  <span className="text-stone-700">
+                    {item.quantity}× {item.name}
+                  </span>
+                  <span className="flex-1 border-b border-dotted border-stone-300" />
+                  <span className="font-semibold tabular-nums">{formatKsh(item.price * item.quantity)}</span>
+                </div>
+              ))}
+              {data.itemCount > data.items.length && (
+                <p className="text-xs text-stone-500">+{data.itemCount - data.items.length} more items</p>
               )}
             </div>
+          )}
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-500 font-semibold">or pay with number</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pay-phone" className="text-slate-700 flex items-center gap-1.5">
-                <Smartphone className="h-4 w-4" /> M-Pesa phone
-              </Label>
-              <Input
-                id="pay-phone"
-                type="tel"
-                inputMode="tel"
-                placeholder="07XX XXX XXX"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="h-12 text-lg font-semibold"
-                autoComplete="tel"
-              />
-            </div>
-
-            <Button
-              onClick={handlePay}
-              disabled={paying}
-              className="w-full h-14 text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg"
-            >
-              {paying ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  Sending prompt…
-                </>
-              ) : (
-                <>Pay {formatKsh(data.amountDue)} now</>
-              )}
-            </Button>
-
-            {data.tillNumber && (
-              <p className="text-center text-xs text-slate-500">
-                Manual pay? Use Till <span className="font-mono font-bold text-slate-800">{data.tillNumber}</span> · Ref{" "}
-                <span className="font-mono font-bold">{data.orderId}</span>
+          {/* Amount due */}
+          <div className="rounded-2xl bg-stone-900 px-4 py-4 text-center text-white">
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-300/90">Amount due</p>
+            <p className="mt-1 font-serif text-[2.6rem] leading-none tabular-nums text-amber-50">
+              {formatKsh(data.amountDue)}
+            </p>
+            {data.totalPaid > 0 && (
+              <p className="mt-2 text-[11px] text-stone-400">
+                {formatKsh(data.totalPaid)} paid of {formatKsh(data.orderTotal)}
               </p>
             )}
           </div>
         </div>
 
-        <p className="text-center text-[10px] text-emerald-300/60 mt-6">infusionjaba.co.ke · Secure M-Pesa</p>
+        {/* Payment area */}
+        <div className="border-t border-dashed border-stone-300 bg-white px-5 py-5">
+          {awaitingPin ? (
+            <div className="text-center">
+              <div className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+                <span className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+                <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600">
+                  <Smartphone className="h-7 w-7 text-white" />
+                </span>
+              </div>
+              <p className="text-lg font-bold text-stone-900">Check your phone</p>
+              <p className="mt-1 text-sm text-stone-600">
+                Enter your <span className="font-semibold">M-Pesa PIN</span> to complete the payment. This page
+                updates automatically.
+              </p>
+              <div className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-emerald-700">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Waiting for confirmation…
+              </div>
+              <button
+                onClick={() => setAwaitingPin(false)}
+                className="mt-4 text-xs font-semibold text-stone-500 underline underline-offset-2"
+              >
+                Didn&apos;t get the prompt? Try again
+              </button>
+            </div>
+          ) : (
+            <>
+              <label htmlFor="pay-phone" className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-stone-800">
+                <Smartphone className="h-4 w-4 text-emerald-600" />
+                M-Pesa phone number
+              </label>
+              <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-stone-300 bg-white focus-within:border-stone-900 transition-colors">
+                <span className="flex items-center bg-stone-100 px-3 text-sm font-bold text-stone-600">🇰🇪</span>
+                <input
+                  id="pay-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="07XX XXX XXX"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  autoComplete="tel"
+                  className="min-h-[52px] w-full bg-transparent px-3 text-lg font-semibold outline-none placeholder:text-stone-400"
+                />
+              </div>
+
+              <button
+                onClick={handlePay}
+                disabled={paying}
+                className="mt-3 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-stone-900 text-lg font-bold text-amber-100 shadow-lg transition active:scale-[0.99] hover:bg-stone-800 disabled:opacity-60"
+              >
+                {paying ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Sending prompt…
+                  </>
+                ) : (
+                  <>Pay {formatKsh(data.amountDue)}</>
+                )}
+              </button>
+
+              {data.tillNumber && (
+                <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
+                    Or pay manually · Buy Goods
+                  </p>
+                  <p className="mt-0.5 text-sm text-stone-700">
+                    Till <span className="font-mono text-base font-black text-stone-900">{data.tillNumber}</span>
+                    {" · "}Ref <span className="font-mono font-bold">{data.orderId}</span>
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </Shell>
   )
 }

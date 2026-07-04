@@ -35,9 +35,9 @@ export function ReceiptHeader({
       )}
 
       {/* Order ID + Status Row */}
-      <div className={cn("mt-4", highlightOrderId && "rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-3")}>
+      <div className={cn("mt-4", highlightOrderId && "border-2 border-black bg-white px-3 py-3")}>
         {highlightOrderId && (
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800 mb-1">Order ID — use for payment</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-black mb-1">Order ID — use for payment</p>
         )}
         <div className="flex items-center justify-center gap-3 flex-wrap">
           <span
