@@ -12,7 +12,7 @@ import {
   RotateCcw,
   Printer as PrinterIcon,
 } from "lucide-react"
-import { formatKsh } from "@/lib/receipt-utils"
+import { formatKsh, RECEIPT_DISPLAY_TILL_NUMBER } from "@/lib/receipt-utils"
 import { normalizeKenyaPhone, getPhoneValidationError } from "@/lib/phone-utils"
 import { toast } from "sonner"
 import type { MpesaStatus } from "@/lib/mpesa-status"
@@ -629,17 +629,15 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
                   )}
                 </button>
 
-                {data.tillNumber && (
-                  <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-center">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
-                      Or pay manually · Buy Goods
-                    </p>
-                    <p className="mt-0.5 text-sm text-stone-700">
-                      Till <span className="font-mono text-base font-black text-stone-900">{data.tillNumber}</span>
-                      {" · "}Ref <span className="font-mono font-bold">{data.orderId}</span>
-                    </p>
-                  </div>
-                )}
+                <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">
+                    Or pay manually · Buy Goods
+                  </p>
+                  <p className="mt-0.5 text-sm text-stone-700">
+                    Till <span className="font-mono text-base font-black text-stone-900">{RECEIPT_DISPLAY_TILL_NUMBER}</span>
+                    {" · "}Ref <span className="font-mono font-bold">{data.orderId}</span>
+                  </p>
+                </div>
               </>
             )}
           </div>
