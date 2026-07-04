@@ -8,6 +8,13 @@ import {
   validateEcommerceOpeningHoursPayload,
   type EcommerceOpeningHoursSettings,
 } from '@/lib/ecommerce-opening-hours'
+import { requireMpesaEditSession } from '@/lib/catha-mpesa-integration-guard'
+import {
+  sanitizeMpesaSettingsForClient,
+  sanitizeNotificationsForClient,
+} from '@/lib/catha-mpesa-integration-security'
+
+const MASKED_SECRET = '********'
 
 export interface Settings {
   _id?: string
@@ -36,6 +43,9 @@ export interface Settings {
     manualMpesaApprovalSmsEnabled?: boolean
     manualMpesaApprovalPhones?: string[]
     manualMpesaApprovalLinkExpiryMinutes?: number
+    mpesaIntegrationPhone?: string
+    mpesaIntegrationPhoneConfigured?: boolean
+    mpesaIntegrationPhoneMasked?: string | null
   }
   security?: {
     requirePinForVoids: boolean
@@ -60,6 +70,7 @@ export interface Settings {
     confirmationUrl: string
     validationUrl: string
     callbackUrl: string
+    credentialsConfigured?: boolean
   }
   delivery?: {
     pickupAddress: string
@@ -154,7 +165,11 @@ export async function GET() {
       // Return default settings
       return NextResponse.json({
         success: true,
-        settings: defaultSettings,
+        settings: {
+          ...defaultSettings,
+          notifications: sanitizeNotificationsForClient(defaultSettings.notifications ?? {}),
+          mpesa: sanitizeMpesaSettingsForClient(defaultSettings.mpesa ?? {}),
+        },
       })
     }
     
@@ -198,10 +213,16 @@ export async function GET() {
     const mergedSettings = {
       businessInfo: { ...defaultSettings.businessInfo, ...(settings.businessInfo || {}) },
       receipt: { ...defaultSettings.receipt, ...(settings.receipt || {}) },
-      notifications: { ...defaultSettings.notifications, ...(settings.notifications || {}) },
+      notifications: sanitizeNotificationsForClient({
+        ...defaultSettings.notifications,
+        ...(settings.notifications || {}),
+      }),
       security: { ...defaultSettings.security, ...(settings.security || {}) },
       etims: { ...defaultSettings.etims, ...(settings.etims || {}) },
-      mpesa: { ...defaultSettings.mpesa, ...(settings.mpesa || {}) },
+      mpesa: sanitizeMpesaSettingsForClient({
+        ...defaultSettings.mpesa,
+        ...(settings.mpesa || {}),
+      }),
       delivery: { ...defaultSettings.delivery, ...(settings.delivery || {}) },
       ecommerceOpeningHours: {
         ...defaultEcommerceOpeningHours,
@@ -285,6 +306,10 @@ export async function PUT(request: Request) {
           ? Math.min(24 * 60, Math.max(15, Math.round(n)))
           : 60
       }
+      // Integration phone can only be set via OTP-verified endpoint.
+      delete notifications.mpesaIntegrationPhone
+      delete notifications.mpesaIntegrationPhoneConfigured
+      delete notifications.mpesaIntegrationPhoneMasked
       updateData.notifications = notifications
     }
     if (body.security !== undefined) {
@@ -294,7 +319,30 @@ export async function PUT(request: Request) {
       updateData.etims = body.etims
     }
     if (body.mpesa !== undefined) {
-      updateData.mpesa = body.mpesa
+      const mpesaCheck = await requireMpesaEditSession(request, session.user.email)
+      if ('response' in mpesaCheck) return mpesaCheck.response
+
+      const existingMpesa = existing?.mpesa ?? defaultSettings.mpesa!
+      const incoming = body.mpesa as Record<string, unknown>
+      const mergedMpesa = { ...existingMpesa, ...incoming }
+
+      if (incoming.consumerSecret === MASKED_SECRET || !String(incoming.consumerSecret || '').trim()) {
+        mergedMpesa.consumerSecret = existingMpesa.consumerSecret
+      }
+      if (incoming.passkey === MASKED_SECRET || !String(incoming.passkey || '').trim()) {
+        mergedMpesa.passkey = existingMpesa.passkey
+      }
+      if (
+        typeof incoming.consumerKey === 'string' &&
+        incoming.consumerKey.includes('********')
+      ) {
+        mergedMpesa.consumerKey = existingMpesa.consumerKey
+      }
+      if (typeof incoming.shortcode === 'string' && incoming.shortcode.includes('********')) {
+        mergedMpesa.shortcode = existingMpesa.shortcode
+      }
+
+      updateData.mpesa = mergedMpesa
     }
     if (body.delivery !== undefined) {
       updateData.delivery = body.delivery

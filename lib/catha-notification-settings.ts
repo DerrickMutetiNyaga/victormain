@@ -14,6 +14,7 @@ export type CathaNotificationSettings = {
   manualMpesaApprovalSmsEnabled: boolean
   manualMpesaApprovalPhones: string[]
   manualMpesaApprovalLinkExpiryMinutes: number
+  mpesaIntegrationPhone?: string
 }
 
 export const DEFAULT_CATHA_NOTIFICATIONS: CathaNotificationSettings = {

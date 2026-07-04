@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { registerC2BUrls, type MpesaConfig } from '@/lib/mpesa'
+import { auth } from '@/lib/auth-catha'
+import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
+import { requireMpesaEditSession } from '@/lib/catha-mpesa-integration-guard'
 
 export async function POST(request: Request) {
+  const session = await auth()
+  if (!session?.user?.email) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  }
+  const role = ((session.user as { role?: string }).role ?? '').toUpperCase()
+  const perms = normalizePermissions((session.user as { permissions?: unknown }).permissions)
+  if (role !== 'SUPER_ADMIN' && !hasCathaPermission(perms, 'settings', 'edit')) {
+    return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 })
+  }
+  const mpesaCheck = await requireMpesaEditSession(request, session.user.email)
+  if ('response' in mpesaCheck) return mpesaCheck.response
+
   try {
     const db = await getDatabase('infusion_jaba')
     const settings = await db.collection('catha_settings').findOne({})

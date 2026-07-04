@@ -406,7 +406,7 @@ export default function POSPage() {
         if (data.success && data.settings?.mpesa?.enabled) {
           // Check if all required credentials are configured
           const mpesa = data.settings.mpesa
-          if (mpesa.consumerKey && mpesa.consumerSecret && mpesa.passkey && mpesa.shortcode) {
+          if (mpesa.credentialsConfigured || (mpesa.consumerKey && mpesa.consumerSecret && mpesa.passkey && mpesa.shortcode)) {
             setMpesaEnabled(true)
           }
         }

@@ -128,7 +128,7 @@ export default function CheckoutPage() {
         const data = await res.json()
         if (data.success && data.settings) {
           const m = data.settings?.mpesa
-          if (m?.enabled && m?.consumerKey && m?.consumerSecret && m?.passkey && m?.shortcode) setMpesaEnabled(true)
+          if (m?.enabled && (m?.credentialsConfigured || (m?.consumerKey && m?.consumerSecret && m?.passkey && m?.shortcode))) setMpesaEnabled(true)
           const d = data.settings?.delivery
           if (d) {
             if (d.pickupAddress) setPickupAddress(d.pickupAddress)

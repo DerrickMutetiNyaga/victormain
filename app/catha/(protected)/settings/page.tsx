@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { toast as sonnerToast } from "sonner"
 import { staff } from "@/lib/dummy-data"
-import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock, Plus, Trash2, Activity, AlertTriangle, RefreshCw } from "lucide-react"
+import { Building, Users, Bell, Shield, Printer, Receipt, Smartphone, Loader2, Truck, MapPin, Store, Clock, Plus, Trash2, Activity, AlertTriangle, RefreshCw, Lock, ShieldCheck } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -24,7 +24,20 @@ import {
   validateEcommerceOpeningHoursPayload,
   type EcommerceOpeningHoursSettings,
 } from "@/lib/ecommerce-opening-hours"
-import { normalizeKenyaPhone } from "@/lib/phone-utils"
+import { normalizeKenyaPhone, getPhoneValidationError } from "@/lib/phone-utils"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp"
 import { normalizePhoneNumbers } from "@/lib/phone-normalize"
 import Link from "next/link"
 
@@ -64,6 +77,8 @@ interface Settings {
     manualMpesaApprovalSmsEnabled?: boolean
     manualMpesaApprovalPhones?: string[]
     manualMpesaApprovalLinkExpiryMinutes?: number
+    mpesaIntegrationPhoneConfigured?: boolean
+    mpesaIntegrationPhoneMasked?: string | null
   }
   security?: {
     requirePinForVoids: boolean
@@ -88,6 +103,7 @@ interface Settings {
     confirmationUrl: string
     validationUrl: string
     callbackUrl: string
+    credentialsConfigured?: boolean
   }
   delivery?: {
     pickupAddress: string
@@ -213,6 +229,31 @@ export default function SettingsPage() {
   const [callbackUrl, setCallbackUrl] = useState("")
   const [registeringUrls, setRegisteringUrls] = useState(false)
 
+  // M-Pesa integration security
+  const [mpesaIntegrationConfigured, setMpesaIntegrationConfigured] = useState(false)
+  const [mpesaIntegrationMasked, setMpesaIntegrationMasked] = useState<string | null>(null)
+  const [mpesaIntegrationPhoneInput, setMpesaIntegrationPhoneInput] = useState("")
+  const [mpesaChangeNewPhoneInput, setMpesaChangeNewPhoneInput] = useState("")
+  const [mpesaChangeToken, setMpesaChangeToken] = useState<string | null>(null)
+  const [mpesaChangeStep, setMpesaChangeStep] = useState<0 | 1 | 2>(0)
+  const [mpesaEditUnlocked, setMpesaEditUnlocked] = useState(false)
+  const [mpesaEditToken, setMpesaEditToken] = useState<string | null>(null)
+  const [mpesaEditExpiresAt, setMpesaEditExpiresAt] = useState<Date | null>(null)
+  const [otpDialogOpen, setOtpDialogOpen] = useState(false)
+  const [otpDialogTitle, setOtpDialogTitle] = useState("")
+  const [otpDialogDescription, setOtpDialogDescription] = useState("")
+  const [otpValue, setOtpValue] = useState("")
+  const [otpSending, setOtpSending] = useState(false)
+  const [otpVerifying, setOtpVerifying] = useState(false)
+  const [pendingOtpAction, setPendingOtpAction] = useState<
+    | 'unlock_mpesa_edit'
+    | 'register_integration_phone'
+    | 'change_integration_phone_step1'
+    | 'change_integration_phone_step2'
+    | null
+  >(null)
+  const [pendingOtpNewPhone, setPendingOtpNewPhone] = useState<string | undefined>(undefined)
+
   // Delivery / E-commerce checkout settings
   const [pickupAddress, setPickupAddress] = useState("Catha Lounge – Nairobi (exact address confirmed at order)")
   const [pickupDirectionsUrl, setPickupDirectionsUrl] = useState("")
@@ -253,6 +294,273 @@ export default function SettingsPage() {
       ),
     [eoEnabled, eoOpenTime, eoCloseTime, eoOpenDays, eoCustomNotice, eoBlockCheckout]
   )
+
+  const mpesaFieldsLocked = !mpesaEditUnlocked
+
+  useEffect(() => {
+    if (!mpesaEditExpiresAt) return
+    const ms = mpesaEditExpiresAt.getTime() - Date.now()
+    if (ms <= 0) {
+      setMpesaEditUnlocked(false)
+      setMpesaEditToken(null)
+      setMpesaEditExpiresAt(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setMpesaEditUnlocked(false)
+      setMpesaEditToken(null)
+      setMpesaEditExpiresAt(null)
+      toast({
+        title: "M-Pesa settings locked",
+        description: "Your edit session expired. Verify OTP again to continue editing.",
+      })
+    }, ms)
+    return () => window.clearTimeout(timer)
+  }, [mpesaEditExpiresAt, toast])
+
+  const loadUnlockedMpesaSettings = async (token: string) => {
+    const response = await fetch('/api/catha/mpesa-settings-unlock', {
+      headers: { 'x-mpesa-edit-token': token },
+      cache: 'no-store',
+    })
+    const data = await response.json()
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to load unlocked M-Pesa settings')
+    }
+    const mpesa = data.mpesa
+    if (mpesa) {
+      setConsumerKey(mpesa.consumerKey || "")
+      setConsumerSecret(mpesa.consumerSecret || "")
+      setPasskey(mpesa.passkey || "")
+      setShortcode(mpesa.shortcode || "")
+      setConfirmationUrl(mpesa.confirmationUrl || "")
+      setValidationUrl(mpesa.validationUrl || "")
+      setCallbackUrl(mpesa.callbackUrl || "")
+      setMpesaEnabled(!!mpesa.enabled)
+      setMpesaEnvironment(mpesa.environment === 'production' ? 'production' : 'sandbox')
+    }
+  }
+
+  const openOtpDialog = (
+    action: NonNullable<typeof pendingOtpAction>,
+    title: string,
+    description: string,
+    newPhone?: string
+  ) => {
+    setPendingOtpAction(action)
+    setPendingOtpNewPhone(newPhone)
+    setOtpDialogTitle(title)
+    setOtpDialogDescription(description)
+    setOtpValue("")
+    setOtpDialogOpen(true)
+  }
+
+  const requestIntegrationOtp = async (
+    action: NonNullable<typeof pendingOtpAction>,
+    newPhone?: string,
+    changeToken?: string
+  ) => {
+    setOtpSending(true)
+    try {
+      const response = await fetch('/api/catha/mpesa-integration-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, newPhone, changeToken }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to send OTP')
+      }
+      toast({
+        title: "OTP sent",
+        description: data.maskedDestination
+          ? `Verification code sent to ${data.maskedDestination}`
+          : "Check the integration phone for your code.",
+      })
+      return true
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to send OTP'
+      toast({ title: "Error", description: message, variant: "destructive" })
+      return false
+    } finally {
+      setOtpSending(false)
+    }
+  }
+
+  const verifyIntegrationOtp = async () => {
+    if (!pendingOtpAction || otpValue.length !== 6) return
+    setOtpVerifying(true)
+    try {
+      const response = await fetch('/api/catha/mpesa-integration-otp', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: pendingOtpAction,
+          otp: otpValue,
+          newPhone: pendingOtpNewPhone,
+          changeToken: mpesaChangeToken,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'OTP verification failed')
+      }
+
+      if (pendingOtpAction === 'unlock_mpesa_edit' && data.editToken) {
+        setMpesaEditToken(data.editToken)
+        setMpesaEditUnlocked(true)
+        setMpesaEditExpiresAt(data.editExpiresAt ? new Date(data.editExpiresAt) : null)
+        await loadUnlockedMpesaSettings(data.editToken)
+        toast({
+          title: "M-Pesa settings unlocked",
+          description: "You can edit for 15 minutes. Settings will lock again automatically.",
+        })
+      }
+
+      if (pendingOtpAction === 'register_integration_phone') {
+        const settingsRes = await fetch('/api/catha/settings')
+        const settingsData = await settingsRes.json()
+        if (settingsData.success && settingsData.settings?.notifications) {
+          const n = settingsData.settings.notifications
+          setMpesaIntegrationConfigured(!!n.mpesaIntegrationPhoneConfigured)
+          setMpesaIntegrationMasked(n.mpesaIntegrationPhoneMasked || null)
+        }
+        setMpesaIntegrationPhoneInput("")
+        toast({ title: "Integration number saved", description: "The number is stored securely and cannot be viewed." })
+      }
+
+      if (pendingOtpAction === 'change_integration_phone_step1' && data.changeToken) {
+        setMpesaChangeToken(data.changeToken)
+        setMpesaChangeStep(2)
+        toast({
+          title: "Step 1 complete",
+          description: "Enter the new number and verify OTP sent to it.",
+        })
+      }
+
+      if (pendingOtpAction === 'change_integration_phone_step2') {
+        const settingsRes = await fetch('/api/catha/settings')
+        const settingsData = await settingsRes.json()
+        if (settingsData.success && settingsData.settings?.notifications) {
+          const n = settingsData.settings.notifications
+          setMpesaIntegrationConfigured(!!n.mpesaIntegrationPhoneConfigured)
+          setMpesaIntegrationMasked(n.mpesaIntegrationPhoneMasked || null)
+        }
+        setMpesaChangeStep(0)
+        setMpesaChangeToken(null)
+        setMpesaChangeNewPhoneInput("")
+        toast({ title: "Integration number updated", description: "The new number is stored securely." })
+      }
+
+      setOtpDialogOpen(false)
+      setOtpValue("")
+      setPendingOtpAction(null)
+      setPendingOtpNewPhone(undefined)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'OTP verification failed'
+      toast({ title: "Verification failed", description: message, variant: "destructive" })
+    } finally {
+      setOtpVerifying(false)
+    }
+  }
+
+  const startRegisterIntegrationPhone = async () => {
+    const err = getPhoneValidationError(mpesaIntegrationPhoneInput)
+    if (err) {
+      toast({ title: "Invalid phone", description: err, variant: "destructive" })
+      return
+    }
+    const normalized = normalizeKenyaPhone(mpesaIntegrationPhoneInput)
+    if (!normalized) return
+    const sent = await requestIntegrationOtp('register_integration_phone', normalized)
+    if (sent) {
+      openOtpDialog(
+        'register_integration_phone',
+        'Verify integration number',
+        `Enter the 6-digit code sent to ${normalized.replace(/(\+254\d{3})\d{4}(\d{3})/, '$1****$2')}.`,
+        normalized
+      )
+    }
+  }
+
+  const startChangeIntegrationPhoneStep1 = async () => {
+    const sent = await requestIntegrationOtp('change_integration_phone_step1')
+    if (sent) {
+      openOtpDialog(
+        'change_integration_phone_step1',
+        'Verify current integration number',
+        `Enter the OTP sent to ${mpesaIntegrationMasked || 'your registered number'}.`
+      )
+    }
+  }
+
+  const startChangeIntegrationPhoneStep2 = async () => {
+    const err = getPhoneValidationError(mpesaChangeNewPhoneInput)
+    if (err) {
+      toast({ title: "Invalid phone", description: err, variant: "destructive" })
+      return
+    }
+    if (!mpesaChangeToken) {
+      toast({ title: "Authorization required", description: "Complete step 1 first.", variant: "destructive" })
+      return
+    }
+    const normalized = normalizeKenyaPhone(mpesaChangeNewPhoneInput)
+    if (!normalized) return
+    const sent = await requestIntegrationOtp('change_integration_phone_step2', normalized, mpesaChangeToken)
+    if (sent) {
+      openOtpDialog(
+        'change_integration_phone_step2',
+        'Verify new integration number',
+        `Enter the OTP sent to the new number ending ${normalized.slice(-3)}.`,
+        normalized
+      )
+    }
+  }
+
+  const startUnlockMpesaEdit = async () => {
+    if (!mpesaIntegrationConfigured) {
+      toast({
+        title: "Integration number required",
+        description: "Add an M-Pesa integration number in Notifications before editing gateway settings.",
+        variant: "destructive",
+      })
+      return
+    }
+    const sent = await requestIntegrationOtp('unlock_mpesa_edit')
+    if (sent) {
+      openOtpDialog(
+        'unlock_mpesa_edit',
+        'Unlock M-Pesa settings',
+        `Enter the OTP sent to ${mpesaIntegrationMasked || 'the integration number'}.`
+      )
+    }
+  }
+
+  const lockMpesaSettings = async () => {
+    setMpesaEditUnlocked(false)
+    setMpesaEditToken(null)
+    setMpesaEditExpiresAt(null)
+    try {
+      const response = await fetch('/api/catha/settings')
+      const data = await response.json()
+      if (data.success && data.settings?.mpesa) {
+        const mpesa = data.settings.mpesa
+        setConsumerKey(mpesa.consumerKey || "")
+        setConsumerSecret(mpesa.consumerSecret || "")
+        setPasskey(mpesa.passkey || "")
+        setShortcode(mpesa.shortcode || "")
+        setConfirmationUrl(mpesa.confirmationUrl || "")
+        setValidationUrl(mpesa.validationUrl || "")
+        setCallbackUrl(mpesa.callbackUrl || "")
+        setMpesaEnabled(!!mpesa.enabled)
+        setMpesaEnvironment(mpesa.environment === 'production' ? 'production' : 'sandbox')
+      }
+    } catch {
+      setConsumerSecret("********")
+      setPasskey("********")
+    }
+    toast({ title: "M-Pesa settings locked", description: "Sensitive fields are hidden again." })
+  }
 
   const fetchAuthHealth = useCallback(async (daysOverride?: string) => {
     const days = daysOverride ?? authHealthDays
@@ -338,6 +646,8 @@ export default function SettingsPage() {
             setManualMpesaApprovalLinkExpiryMinutes(
               Number.isFinite(linkMins) ? Math.max(15, Math.min(24 * 60, Math.round(linkMins))) : 60
             )
+            setMpesaIntegrationConfigured(!!settings.notifications.mpesaIntegrationPhoneConfigured)
+            setMpesaIntegrationMasked(settings.notifications.mpesaIntegrationPhoneMasked || null)
           }
           
           // Security
@@ -705,6 +1015,15 @@ export default function SettingsPage() {
   }
 
   const registerC2BUrls = async () => {
+    if (!mpesaEditUnlocked || !mpesaEditToken) {
+      toast({
+        title: "Settings locked",
+        description: "Verify OTP on the integration number before registering C2B URLs.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setRegisteringUrls(true)
     try {
       // Validate required fields
@@ -727,7 +1046,10 @@ export default function SettingsPage() {
       // Save settings first if not already saved
       const saveResponse = await fetch('/api/catha/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(mpesaEditToken ? { 'x-mpesa-edit-token': mpesaEditToken } : {}),
+        },
         body: JSON.stringify({
           mpesa: {
             enabled: mpesaEnabled,
@@ -751,6 +1073,7 @@ export default function SettingsPage() {
       // Register C2B URLs
       const registerResponse = await fetch('/api/mpesa/register-urls', {
         method: 'POST',
+        headers: mpesaEditToken ? { 'x-mpesa-edit-token': mpesaEditToken } : {},
       })
       
       const registerData = await registerResponse.json()
@@ -776,6 +1099,15 @@ export default function SettingsPage() {
   }
 
   const saveMpesa = async () => {
+    if (!mpesaEditUnlocked || !mpesaEditToken) {
+      toast({
+        title: "Settings locked",
+        description: "Verify OTP on the integration number to edit M-Pesa settings.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setSaving(true)
     try {
       // Validate required fields if enabled
@@ -798,7 +1130,10 @@ export default function SettingsPage() {
 
       const response = await fetch('/api/catha/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mpesa-edit-token': mpesaEditToken,
+        },
         body: JSON.stringify({
           mpesa: {
             enabled: mpesaEnabled,
@@ -1306,6 +1641,74 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <Separator />
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 space-y-4">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+                      <div>
+                        <Label className="text-amber-900">M-Pesa integration number</Label>
+                        <p className="text-sm text-amber-800 mt-1">
+                          Secured phone for OTP when editing M-Pesa gateway credentials. The full number is never shown after it is saved.
+                        </p>
+                      </div>
+                    </div>
+                    {mpesaIntegrationConfigured ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Lock className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-mono">{mpesaIntegrationMasked || "********"}</span>
+                          <Badge variant="secondary">Configured</Badge>
+                        </div>
+                        {mpesaChangeStep === 0 ? (
+                          <Button type="button" variant="outline" size="sm" onClick={() => { setMpesaChangeStep(1); setMpesaChangeNewPhoneInput("") }}>
+                            Change integration number
+                          </Button>
+                        ) : mpesaChangeStep === 1 ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Step 1: Verify OTP sent to the current integration number.
+                            </p>
+                            <Button type="button" size="sm" onClick={startChangeIntegrationPhoneStep1} disabled={otpSending}>
+                              {otpSending ? "Sending..." : "Send OTP to current number"}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setMpesaChangeStep(0)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              Step 2: Enter the new number and verify OTP sent to it.
+                            </p>
+                            <Input
+                              value={mpesaChangeNewPhoneInput}
+                              onChange={(e) => setMpesaChangeNewPhoneInput(e.target.value)}
+                              placeholder="07XXXXXXXX or +2547XXXXXXXX"
+                            />
+                            <div className="flex gap-2">
+                              <Button type="button" size="sm" onClick={startChangeIntegrationPhoneStep2} disabled={otpSending}>
+                                {otpSending ? "Sending..." : "Send OTP to new number"}
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => { setMpesaChangeStep(0); setMpesaChangeToken(null) }}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          value={mpesaIntegrationPhoneInput}
+                          onChange={(e) => setMpesaIntegrationPhoneInput(e.target.value)}
+                          placeholder="07XXXXXXXX or +2547XXXXXXXX"
+                        />
+                        <Button type="button" size="sm" onClick={startRegisterIntegrationPhone} disabled={otpSending}>
+                          {otpSending ? "Sending OTP..." : "Verify & save integration number"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <Separator />
                   <div className="flex items-center justify-between">
                     <div>
                       <Label>Manual M-Pesa approval SMS</Label>
@@ -1676,12 +2079,52 @@ export default function SettingsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className={`rounded-lg border p-4 ${mpesaFieldsLocked ? 'border-amber-200 bg-amber-50/80' : 'border-emerald-200 bg-emerald-50/80'}`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        {mpesaFieldsLocked ? (
+                          <Lock className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+                        ) : (
+                          <ShieldCheck className="h-5 w-5 text-emerald-700 mt-0.5 shrink-0" />
+                        )}
+                        <div>
+                          <p className={`text-sm font-semibold ${mpesaFieldsLocked ? 'text-amber-900' : 'text-emerald-900'}`}>
+                            {mpesaFieldsLocked ? 'M-Pesa settings are locked' : 'M-Pesa settings unlocked'}
+                          </p>
+                          <p className={`text-xs mt-1 ${mpesaFieldsLocked ? 'text-amber-800' : 'text-emerald-800'}`}>
+                            {mpesaFieldsLocked
+                              ? 'OTP verification on the integration number is required to view or edit credentials.'
+                              : mpesaEditExpiresAt
+                                ? `Edit session expires at ${mpesaEditExpiresAt.toLocaleTimeString()}.`
+                                : 'You can edit gateway settings.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {mpesaFieldsLocked ? (
+                          <Button type="button" size="sm" onClick={startUnlockMpesaEdit} disabled={otpSending || !mpesaIntegrationConfigured}>
+                            {otpSending ? "Sending OTP..." : "Unlock with OTP"}
+                          </Button>
+                        ) : (
+                          <Button type="button" size="sm" variant="outline" onClick={lockMpesaSettings}>
+                            Lock now
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {!mpesaIntegrationConfigured && (
+                      <p className="text-xs text-amber-800 mt-3">
+                        Add an M-Pesa integration number in the Notifications tab first.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <div>
                       <Label>Enable M-Pesa Gateway</Label>
                       <p className="text-sm text-muted-foreground">Enable M-Pesa payment processing</p>
                     </div>
-                    <Switch checked={mpesaEnabled} onCheckedChange={setMpesaEnabled} />
+                    <Switch checked={mpesaEnabled} onCheckedChange={setMpesaEnabled} disabled={mpesaFieldsLocked} />
                   </div>
                   <Separator />
                   
@@ -1689,7 +2132,7 @@ export default function SettingsPage() {
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="mpesaEnvironment">Environment</Label>
-                        <Select value={mpesaEnvironment} onValueChange={(value: 'sandbox' | 'production') => setMpesaEnvironment(value)}>
+                        <Select value={mpesaEnvironment} onValueChange={(value: 'sandbox' | 'production') => setMpesaEnvironment(value)} disabled={mpesaFieldsLocked}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -1714,6 +2157,8 @@ export default function SettingsPage() {
                             value={consumerKey}
                             onChange={(e) => setConsumerKey(e.target.value)}
                             placeholder="Enter M-Pesa Consumer Key"
+                            disabled={mpesaFieldsLocked}
+                            readOnly={mpesaFieldsLocked}
                           />
                         </div>
                         <div className="space-y-2">
@@ -1724,6 +2169,8 @@ export default function SettingsPage() {
                             value={consumerSecret}
                             onChange={(e) => setConsumerSecret(e.target.value)}
                             placeholder="Enter M-Pesa Consumer Secret"
+                            disabled={mpesaFieldsLocked}
+                            readOnly={mpesaFieldsLocked}
                           />
                         </div>
                       </div>
@@ -1737,6 +2184,8 @@ export default function SettingsPage() {
                             value={passkey}
                             onChange={(e) => setPasskey(e.target.value)}
                             placeholder="Enter M-Pesa Passkey"
+                            disabled={mpesaFieldsLocked}
+                            readOnly={mpesaFieldsLocked}
                           />
                         </div>
                         <div className="space-y-2">
@@ -1747,6 +2196,8 @@ export default function SettingsPage() {
                             value={shortcode}
                             onChange={(e) => setShortcode(e.target.value)}
                             placeholder="Enter Shortcode"
+                            disabled={mpesaFieldsLocked}
+                            readOnly={mpesaFieldsLocked}
                           />
                         </div>
                       </div>
@@ -1759,6 +2210,8 @@ export default function SettingsPage() {
                           value={callbackUrl}
                           onChange={(e) => setCallbackUrl(e.target.value)}
                           placeholder="https://yourdomain.com/api/mpesa/callback"
+                          disabled={mpesaFieldsLocked}
+                          readOnly={mpesaFieldsLocked}
                         />
                         <p className="text-xs text-muted-foreground">
                           URL where M-Pesa sends STK Push payment callbacks
@@ -1773,6 +2226,8 @@ export default function SettingsPage() {
                           value={validationUrl}
                           onChange={(e) => setValidationUrl(e.target.value)}
                           placeholder="https://yourdomain.com/api/c2b/validation"
+                          disabled={mpesaFieldsLocked}
+                          readOnly={mpesaFieldsLocked}
                         />
                         <p className="text-xs text-muted-foreground">
                           URL where M-Pesa sends C2B validation requests
@@ -1787,6 +2242,8 @@ export default function SettingsPage() {
                           value={confirmationUrl}
                           onChange={(e) => setConfirmationUrl(e.target.value)}
                           placeholder="https://yourdomain.com/api/c2b/confirmation"
+                          disabled={mpesaFieldsLocked}
+                          readOnly={mpesaFieldsLocked}
                         />
                         <p className="text-xs text-muted-foreground">
                           URL where M-Pesa sends C2B confirmation requests
@@ -1806,14 +2263,14 @@ export default function SettingsPage() {
                       <div className="flex gap-3">
                         <Button 
                           onClick={saveMpesa} 
-                          disabled={saving}
+                          disabled={saving || mpesaFieldsLocked}
                           className="flex-1"
                         >
                           {saving ? "Saving..." : "Save M-Pesa Settings"}
                         </Button>
                         <Button 
                           onClick={registerC2BUrls} 
-                          disabled={registeringUrls || saving || !mpesaEnabled || !consumerKey || !consumerSecret || !passkey || !shortcode}
+                          disabled={registeringUrls || saving || mpesaFieldsLocked || !mpesaEnabled || !consumerKey || !consumerSecret || !passkey || !shortcode}
                           variant="outline"
                           className="flex-1"
                         >
@@ -2286,6 +2743,46 @@ export default function SettingsPage() {
             </TabsContent>
           </Tabs>
         </div>
+
+      <Dialog open={otpDialogOpen} onOpenChange={setOtpDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{otpDialogTitle}</DialogTitle>
+            <DialogDescription>{otpDialogDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-2">
+            <InputOTP maxLength={6} value={otpValue} onChange={setOtpValue}>
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+              </InputOTPGroup>
+            </InputOTP>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setOtpDialogOpen(false)
+                setOtpValue("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={verifyIntegrationOtp}
+              disabled={otpVerifying || otpValue.length !== 6}
+            >
+              {otpVerifying ? "Verifying..." : "Verify OTP"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
