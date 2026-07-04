@@ -148,7 +148,6 @@ function buildReceiptHtml(opts: {
             ? `<div style="background:#000;color:#fff;padding:7px 4px;text-align:center;">
                 <div style="${mono}font-size:9px;font-weight:700;letter-spacing:3px;">M-PESA TILL</div>
                 <div style="${mono}font-size:20px;font-weight:900;line-height:1.1;margin-top:2px;">${esc(tillNumber)}</div>
-                <div style="${mono}font-size:8px;font-weight:700;margin-top:3px;">Ref: ${esc(order.id)}</div>
               </div>`
             : ""
         }
@@ -187,7 +186,6 @@ function buildReceiptHtml(opts: {
       ${row("Customer", esc(order.customerName || "Walk-in"))}
       ${order.customerPhone ? row("Phone", esc(order.customerPhone)) : ""}
       ${row("Server", esc(order.waiter || "-"))}
-      ${row("Cashier", esc(order.cashier || "-"))}
       ${tillNumber ? row("Till No.", esc(tillNumber)) : ""}
       ${row("Payment", esc((order.paymentMethod || "-").toUpperCase()))}
       ${order.paymentMethod?.toLowerCase() === "glovo" && order.glovoOrderNumber ? row("Glovo #", esc(order.glovoOrderNumber)) : ""}
@@ -225,7 +223,6 @@ function buildReceiptHtml(opts: {
       <!-- Footer -->
       <div style="text-align:center;">
         <div style="${mono}font-size:12px;font-weight:900;">Thank you for your order!</div>
-        <div style="${mono}font-size:10px;font-weight:700;margin-top:2px;">We appreciate your business</div>
         <div style="${mono}font-size:9px;font-weight:700;margin-top:6px;">Printed: ${new Date().toLocaleString("en-KE")}</div>
         <div style="${mono}font-size:9px;font-weight:700;margin-top:2px;">Powered by Infusion POS</div>
       </div>

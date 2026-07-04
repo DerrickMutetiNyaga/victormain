@@ -52,9 +52,6 @@ export function ReceiptFooter({
       <p className="text-sm font-semibold text-[#0f172a] text-center">
         Thank you for your order!
       </p>
-      <p className="text-xs text-[#64748b] mt-1 text-center">
-        We appreciate your business
-      </p>
 
       <p className="text-[10px] text-[#94a3b8] mt-3 text-center">
         Printed: {printedAt}

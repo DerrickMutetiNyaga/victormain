@@ -91,9 +91,6 @@ export function ScanToPayBlock({
             M-Pesa Till
           </p>
           <p className="font-mono text-2xl font-black text-white leading-none mt-0.5">{tillNumber}</p>
-          <p className="text-[9px] font-mono text-white/90 mt-1">
-            Ref: {orderId}
-          </p>
         </div>
       )}
     </div>
@@ -139,7 +136,6 @@ export function scanToPayPrintHtml(opts: {
           ? `<div style="background:#000;color:#fff;padding:7px 4px;">
               <div style="font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">M-PESA TILL</div>
               <div style="font-family:monospace;font-size:20px;font-weight:900;line-height:1;margin-top:2px;">${tillNumber}</div>
-              <div style="font-family:monospace;font-size:8px;margin-top:3px;">Ref: ${orderId}</div>
             </div>`
           : ""
       }
