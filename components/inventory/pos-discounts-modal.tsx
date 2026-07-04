@@ -25,9 +25,6 @@ import {
   Trash2,
   Save,
   Flame,
-  History,
-  Layers,
-  List,
   ChevronDown,
   ChevronUp,
 } from "lucide-react"
@@ -166,73 +163,70 @@ function DiscountFieldsForm({
       : null
 
   return (
-    <div className="space-y-4">
-      {/* Row 1: type + value + active */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-        <div className="shrink-0">
-          <Label className="text-sm text-muted-foreground mb-2 block">Type</Label>
-          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
-            <button
-              type="button"
-              onClick={() => onChange({ discountType: "percentage" })}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                fields.discountType === "percentage"
-                  ? "bg-white text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Percent className="h-4 w-4" />
-              Percent
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange({ discountType: "fixed" })}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                fields.discountType === "fixed"
-                  ? "bg-white text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Tag className="h-4 w-4" />
-              Fixed (KSh)
-            </button>
-          </div>
+    <div className="space-y-4 w-full min-w-0">
+      <div className="w-full min-w-0">
+        <Label className="text-sm text-muted-foreground mb-2 block">Type</Label>
+        <div className="grid grid-cols-2 gap-2 w-full">
+          <button
+            type="button"
+            onClick={() => onChange({ discountType: "percentage" })}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors min-w-0",
+              fields.discountType === "percentage"
+                ? "border-primary bg-primary/5 text-foreground"
+                : "border-border bg-background text-muted-foreground"
+            )}
+          >
+            <Percent className="h-4 w-4 shrink-0" />
+            <span className="truncate">Percent</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ discountType: "fixed" })}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors min-w-0",
+              fields.discountType === "fixed"
+                ? "border-primary bg-primary/5 text-foreground"
+                : "border-border bg-background text-muted-foreground"
+            )}
+          >
+            <Tag className="h-4 w-4 shrink-0" />
+            <span className="truncate">Fixed KSh</span>
+          </button>
         </div>
+      </div>
 
-        <div className="flex-1 min-w-[120px] max-w-[200px]">
-          <Label className="text-sm text-muted-foreground mb-2 block">
-            {fields.discountType === "percentage" ? "Percent off" : "KSh off"}
-          </Label>
-          <Input
-            type="number"
-            min={0}
-            value={fields.discountValue}
-            onChange={(e) => onChange({ discountValue: e.target.value })}
-            className="h-10 text-lg font-semibold tabular-nums"
-          />
-        </div>
+      <div className="w-full min-w-0">
+        <Label className="text-sm text-muted-foreground mb-2 block">
+          {fields.discountType === "percentage" ? "Percent off" : "KSh off"}
+        </Label>
+        <Input
+          type="number"
+          min={0}
+          value={fields.discountValue}
+          onChange={(e) => onChange({ discountValue: e.target.value })}
+          className="h-11 w-full text-lg font-semibold tabular-nums"
+        />
+      </div>
 
-        <div className="flex-1 min-w-[160px]">
-          <Label className="text-sm text-muted-foreground mb-2 block">Promotion label</Label>
-          <Input
-            placeholder="Optional — e.g. Happy Hour"
-            value={fields.promotionName}
-            onChange={(e) => onChange({ promotionName: e.target.value })}
-            className="h-10"
-          />
-        </div>
+      <div className="w-full min-w-0">
+        <Label className="text-sm text-muted-foreground mb-2 block">Promotion label</Label>
+        <Input
+          placeholder="Optional, e.g. Happy Hour"
+          value={fields.promotionName}
+          onChange={(e) => onChange({ promotionName: e.target.value })}
+          className="h-11 w-full"
+        />
+      </div>
 
-        <div className="flex items-center gap-3 pb-1 lg:pb-0.5">
-          <Switch
-            checked={fields.status === "active"}
-            onCheckedChange={(c) => onChange({ status: c ? "active" : "inactive" })}
-          />
-          <Label className="text-sm font-medium cursor-pointer">
-            {fields.status === "active" ? "Active" : "Inactive"}
-          </Label>
-        </div>
+      <div className="flex items-center justify-between rounded-lg border px-4 py-3 w-full">
+        <Label className="text-sm font-medium">
+          {fields.status === "active" ? "Active on POS" : "Inactive"}
+        </Label>
+        <Switch
+          checked={fields.status === "active"}
+          onCheckedChange={(c) => onChange({ status: c ? "active" : "inactive" })}
+        />
       </div>
 
       {/* Schedule toggle */}
@@ -245,23 +239,23 @@ function DiscountFieldsForm({
         Schedule (optional)
       </button>
       {scheduleOpen && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
-          <div>
+        <div className="grid grid-cols-1 gap-4 w-full min-w-0">
+          <div className="w-full min-w-0">
             <Label className="text-sm text-muted-foreground mb-1.5 block">Starts</Label>
             <Input
               type="datetime-local"
               value={fields.startAt}
               onChange={(e) => onChange({ startAt: e.target.value })}
-              className="h-10"
+              className="h-11 w-full min-w-0 text-sm"
             />
           </div>
-          <div>
+          <div className="w-full min-w-0">
             <Label className="text-sm text-muted-foreground mb-1.5 block">Ends</Label>
             <Input
               type="datetime-local"
               value={fields.endAt}
               onChange={(e) => onChange({ endAt: e.target.value })}
-              className="h-10"
+              className="h-11 w-full min-w-0 text-sm"
             />
           </div>
         </div>
@@ -546,47 +540,39 @@ export function PosDiscountsModal({
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="w-[min(920px,calc(100vw-1.5rem))] max-w-none max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:rounded-xl">
-        <DialogHeader className="px-5 py-4 border-b shrink-0">
-          <DialogTitle className="text-lg font-semibold">POS Discounts</DialogTitle>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Temporary POS prices only — catalog prices stay unchanged.
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          "!fixed !inset-0 !z-50 !h-[100dvh] !max-h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none !border-0",
+          "sm:!inset-auto sm:!top-[50%] sm:!left-[50%] sm:!h-auto sm:!max-h-[min(90dvh,900px)] sm:!w-[min(920px,calc(100vw-1.5rem))] sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:!rounded-xl sm:!border"
+        )}
+      >
+        <DialogHeader className="px-4 py-3 sm:px-5 sm:py-4 border-b shrink-0 pr-12">
+          <DialogTitle className="text-base sm:text-lg font-semibold">POS Discounts</DialogTitle>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 leading-snug">
+            Temporary POS prices only. Catalog prices stay unchanged.
           </p>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0">
-          <TabsList className="w-full justify-start rounded-none border-b bg-transparent h-11 px-5 gap-6 shrink-0">
-            <TabsTrigger
-              value="search"
-              className="rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Apply
-            </TabsTrigger>
-            <TabsTrigger
-              value="active"
-              className="rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Active
-            </TabsTrigger>
-            <TabsTrigger
-              value="categories"
-              className="rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Categories
-            </TabsTrigger>
-            <TabsTrigger
-              value="history"
-              className="rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              History
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="shrink-0 border-b overflow-x-auto">
+            <TabsList className="inline-flex w-max min-w-full h-11 rounded-none bg-transparent px-4 gap-1 sm:gap-4">
+              {(["search", "active", "categories", "history"] as const).map((v) => (
+                <TabsTrigger
+                  key={v}
+                  value={v}
+                  className="rounded-none border-b-2 border-transparent px-3 sm:px-0 pb-3 pt-2 text-sm whitespace-nowrap data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none shrink-0"
+                >
+                  {v === "search" ? "Apply" : v.charAt(0).toUpperCase() + v.slice(1)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 overscroll-contain">
             {/* ——— APPLY ——— */}
-            <TabsContent value="search" className="mt-0 p-5 space-y-5">
-              {/* Discount settings — full width toolbar */}
-              <section className="rounded-lg border bg-slate-50/50 p-4">
+            <TabsContent value="search" className="mt-0 px-4 py-4 sm:p-5 space-y-4 sm:space-y-5">
+              <section className="rounded-lg border bg-slate-50/50 p-3 sm:p-4 w-full min-w-0 overflow-hidden">
                 <h3 className="text-sm font-semibold mb-3">Discount to apply</h3>
                 <DiscountFieldsForm
                   fields={bulkFields}
@@ -597,7 +583,7 @@ export function PosDiscountsModal({
                   <Button
                     onClick={saveBulk}
                     disabled={isBulkSaving}
-                    className="mt-4 gap-2"
+                    className="mt-4 gap-2 w-full sm:w-auto"
                   >
                     {isBulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Apply to {selectedIds.size} selected
@@ -697,39 +683,41 @@ export function PosDiscountsModal({
                       <div
                         key={p.id}
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2.5 border-b last:border-b-0 cursor-pointer",
+                          "px-3 py-3 border-b last:border-b-0 cursor-pointer",
                           selected ? "bg-primary/5" : "hover:bg-muted/50"
                         )}
                         onClick={() => toggleSelect(p.id)}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleSelect(p.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-4 w-4 shrink-0"
-                        />
-                        <div className="relative h-9 w-9 rounded overflow-hidden bg-muted shrink-0">
-                          <Image src={p.image} alt="" fill className="object-cover" unoptimized />
+                        <div className="flex items-start gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleSelect(p.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 shrink-0 mt-1"
+                          />
+                          <div className="relative h-10 w-10 rounded overflow-hidden bg-muted shrink-0">
+                            <Image src={p.image} alt="" fill className="object-cover" unoptimized />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium leading-snug break-words">{p.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{p.category}</p>
+                            <p className="text-sm font-semibold tabular-nums mt-1">{formatKsh(p.price)}</p>
+                            {p.hasProductDiscount && (
+                              <Badge variant="secondary" className="text-[10px] mt-1">On sale</Badge>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{p.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{p.category}</p>
-                        </div>
-                        <p className="text-sm font-semibold tabular-nums shrink-0">{formatKsh(p.price)}</p>
-                        {p.hasProductDiscount && (
-                          <Badge variant="secondary" className="text-[10px] shrink-0 hidden sm:inline-flex">On sale</Badge>
-                        )}
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="shrink-0 h-8"
+                          className="w-full mt-2 h-9"
                           onClick={(e) => {
                             e.stopPropagation()
                             saveSingleProduct(p)
                           }}
                         >
-                          Apply
+                          Apply discount
                         </Button>
                       </div>
                     )
@@ -739,11 +727,11 @@ export function PosDiscountsModal({
             </TabsContent>
 
             {/* ——— ACTIVE ——— */}
-            <TabsContent value="active" className="mt-0 p-5">
-              <div className="flex items-center justify-between gap-3 mb-4">
+            <TabsContent value="active" className="mt-0 px-4 py-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                 <h3 className="text-sm font-semibold">Product discounts</h3>
                 <Select value={activeFilter} onValueChange={setActiveFilter}>
-                  <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full sm:w-40 h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="active">Live now</SelectItem>
@@ -758,72 +746,121 @@ export function PosDiscountsModal({
               ) : filteredActive.length === 0 ? (
                 <p className="py-16 text-center text-sm text-muted-foreground">No discounts yet.</p>
               ) : (
-                <div className="rounded-lg border overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                        <th className="p-3 font-medium">Product</th>
-                        <th className="p-3 font-medium text-right">Catalog</th>
-                        <th className="p-3 font-medium text-right">POS price</th>
-                        <th className="p-3 font-medium text-right">Discount</th>
-                        <th className="p-3 font-medium text-center">Status</th>
-                        <th className="p-3 w-24" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredActive.map((d) => (
-                        <tr key={d.id} className="border-b last:border-b-0 hover:bg-muted/30">
-                          <td className="p-3">
-                            <p className="font-medium">{d.product?.name ?? d.productId}</p>
+                <>
+                  <div className="md:hidden space-y-3">
+                    {filteredActive.map((d) => (
+                      <div key={d.id} className="rounded-lg border p-3 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium break-words">{d.product?.name ?? d.productId}</p>
                             {d.promotionName && (
-                              <p className="text-xs text-muted-foreground">{d.promotionName}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{d.promotionName}</p>
                             )}
-                          </td>
-                          <td className="p-3 text-right tabular-nums text-muted-foreground">
-                            {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
-                          </td>
-                          <td className="p-3 text-right tabular-nums font-semibold text-emerald-700">
-                            {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
-                          </td>
-                          <td className="p-3 text-right tabular-nums">
-                            {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
-                          </td>
-                          <td className="p-3 text-center">
-                            <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
-                              {d.effectivelyActive ? "Live" : d.status}
-                            </Badge>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex justify-end gap-1">
-                              {d.status === "active" && (
-                                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => disableDiscount(d)}>
-                                  Off
-                                </Button>
-                              )}
-                              <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => deleteDiscount(d)}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td>
+                          </div>
+                          <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px] shrink-0">
+                            {d.effectivelyActive ? "Live" : d.status}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                          <div className="rounded-md bg-muted/40 p-2">
+                            <p className="text-muted-foreground mb-0.5">Catalog</p>
+                            <p className="font-medium tabular-nums line-through text-muted-foreground">
+                              {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-emerald-50 p-2">
+                            <p className="text-emerald-700 mb-0.5">POS</p>
+                            <p className="font-bold tabular-nums text-emerald-700">
+                              {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-muted/40 p-2">
+                            <p className="text-muted-foreground mb-0.5">Off</p>
+                            <p className="font-medium tabular-nums">
+                              {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {d.status === "active" && (
+                            <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => disableDiscount(d)}>
+                              Turn off
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="h-9 text-destructive px-3" onClick={() => deleteDiscount(d)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden md:block rounded-lg border overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                          <th className="p-3 font-medium">Product</th>
+                          <th className="p-3 font-medium text-right">Catalog</th>
+                          <th className="p-3 font-medium text-right">POS price</th>
+                          <th className="p-3 font-medium text-right">Discount</th>
+                          <th className="p-3 font-medium text-center">Status</th>
+                          <th className="p-3 w-24" />
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {filteredActive.map((d) => (
+                          <tr key={d.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                            <td className="p-3">
+                              <p className="font-medium">{d.product?.name ?? d.productId}</p>
+                              {d.promotionName && (
+                                <p className="text-xs text-muted-foreground">{d.promotionName}</p>
+                              )}
+                            </td>
+                            <td className="p-3 text-right tabular-nums text-muted-foreground">
+                              {d.catalogPrice != null ? formatKsh(d.catalogPrice) : "—"}
+                            </td>
+                            <td className="p-3 text-right tabular-nums font-semibold text-emerald-700">
+                              {d.discountedPrice != null ? formatKsh(d.discountedPrice) : "—"}
+                            </td>
+                            <td className="p-3 text-right tabular-nums">
+                              {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
+                            </td>
+                            <td className="p-3 text-center">
+                              <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
+                                {d.effectivelyActive ? "Live" : d.status}
+                              </Badge>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex justify-end gap-1">
+                                {d.status === "active" && (
+                                  <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => disableDiscount(d)}>
+                                    Off
+                                  </Button>
+                                )}
+                                <Button size="sm" variant="ghost" className="h-8 text-destructive" onClick={() => deleteDiscount(d)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </TabsContent>
 
             {/* ——— CATEGORIES ——— */}
-            <TabsContent value="categories" className="mt-0 p-5 space-y-6">
-              <section className="rounded-lg border p-4">
+            <TabsContent value="categories" className="mt-0 px-4 py-4 sm:p-5 space-y-4 sm:space-y-6">
+              <section className="rounded-lg border p-3 sm:p-4 w-full min-w-0 overflow-hidden">
                 <h3 className="text-sm font-semibold mb-1">New category discount</h3>
-                <p className="text-xs text-muted-foreground mb-4">
+                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
                   Applies to all products in a category. Product-specific discounts override this.
                 </p>
-                <div className="mb-4 max-w-sm">
+                <div className="mb-4 w-full min-w-0">
                   <Label className="text-sm text-muted-foreground mb-1.5 block">Category</Label>
                   <Select value={newCategory} onValueChange={setNewCategory}>
-                    <SelectTrigger className="h-10"><SelectValue placeholder="Choose category" /></SelectTrigger>
+                    <SelectTrigger className="h-11 w-full"><SelectValue placeholder="Choose category" /></SelectTrigger>
                     <SelectContent>
                       {categoryOptions.map((c) => (
                         <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
@@ -835,8 +872,8 @@ export function PosDiscountsModal({
                   fields={categoryFields}
                   onChange={(p) => setCategoryFields((f) => ({ ...f, ...p }))}
                 />
-                <Button onClick={saveCategoryDiscount} disabled={!newCategory} className="mt-4 gap-2">
-                  <Save className="h-4 w-4" /> Save
+                <Button onClick={saveCategoryDiscount} disabled={!newCategory} className="mt-4 gap-2 w-full sm:w-auto">
+                  <Save className="h-4 w-4" /> Save category discount
                 </Button>
               </section>
 
@@ -849,9 +886,9 @@ export function PosDiscountsModal({
                 ) : (
                   <div className="rounded-lg border divide-y">
                     {categoryDiscounts.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div key={c.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3">
                         <div className="min-w-0">
-                          <p className="font-medium">{c.label}</p>
+                          <p className="font-medium break-words">{c.label}</p>
                           <p className="text-sm text-muted-foreground">
                             {c.discountType === "percentage" ? `${c.discountValue}% off` : `${formatKsh(c.discountValue)} off`}
                             {c.promotionName ? ` · ${c.promotionName}` : ""}
@@ -882,37 +919,56 @@ export function PosDiscountsModal({
             </TabsContent>
 
             {/* ——— HISTORY ——— */}
-            <TabsContent value="history" className="mt-0 p-5">
+            <TabsContent value="history" className="mt-0 px-4 py-4 sm:p-5">
               {auditLog.length === 0 ? (
                 <p className="py-16 text-center text-sm text-muted-foreground">No history yet.</p>
               ) : (
-                <div className="rounded-lg border overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                        <th className="p-3 font-medium whitespace-nowrap">When</th>
-                        <th className="p-3 font-medium">Who</th>
-                        <th className="p-3 font-medium">Action</th>
-                        <th className="p-3 font-medium">Product</th>
-                        <th className="p-3 font-medium text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auditLog.map((entry) => {
-                        const row = auditSummary(entry)
-                        return (
-                          <tr key={entry.id} className="border-b last:border-b-0 hover:bg-muted/30">
-                            <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">{row.when}</td>
-                            <td className="p-3">{row.who}</td>
-                            <td className="p-3">{row.action}</td>
-                            <td className="p-3 font-medium">{row.product}</td>
-                            <td className="p-3 text-right tabular-nums">{row.value}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div className="md:hidden space-y-2">
+                    {auditLog.map((entry) => {
+                      const row = auditSummary(entry)
+                      return (
+                        <div key={entry.id} className="rounded-lg border p-3 text-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-medium break-words">{row.product}</p>
+                            <span className="text-xs font-semibold tabular-nums shrink-0">{row.value}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {row.action} · {row.who}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-1">{row.when}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="hidden md:block rounded-lg border overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                          <th className="p-3 font-medium whitespace-nowrap">When</th>
+                          <th className="p-3 font-medium">Who</th>
+                          <th className="p-3 font-medium">Action</th>
+                          <th className="p-3 font-medium">Product</th>
+                          <th className="p-3 font-medium text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditLog.map((entry) => {
+                          const row = auditSummary(entry)
+                          return (
+                            <tr key={entry.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                              <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">{row.when}</td>
+                              <td className="p-3">{row.who}</td>
+                              <td className="p-3">{row.action}</td>
+                              <td className="p-3 font-medium">{row.product}</td>
+                              <td className="p-3 text-right tabular-nums">{row.value}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </TabsContent>
           </div>
