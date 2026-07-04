@@ -3605,156 +3605,191 @@ export default function OrdersPage() {
             }
           }}
         >
-          <DialogContent className="w-[96vw] max-w-md sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
-            <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b">
-              <DialogTitle className="text-xl font-bold">Process Payment - Order #{processingPayment.id}</DialogTitle>
+          <DialogContent className="w-[96vw] max-w-md sm:max-w-2xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
+            <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-4 border-b bg-muted/20 space-y-3">
+              <div className="flex items-start justify-between gap-3 pr-6">
+                <div className="min-w-0 space-y-1">
+                  <DialogTitle className="text-lg sm:text-xl font-bold leading-tight">
+                    Process Payment
+                  </DialogTitle>
+                  <p className="text-sm text-muted-foreground font-mono truncate">
+                    Order #{processingPayment.id}
+                  </p>
+                </div>
+                {(() => {
+                  const live = summarizeCathaOrderPayments(processingPayment as any)
+                  const due = live.balanceDue > 0.005 ? live.balanceDue : 0
+                  const paid =
+                    live.paymentStatus === "PAID" ||
+                    live.paymentStatus === "OVERPAID" ||
+                    live.paymentStatus === "PARTIALLY_PAID"
+                  return (
+                    <div className="shrink-0 text-right">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                        {paid && due <= 0 ? "Settled" : "Balance due"}
+                      </p>
+                      <p className={`text-xl sm:text-2xl font-bold tabular-nums ${due > 0 ? "text-amber-700" : "text-emerald-600"}`}>
+                        KSh {due > 0 ? due.toFixed(2) : live.orderTotal.toFixed(2)}
+                      </p>
+                    </div>
+                  )
+                })()}
+              </div>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
-              <div className="p-4 bg-muted/30 rounded-lg space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-semibold">
-                    Ksh {processingPayment.subtotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border bg-background px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Order total</p>
+                  <p className="text-base font-bold tabular-nums">
+                    KSh {processingPayment.total.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
-                {/* VAT is already included in item prices; no separate tax line */}
-                <div className="flex justify-between pt-2 border-t border-border/50 mt-2 text-lg font-bold">
-                  <span>Total Amount</span>
-                  <span className="text-primary">
-                    Ksh {processingPayment.total.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                <div className="rounded-lg border bg-background px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Subtotal</p>
+                  <p className="text-base font-semibold tabular-nums text-muted-foreground">
+                    KSh {processingPayment.subtotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
+                {(() => {
+                  const live = summarizeCathaOrderPayments(processingPayment as any)
+                  return (
+                    <div className="rounded-lg border bg-background px-3 py-2.5 col-span-2 sm:col-span-1">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Linked</p>
+                      <p className="text-base font-semibold tabular-nums text-emerald-700">
+                        KSh {live.totalLinkedPayments.toFixed(2)}
+                      </p>
+                    </div>
+                  )
+                })()}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="orders-payment-customer-phone" className="text-sm font-semibold">
-                  Customer phone (optional)
+                <Label htmlFor="orders-payment-customer-phone" className="text-sm font-medium">
+                  Customer phone <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Input
                   id="orders-payment-customer-phone"
                   type="tel"
-                  placeholder="07… / 01… — used for Clients & M-Pesa"
+                  placeholder="07… / 01… / +254…"
                   value={paymentCustomerPhone}
                   onChange={(e) => syncPaymentPhones(e.target.value)}
-                  className="h-11 text-sm"
+                  className="h-10 text-sm"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Saved on the order when you confirm Glovo, link M-Pesa, or send an STK request.
-                </p>
               </div>
 
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold">Select Payment Method</Label>
-                <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2.5">
+                <Label className="text-sm font-medium">Payment method</Label>
+                <div className="grid grid-cols-3 gap-2">
                   <button
+                    type="button"
                     onClick={() => {
                       setSelectedPaymentMethod("glovo")
                     }}
-                    className={`p-4 rounded-lg border-2 transition-all ${
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 transition-all ${
                       selectedPaymentMethod === "glovo"
-                        ? "border-orange-500 bg-orange-50 shadow-md"
-                        : "border-gray-200 hover:border-gray-300 bg-white"
+                        ? "border-orange-500 bg-orange-50 shadow-sm"
+                        : "border-border hover:border-orange-200 hover:bg-muted/40 bg-background"
                     }`}
                   >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                        selectedPaymentMethod === "glovo" ? "bg-orange-100" : "bg-gray-100"
-                      }`}>
-                        <Truck className={`h-6 w-6 ${selectedPaymentMethod === "glovo" ? "text-orange-600" : "text-gray-600"}`} />
-                      </div>
-                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "glovo" ? "text-orange-700" : "text-gray-700"}`}>
-                        Glovo
-                      </span>
-                    </div>
+                    <Truck className={`h-5 w-5 ${selectedPaymentMethod === "glovo" ? "text-orange-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs font-semibold ${selectedPaymentMethod === "glovo" ? "text-orange-700" : "text-foreground"}`}>
+                      Glovo
+                    </span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setSelectedPaymentMethod("card")}
-                    className={`p-4 rounded-lg border-2 transition-all ${
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 transition-all ${
                       selectedPaymentMethod === "card"
-                        ? "border-blue-500 bg-blue-50 shadow-md"
-                        : "border-gray-200 hover:border-gray-300 bg-white"
+                        ? "border-blue-500 bg-blue-50 shadow-sm"
+                        : "border-border hover:border-blue-200 hover:bg-muted/40 bg-background"
                     }`}
                   >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                        selectedPaymentMethod === "card" ? "bg-blue-100" : "bg-gray-100"
-                      }`}>
-                        <CreditCard className={`h-6 w-6 ${selectedPaymentMethod === "card" ? "text-blue-600" : "text-gray-600"}`} />
-                      </div>
-                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "card" ? "text-blue-700" : "text-gray-700"}`}>
-                        Card
-                      </span>
-                    </div>
+                    <CreditCard className={`h-5 w-5 ${selectedPaymentMethod === "card" ? "text-blue-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs font-semibold ${selectedPaymentMethod === "card" ? "text-blue-700" : "text-foreground"}`}>
+                      Card
+                    </span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setSelectedPaymentMethod("mpesa")}
-                    className={`p-4 rounded-lg border-2 transition-all ${
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 transition-all ${
                       selectedPaymentMethod === "mpesa"
-                        ? "border-green-500 bg-green-50 shadow-md"
-                        : "border-gray-200 hover:border-gray-300 bg-white"
+                        ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                        : "border-border hover:border-emerald-200 hover:bg-muted/40 bg-background"
                     }`}
                   >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                        selectedPaymentMethod === "mpesa" ? "bg-green-100" : "bg-gray-100"
-                      }`}>
-                        <Smartphone className={`h-6 w-6 ${selectedPaymentMethod === "mpesa" ? "text-green-600" : "text-gray-600"}`} />
-                      </div>
-                      <span className={`text-xs font-semibold ${selectedPaymentMethod === "mpesa" ? "text-green-700" : "text-gray-700"}`}>
-                        M-Pesa
-                      </span>
-                    </div>
+                    <Smartphone className={`h-5 w-5 ${selectedPaymentMethod === "mpesa" ? "text-emerald-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs font-semibold ${selectedPaymentMethod === "mpesa" ? "text-emerald-700" : "text-foreground"}`}>
+                      M-Pesa
+                    </span>
                   </button>
                 </div>
               </div>
 
               {selectedPaymentMethod === "glovo" && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">Glovo Order Number</Label>
+                <div className="rounded-xl border bg-orange-50/40 p-4 space-y-2">
+                  <Label className="text-sm font-medium">Glovo order number</Label>
                   <Input
                     type="text"
                     value={glovoOrderNumber}
                     onChange={(e) => setGlovoOrderNumber(e.target.value)}
                     placeholder="Enter Glovo order number"
-                    className="h-11 text-sm font-medium"
+                    className="h-10 text-sm font-medium bg-background"
                   />
-                  {!glovoOrderNumber.trim() && <p className="text-xs text-red-600">Glovo order number is required.</p>}
+                  {!glovoOrderNumber.trim() && <p className="text-xs text-red-600">Required before confirming.</p>}
                 </div>
               )}
 
               {selectedPaymentMethod === "mpesa" && (
-                <div className="space-y-3 rounded-lg border border-green-200 bg-green-50/40 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-green-800">M-Pesa Payment Flow</p>
-                  </div>
-                  <div className={`grid gap-2 ${canManualMpesa ? "grid-cols-3" : "grid-cols-2"}`}>
-                    <Button
+                <div className="space-y-4 rounded-xl border border-emerald-200/80 bg-emerald-50/30 p-3 sm:p-4">
+                  <div
+                    className={`grid gap-1 rounded-lg bg-background/80 p-1 border ${canManualMpesa ? "grid-cols-3" : "grid-cols-2"}`}
+                    role="tablist"
+                    aria-label="M-Pesa payment options"
+                  >
+                    <button
                       type="button"
-                      variant={mpesaFlowTab === "link" ? "default" : "outline"}
-                      className={`text-xs sm:text-sm ${mpesaFlowTab === "link" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+                      role="tab"
+                      aria-selected={mpesaFlowTab === "link"}
+                      className={`rounded-md px-2 py-2.5 text-xs sm:text-sm font-medium transition-all ${
+                        mpesaFlowTab === "link"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      }`}
                       onClick={() => setMpesaFlowTab("link")}
                     >
-                      Link Existing Transaction
-                    </Button>
-                    <Button
+                      Link existing
+                    </button>
+                    <button
                       type="button"
-                      variant={mpesaFlowTab === "request" ? "default" : "outline"}
-                      className={`text-xs sm:text-sm ${mpesaFlowTab === "request" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+                      role="tab"
+                      aria-selected={mpesaFlowTab === "request"}
+                      className={`rounded-md px-2 py-2.5 text-xs sm:text-sm font-medium transition-all ${
+                        mpesaFlowTab === "request"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      }`}
                       onClick={() => setMpesaFlowTab("request")}
                     >
-                      Send M-Pesa Request
-                    </Button>
+                      Send STK
+                    </button>
                     {canManualMpesa && (
-                      <Button
+                      <button
                         type="button"
-                        variant={mpesaFlowTab === "manual" ? "default" : "outline"}
-                        className={`text-xs sm:text-sm ${mpesaFlowTab === "manual" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+                        role="tab"
+                        aria-selected={mpesaFlowTab === "manual"}
+                        className={`rounded-md px-2 py-2.5 text-xs sm:text-sm font-medium transition-all ${
+                          mpesaFlowTab === "manual"
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                        }`}
                         onClick={() => setMpesaFlowTab("manual")}
                       >
-                        Manual Transaction
-                      </Button>
+                        Manual entry
+                      </button>
                     )}
                   </div>
 
@@ -3771,61 +3806,58 @@ export default function OrdersPage() {
                         !linkedIds.has(String(tx.id))
                     )
                     return (
-                    <div className="space-y-3 rounded-md bg-white p-3 border border-green-200">
-                      <div className="rounded-md bg-slate-50 border border-slate-200 p-2.5 space-y-1 text-xs">
-                        <p className="font-semibold text-slate-800">Live payment summary</p>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-600">Order total</span>
-                          <span className="font-mono font-medium">KSh {live.orderTotal.toFixed(2)}</span>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="rounded-lg border bg-background px-3 py-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">Total</p>
+                          <p className="font-bold tabular-nums text-sm">KSh {live.orderTotal.toFixed(2)}</p>
                         </div>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-600">Linked so far</span>
-                          <span className="font-mono font-medium">KSh {live.totalLinkedPayments.toFixed(2)}</span>
+                        <div className="rounded-lg border bg-background px-3 py-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">Linked</p>
+                          <p className="font-bold tabular-nums text-sm text-emerald-700">KSh {live.totalLinkedPayments.toFixed(2)}</p>
                         </div>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-600">Balance remaining</span>
-                          <span className="font-mono font-medium text-amber-800">KSh {live.balanceDue.toFixed(2)}</span>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                          <p className="text-[10px] uppercase text-amber-800/80">Due</p>
+                          <p className="font-bold tabular-nums text-sm text-amber-900">KSh {live.balanceDue.toFixed(2)}</p>
                         </div>
-                        {live.overpaymentAmount > 0 && (
-                          <div className="flex justify-between gap-2">
-                            <span className="text-slate-600">Excess paid</span>
-                            <span className="font-mono font-medium text-violet-800">KSh {live.overpaymentAmount.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between gap-2 pt-1 border-t border-slate-200">
-                          <span className="text-slate-700 font-semibold">Status</span>
-                          <span className="font-semibold">
+                        <div className="rounded-lg border bg-background px-3 py-2 col-span-2 sm:col-span-1">
+                          <p className="text-[10px] uppercase text-muted-foreground">Status</p>
+                          <p className="font-semibold text-sm">
                             {live.paymentStatus === "PAID"
                               ? "Paid"
                               : live.paymentStatus === "OVERPAID"
                                 ? "Overpaid"
                                 : live.paymentStatus === "PARTIALLY_PAID"
-                                  ? "Partially paid"
+                                  ? "Partial"
                                   : "Unpaid"}
-                          </span>
+                          </p>
                         </div>
                       </div>
+                      {live.overpaymentAmount > 0 && (
+                        <p className="text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                          Excess paid: KSh {live.overpaymentAmount.toFixed(2)}
+                        </p>
+                      )}
                       {linkedRows.length > 0 && (
-                        <div className="rounded-md border border-slate-200 bg-slate-50/80 p-2 space-y-2">
-                          <p className="text-xs font-semibold text-slate-800">Attached to this order ({linkedRows.length})</p>
-                          <div className="max-h-36 overflow-y-auto space-y-1.5">
+                        <div className="rounded-lg border bg-background p-3 space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Already linked ({linkedRows.length})
+                          </p>
+                          <div className="max-h-32 overflow-y-auto space-y-2">
                             {linkedRows.map((p: any) => (
                               <div
                                 key={String(p.transactionId)}
-                                className="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5 text-[11px]"
+                                className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-xs bg-muted/20"
                               >
                                 <div className="min-w-0 space-y-0.5">
-                                  <p className="text-[10px] font-semibold text-slate-800">
-                                    {linkedMpesaPaymentTitle(p)}
-                                  </p>
-                                  <p className="font-mono font-medium truncate">
+                                  <p className="font-semibold truncate">
                                     {p.receiptNumber || p.transactionId}
                                   </p>
                                   <p className="text-muted-foreground">
                                     KSh {Number(p.amount || 0).toFixed(2)}
                                     {p.phone ? ` · ${p.phone}` : ""}
-                                    {p.payerName ? ` · ${p.payerName}` : ""}
                                   </p>
+                                  <p className="text-[10px] text-muted-foreground">{linkedMpesaPaymentTitle(p)}</p>
                                   {p.linkSource === "manual" && p.notes && (
                                     <p className="text-[10px] text-amber-900">Reason: {p.notes}</p>
                                   )}
@@ -3853,73 +3885,89 @@ export default function OrdersPage() {
                           </div>
                         </div>
                       )}
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold text-slate-700">Transactions with remaining balance</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => loadMpesaLinkCandidates("recent")}
-                          disabled={loadingMpesaCandidates}
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loadingMpesaCandidates ? "animate-spin" : ""}`} />
-                          Refresh
-                        </Button>
-                      </div>
-                      <div className="space-y-1.5 rounded-md border border-amber-100 bg-amber-50/60 p-2">
-                        <Label className="text-xs font-semibold text-amber-950">Allocate to this order (KSh)</Label>
+                      <div className="rounded-lg border bg-background p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-sm font-medium">Amount for this order</Label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs"
+                            onClick={() => loadMpesaLinkCandidates("recent")}
+                            disabled={loadingMpesaCandidates}
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loadingMpesaCandidates ? "animate-spin" : ""}`} />
+                            Refresh list
+                          </Button>
+                        </div>
                         <Input
                           type="number"
                           step="0.01"
                           min="0"
-                          className="h-9 text-sm font-mono"
+                          className="h-11 text-base font-mono tabular-nums"
                           value={mpesaAllocationInput}
                           onChange={(e) => setMpesaAllocationInput(e.target.value)}
-                          placeholder="e.g. 500.00"
+                          placeholder={live.balanceDue > 0 ? live.balanceDue.toFixed(2) : "0.00"}
                         />
-                        <p className="text-[10px] text-amber-900/90 leading-snug">
-                          One M-Pesa payment can be split across several orders. Enter how much of the selected
-                          transaction should apply to this order (cannot exceed the transaction&apos;s remaining balance).
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Split one M-Pesa payment across orders. Cannot exceed the transaction&apos;s remaining balance.
                         </p>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs font-medium">Optional: list transactions with exact amount</Label>
+                      <div className="rounded-lg border bg-background p-3 space-y-2">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          Filter by exact amount (optional)
+                        </Label>
                         <div className="flex gap-2">
                           <Input
                             type="number"
                             step="0.01"
                             min="0"
+                            className="h-10 font-mono"
                             value={mpesaExactAmountSearch}
                             onChange={(e) => setMpesaExactAmountSearch(e.target.value)}
-                            placeholder="e.g. 300"
+                            placeholder="e.g. 90"
                           />
                           <Button
                             type="button"
-                            variant="outline"
+                            variant="secondary"
+                            className="shrink-0"
                             onClick={() => loadMpesaLinkCandidates("exact", Number(mpesaExactAmountSearch))}
                             disabled={!mpesaExactAmountSearch.trim() || Number.isNaN(Number(mpesaExactAmountSearch))}
                           >
-                            Search
+                            <Search className="h-4 w-4 sm:mr-1" />
+                            <span className="hidden sm:inline">Search</span>
                           </Button>
                         </div>
                       </div>
-                      <div className="max-h-52 overflow-y-auto space-y-2">
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Select transaction
+                        </p>
+                        <div className="max-h-56 overflow-y-auto space-y-2 pr-0.5">
                         {!loadingMpesaCandidates && candidateTxs.length === 0 && (
-                          <p className="text-xs text-slate-600">
+                          <p className="text-sm text-muted-foreground text-center py-6 px-2 rounded-lg border border-dashed">
                             {mpesaCandidatesLoadModeRef.current === "exact"
-                              ? `No completed M-Pesa transactions found for this amount (KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)}), or every match is already fully allocated.`
-                              : "No completed M-Pesa transactions with spare balance right now. Tap Refresh or search by exact amount."}
+                              ? `No transactions with KSh ${Number(mpesaExactAmountSearch || 0).toFixed(2)} and spare balance.`
+                              : "No transactions with spare balance. Refresh or search by amount."}
                           </p>
+                        )}
+                        {loadingMpesaCandidates && (
+                          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading transactions…
+                          </div>
                         )}
                         {candidateTxs.map((tx) => {
                           const rem = Number(tx.remainingUnallocated ?? tx.amount ?? 0)
                           const alloc = Number(tx.allocatedTotal ?? 0)
+                          const isSelected = selectedMpesaTransactionId === tx.id
+                          const receipt = tx.mpesaReceiptNumber || tx.mpesaRef || tx.transactionId || "—"
                           const statusLabel =
                             tx.allocationStatus === "full"
-                              ? "Fully allocated"
+                              ? "Full"
                               : tx.allocationStatus === "partial"
-                                ? "Partially allocated"
-                                : "Unallocated"
+                                ? "Partial"
+                                : "Open"
                           const otherOrders =
                             Array.isArray(tx.linkedOrderIds) && tx.linkedOrderIds.length > 0
                               ? tx.linkedOrderIds.join(", ")
@@ -3927,14 +3975,18 @@ export default function OrdersPage() {
                           return (
                             <label
                               key={tx.id}
-                              className="block rounded-md border p-2 text-xs bg-white border-slate-200 cursor-pointer hover:border-green-300"
+                              className={`block rounded-xl border-2 p-3 cursor-pointer transition-all ${
+                                isSelected
+                                  ? "border-emerald-500 bg-emerald-50/60 shadow-sm"
+                                  : "border-border bg-background hover:border-emerald-300"
+                              }`}
                             >
-                              <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-3">
                                 <input
                                   type="radio"
                                   name="selected-mpesa-transaction"
-                                  className="mt-1"
-                                  checked={selectedMpesaTransactionId === tx.id}
+                                  className="mt-1.5 h-4 w-4 accent-emerald-600"
+                                  checked={isSelected}
                                   onChange={() => {
                                     setSelectedMpesaTransactionId(tx.id)
                                     const live = summarizeCathaOrderPayments(processingPayment as any)
@@ -3944,42 +3996,69 @@ export default function OrdersPage() {
                                     setMpesaAllocationInput(def > 0 ? def.toFixed(2) : "")
                                   }}
                                 />
-                                <div className="flex-1 space-y-0.5">
-                                  <p className="font-semibold">Receipt: {tx.mpesaReceiptNumber || tx.mpesaRef || tx.transactionId || "—"}</p>
-                                  <p>M-Pesa Ref: {tx.checkoutRequestId || tx.transactionId || "—"}</p>
-                                  <p>Transaction amount: KSh {Number(tx.amount || 0).toFixed(2)}</p>
-                                  <p className="text-slate-700">
-                                    Allocated (all orders): KSh {alloc.toFixed(2)} · Remaining:{" "}
-                                    <span className="font-semibold text-amber-800">KSh {rem.toFixed(2)}</span>
-                                  </p>
-                                  <p className="text-slate-600">
-                                    {statusLabel}
-                                    {otherOrders ? ` · Orders: ${otherOrders}` : ""}
-                                  </p>
-                                  <p>Phone: {tx.phoneNumber || "—"}</p>
-                                  <p>Date/Time: {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : "—"}</p>
-                                  <p>Type: {tx.transactionType || "—"}</p>
+                                <div className="flex-1 min-w-0 space-y-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-mono font-bold text-sm">{receipt}</p>
+                                    <Badge variant="outline" className="text-[10px] shrink-0">
+                                      {statusLabel}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                                    <span>KSh {Number(tx.amount || 0).toFixed(2)} total</span>
+                                    <span className="font-semibold text-amber-800">KSh {rem.toFixed(2)} left</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+                                    {tx.phoneNumber && (
+                                      <span>{tx.phoneNumber}</span>
+                                    )}
+                                    {tx.createdAt && (
+                                      <span>{new Date(tx.createdAt).toLocaleString("en-KE", { dateStyle: "short", timeStyle: "short" })}</span>
+                                    )}
+                                  </div>
+                                  {(alloc > 0 || otherOrders) && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      Allocated KSh {alloc.toFixed(2)}
+                                      {otherOrders ? ` · Orders: ${otherOrders}` : ""}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             </label>
                           )
                         })}
+                        </div>
                       </div>
                     </div>
                     )
                   })()}
 
                   {mpesaFlowTab === "request" && (
-                    <div className="space-y-2 rounded-md bg-white p-3 border border-green-200">
-                      <Label htmlFor="orders-mpesa-request-phone" className="text-xs font-medium">Customer Phone Number</Label>
+                    <div className="space-y-3 rounded-lg border bg-background p-4">
+                      <Label htmlFor="orders-mpesa-request-phone" className="text-sm font-medium">
+                        Customer phone for STK push
+                      </Label>
                       <Input
                         id="orders-mpesa-request-phone"
                         type="tel"
                         placeholder="0712345678, 0113794000, or +254…"
                         value={mpesaPhoneNumber}
                         onChange={(e) => syncPaymentPhones(e.target.value)}
+                        className="h-11 text-base"
                       />
-                      <p className="text-xs text-slate-500">Status: {mpesaRequestStatus === "idle" ? "Ready" : mpesaRequestStatus === "sent" ? "Request Sent" : mpesaRequestStatus === "waiting" ? "Waiting for Payment" : mpesaRequestStatus === "paid" ? "Paid" : "Failed"}</p>
+                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        <span className="text-muted-foreground">STK status</span>
+                        <span className="font-medium capitalize">
+                          {mpesaRequestStatus === "idle"
+                            ? "Ready"
+                            : mpesaRequestStatus === "sent"
+                              ? "Request sent"
+                              : mpesaRequestStatus === "waiting"
+                                ? "Waiting for payment"
+                                : mpesaRequestStatus === "paid"
+                                  ? "Paid"
+                                  : "Failed"}
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -3987,13 +4066,13 @@ export default function OrdersPage() {
                     const live = summarizeCathaOrderPayments(processingPayment as any)
                     const codeReady = manualTxCode.trim().replace(/\s+/g, "").length >= 3
                     return (
-                    <div className="space-y-3 rounded-md bg-white p-3 border border-green-200">
-                      <p className="text-xs text-slate-600 leading-snug">
-                        Recover a payment when Safaricom completed it but the callback failed. Entries are submitted for manager approval before linking.
+                    <div className="space-y-4 rounded-lg border bg-background p-4">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Recover a payment when Safaricom completed it but the callback failed. Submitted entries go to manager approval.
                       </p>
                       <div className="space-y-1.5">
-                        <Label htmlFor="manual-tx-code" className="text-xs font-semibold">
-                          Transaction Code <span className="text-red-600">*</span>
+                        <Label htmlFor="manual-tx-code" className="text-sm font-medium">
+                          Transaction code <span className="text-red-600">*</span>
                         </Label>
                         <Input
                           id="manual-tx-code"
@@ -4008,7 +4087,7 @@ export default function OrdersPage() {
                             const c = manualTxCode.trim().replace(/\s+/g, "")
                             if (c.length >= 3) setDebouncedManualTxCode(c)
                           }}
-                          className="h-10 font-mono uppercase"
+                          className="h-11 font-mono uppercase text-base tracking-wide"
                         />
                       </div>
 
@@ -4204,8 +4283,8 @@ export default function OrdersPage() {
                 </div>
               )}
             </div>
-            <div className="px-4 sm:px-6 py-3 border-t bg-background flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
-              <Button variant="outline" onClick={() => {
+            <div className="px-4 sm:px-6 py-3.5 border-t bg-muted/30 flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3">
+              <Button variant="ghost" className="sm:mr-auto" onClick={() => {
                 setProcessingPayment(null)
                 setSelectedPaymentMethod("")
                 setGlovoOrderNumber("")
@@ -4230,9 +4309,9 @@ export default function OrdersPage() {
                     !mpesaAllocationInput.trim() ||
                     Number(mpesaAllocationInput) <= 0
                   }
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white h-11"
                 >
-                  {linkingMpesaTransaction ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Linking...</> : <><Smartphone className="h-4 w-4 mr-2" />Link M-Pesa payment</>}
+                  {linkingMpesaTransaction ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Linking…</> : <><Smartphone className="h-4 w-4 mr-2" />Link M-Pesa payment</>}
                 </Button>
               ) : selectedPaymentMethod === "mpesa" && mpesaFlowTab === "manual" && canManualMpesa ? (
                 <Button
@@ -4250,12 +4329,12 @@ export default function OrdersPage() {
                       !manualTxLookup &&
                       !manualTxLookupLoading)
                   }
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white h-11"
                 >
                   {manualTxSubmitting ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting...</>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting…</>
                   ) : (
-                    <><CheckCircle2 className="h-4 w-4 mr-2" />Submit for Approval</>
+                    <><CheckCircle2 className="h-4 w-4 mr-2" />Submit for approval</>
                   )}
                 </Button>
               ) : (
@@ -4265,14 +4344,14 @@ export default function OrdersPage() {
                     !selectedPaymentMethod ||
                     (selectedPaymentMethod === "glovo" && (!glovoOrderNumber.trim() || isProcessingGlovoPayment))
                   }
-                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+                  className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white h-11"
                 >
                   {selectedPaymentMethod === "mpesa" ? (
-                    <><Smartphone className="h-4 w-4 mr-2" />Send M-Pesa Request</>
+                    <><Smartphone className="h-4 w-4 mr-2" />Send STK request</>
                   ) : selectedPaymentMethod === "card" ? (
-                    <><CreditCard className="h-4 w-4 mr-2" />Continue Card Payment</>
+                    <><CreditCard className="h-4 w-4 mr-2" />Continue card payment</>
                   ) : (
-                    <><Truck className="h-4 w-4 mr-2" />Confirm Glovo Payment</>
+                    <><Truck className="h-4 w-4 mr-2" />Confirm Glovo payment</>
                   )}
                 </Button>
               )}
