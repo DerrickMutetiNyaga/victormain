@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -987,38 +987,42 @@ export function CathaUsersClient({ initialUsers }: { initialUsers: UserRow[] }) 
       </Dialog>
 
       <Dialog open={isPermissionsModalOpen} onOpenChange={setIsPermissionsModalOpen}>
-        <DialogContent className="w-[95vw] max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl p-4 md:p-6">
-          <DialogHeader className="pb-3">
-            <DialogTitle className="text-lg md:text-xl font-bold flex items-center gap-2">
-              <Shield className="h-4 w-4 md:h-5 md:w-5" />
+        <DialogContent className="flex w-[calc(100vw-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl max-h-[min(90vh,720px)]">
+          <DialogHeader className="shrink-0 space-y-1 border-b px-4 py-4 pr-12 sm:px-6">
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 sm:text-xl">
+              <Shield className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
               <span className="truncate">Permissions — {selectedUser?.name}</span>
             </DialogTitle>
-            <DialogDescription className="text-sm">
-              Configure Catha permissions for this user.
+            <DialogDescription className="text-left text-sm">
+              Configure Catha permissions for this user. Enable <strong>View</strong> first, then other actions.
             </DialogDescription>
           </DialogHeader>
-          <PermissionsList
-            permissions={editingPermissions}
-            setPermissions={setEditingPermissions}
-            isCashierRole={selectedUser?.role === 'CASHIER'}
-          />
-          <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-4">
+
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6">
+            <PermissionsList
+              permissions={editingPermissions}
+              setPermissions={setEditingPermissions}
+              isCashierRole={selectedUser?.role === 'CASHIER'}
+            />
+          </div>
+
+          <DialogFooter className="shrink-0 gap-2 border-t px-4 py-4 sm:px-6 sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               onClick={() => setIsPermissionsModalOpen(false)}
-              className="rounded-xl h-11 w-full sm:w-auto"
+              className="h-11 w-full rounded-xl sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSavePermissions}
               disabled={updating !== null}
-              className="rounded-xl h-11 gap-2 w-full sm:w-auto"
+              className="h-11 w-full gap-2 rounded-xl sm:w-auto"
             >
               {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save Permissions
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1328,6 +1332,22 @@ const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
   settings: 'Settings',
 }
 
+/** Modules where only a subset of CRUD actions apply in the app */
+const MODULE_ACTIONS: Partial<Record<keyof CathaPermissions, (keyof PermissionActions)[]>> = {
+  posDiscounts: ['view', 'edit'],
+  dashboard: ['view'],
+  reports: ['view'],
+  mpesa: ['view'],
+  myShift: ['view'],
+}
+
+const ACTION_LABELS: Record<keyof PermissionActions, string> = {
+  view: 'View',
+  add: 'Add',
+  edit: 'Edit',
+  delete: 'Delete',
+}
+
 function PermissionsList({
   permissions,
   setPermissions,
@@ -1338,6 +1358,7 @@ function PermissionsList({
   isCashierRole?: boolean
 }) {
   const normalized = normalizePermissions(permissions)
+  const defaultOpen = PERMISSION_GROUPS.map((g) => g.name)
 
   const updateModuleAction = (module: keyof CathaPermissions, action: keyof PermissionActions, checked: boolean) => {
     const current = normalized[module] ?? { view: false, add: false, edit: false, delete: false }
@@ -1350,43 +1371,73 @@ function PermissionsList({
   const renderRow = (module: keyof CathaPermissions) => {
     const state: PermissionActions = normalized[module] ?? { view: false, add: false, edit: false, delete: false }
     const label = MODULE_LABELS[module]
+    const allowedActions = MODULE_ACTIONS[module] ?? (['view', 'add', 'edit', 'delete'] as const)
+    const hint =
+      module === 'posDiscounts'
+        ? 'Edit grants full promotions management'
+        : null
+
     return (
       <div
         key={module}
-        className="flex items-center justify-between p-2 rounded-lg border border-border/50 bg-muted/20"
+        className="grid grid-cols-[minmax(0,1fr)_repeat(4,2.5rem)] items-center gap-x-2 gap-y-1 rounded-lg border border-border/50 bg-muted/20 px-2 py-2.5 sm:grid-cols-[minmax(0,1fr)_repeat(4,3rem)] sm:px-3"
       >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium text-foreground truncate">{label}</span>
+        <div className="col-span-1 flex min-w-0 items-start gap-2">
+          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{label}</p>
+            {hint && <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p>}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {(['view', 'add', 'edit', 'delete'] as const).map((action) => (
-            <div key={action} className="flex items-center gap-1.5">
-              <Checkbox
-                checked={state[action]}
-                disabled={action !== 'view' && !state.view || (isCashierRole && module === 'myShift')}
-                onCheckedChange={(c) => updateModuleAction(module, action, c === true)}
-                className="h-5 w-5 rounded-md border-2 border-slate-300 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-600 shadow-sm"
-              />
-              <span className="text-[10px] text-muted-foreground uppercase w-10 text-right">
-                {action}
-              </span>
+        {(['view', 'add', 'edit', 'delete'] as const).map((action) => {
+          const actionAllowed = allowedActions.includes(action)
+          const disabled =
+            !actionAllowed ||
+            (action !== 'view' && !state.view) ||
+            (isCashierRole && module === 'myShift')
+
+          return (
+            <div key={action} className="flex justify-center">
+              {actionAllowed ? (
+                <Checkbox
+                  checked={state[action]}
+                  disabled={disabled}
+                  onCheckedChange={(c) => updateModuleAction(module, action, c === true)}
+                  aria-label={`${label} — ${ACTION_LABELS[action]}`}
+                  className="h-5 w-5 rounded-md border-2 border-slate-300 shadow-sm data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-500 disabled:opacity-40"
+                />
+              ) : (
+                <span className="text-xs text-muted-foreground/50" aria-hidden>
+                  —
+                </span>
+              )}
             </div>
-          ))}
-        </div>
+          )
+        })}
       </div>
     )
   }
 
   return (
-    <Accordion type="multiple" className="w-full">
+    <Accordion type="multiple" defaultValue={defaultOpen} className="w-full">
       {PERMISSION_GROUPS.map((group) => (
         <AccordionItem key={group.name} value={group.name} className="border-border">
-          <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+          <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline">
             {group.name}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              ({group.modules.length})
+            </span>
           </AccordionTrigger>
-          <AccordionContent className="pt-2 space-y-2">
-            {group.modules.map((m) => renderRow(m))}
+          <AccordionContent className="pb-3 pt-1">
+            <div className="mb-2 grid grid-cols-[minmax(0,1fr)_repeat(4,2.5rem)] gap-x-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid-cols-[minmax(0,1fr)_repeat(4,3rem)] sm:px-3">
+              <span>Module</span>
+              {(['view', 'add', 'edit', 'delete'] as const).map((action) => (
+                <span key={action} className="text-center">
+                  {ACTION_LABELS[action]}
+                </span>
+              ))}
+            </div>
+            <div className="space-y-2">{group.modules.map((m) => renderRow(m))}</div>
           </AccordionContent>
         </AccordionItem>
       ))}

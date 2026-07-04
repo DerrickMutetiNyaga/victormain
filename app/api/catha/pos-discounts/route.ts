@@ -261,6 +261,22 @@ export async function GET(request: Request) {
       }
     })
 
+    const customerIds = enriched.flatMap((d) =>
+      d.eligibilityScope === 'selected_customers' ? d.eligibleCustomers ?? [] : []
+    )
+    const customerNameMap = await resolveCustomerDisplayNames(db, [...new Set(customerIds)])
+    enriched = enriched.map((d) => ({
+      ...d,
+      eligibleCustomerDetails:
+        d.eligibilityScope === 'selected_customers' && (d.eligibleCustomers?.length ?? 0) > 0
+          ? (d.eligibleCustomers ?? []).map((id) => ({
+              id,
+              name: customerNameMap.get(id) || id,
+              phone: id,
+            }))
+          : [],
+    }))
+
     if (statusFilter === 'active' || statusFilter === 'inactive') {
       enriched = enriched.filter((d) => d.status === statusFilter)
     }

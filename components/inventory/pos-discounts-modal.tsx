@@ -5,6 +5,7 @@ import Image from "next/image"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -27,6 +28,7 @@ import {
   Flame,
   ChevronDown,
   ChevronUp,
+  Eye,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -70,6 +72,7 @@ interface ActiveDiscount {
   promotionName: string | null
   eligibilityScope?: string
   eligibleCustomers?: string[]
+  eligibleCustomerDetails?: Array<{ id: string; name: string; phone: string }>
   campaignId?: string | null
   campaignName?: string | null
   effectivelyActive: boolean
@@ -135,6 +138,21 @@ function formatKsh(amount: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
+}
+
+function isPerClientDiscount(d: { eligibilityScope?: string; eligibleCustomers?: string[] }) {
+  return d.eligibilityScope === "selected_customers" && (d.eligibleCustomers?.length ?? 0) > 0
+}
+
+function audienceLabel(d: { eligibilityScope?: string; eligibleCustomers?: string[] }) {
+  return isPerClientDiscount(d) ? "Per client" : "All"
+}
+
+function formatScheduleDate(iso: string | null | undefined) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" })
 }
 
 function auditSummary(entry: AuditEntry) {
@@ -354,6 +372,7 @@ export function PosDiscountsModal({
   const [categoryCampaignId, setCategoryCampaignId] = useState("")
 
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
+  const [viewingDiscount, setViewingDiscount] = useState<ActiveDiscount | null>(null)
 
   const loadCampaigns = useCallback(async () => {
     try {
@@ -604,12 +623,19 @@ export function PosDiscountsModal({
           <p className="text-sm text-muted-foreground mt-0.5">
             {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
           </p>
+          <Badge variant="outline" className="text-[10px] mt-1.5 font-normal">
+            {audienceLabel(d)}
+          </Badge>
         </div>
         <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px] shrink-0">
           {d.effectivelyActive ? "Live" : d.status}
         </Badge>
       </div>
       <div className="flex gap-2">
+        <Button size="sm" variant="outline" className="flex-1 h-9 gap-1.5" onClick={() => setViewingDiscount(d)}>
+          <Eye className="h-3.5 w-3.5" />
+          View
+        </Button>
         {d.status === "active" && (
           <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => disableDiscount(d)}>
             Turn off
@@ -634,6 +660,7 @@ export function PosDiscountsModal({
       : undefined
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
@@ -875,11 +902,21 @@ export function PosDiscountsModal({
                       </h4>
                       <div className="space-y-2">
                         {group.items.map((d) => (
-                          <div key={d.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                            <span className="font-medium">{d.product?.name ?? d.productId}</span>
-                            <span className="tabular-nums text-emerald-700 font-semibold">
-                              {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
-                            </span>
+                          <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                            <div className="min-w-0">
+                              <span className="font-medium">{d.product?.name ?? d.productId}</span>
+                              <Badge variant="outline" className="text-[10px] ml-2 font-normal">
+                                {audienceLabel(d)}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="tabular-nums text-emerald-700 font-semibold">
+                                {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
+                              </span>
+                              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setViewingDiscount(d)}>
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -901,8 +938,9 @@ export function PosDiscountsModal({
                               <th className="p-3 font-medium text-right">Catalog</th>
                               <th className="p-3 font-medium text-right">POS price</th>
                               <th className="p-3 font-medium text-right">Discount</th>
+                              <th className="p-3 font-medium text-center">Applies to</th>
                               <th className="p-3 font-medium text-center">Status</th>
-                              <th className="p-3 w-24" />
+                              <th className="p-3 w-32" />
                             </tr>
                           </thead>
                           <tbody>
@@ -924,12 +962,26 @@ export function PosDiscountsModal({
                                   {d.discountType === "percentage" ? `${d.discountValue}%` : formatKsh(d.discountValue)}
                                 </td>
                                 <td className="p-3 text-center">
+                                  <Badge variant="outline" className="text-[10px] font-normal">
+                                    {audienceLabel(d)}
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-center">
                                   <Badge variant={d.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
                                     {d.effectivelyActive ? "Live" : d.status}
                                   </Badge>
                                 </td>
                                 <td className="p-3">
                                   <div className="flex justify-end gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 text-xs gap-1"
+                                      onClick={() => setViewingDiscount(d)}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                      View
+                                    </Button>
                                     {d.status === "active" && (
                                       <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => disableDiscount(d)}>
                                         Off
@@ -1004,10 +1056,13 @@ export function PosDiscountsModal({
                             {c.promotionName ? ` · ${c.promotionName}` : ""}
                           </p>
                           {c.eligibilityScope === "selected_customers" &&
-                            (c.eligibleCustomers?.length ?? 0) > 0 && (
-                              <Badge variant="outline" className="text-[10px] mt-1">
-                                {c.eligibleCustomers!.length} customer
-                                {c.eligibleCustomers!.length !== 1 ? "s" : ""}
+                            (c.eligibleCustomers?.length ?? 0) > 0 ? (
+                              <Badge variant="outline" className="text-[10px] mt-1 font-normal">
+                                Per client
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] mt-1 font-normal">
+                                All
                               </Badge>
                             )}
                         </div>
@@ -1116,5 +1171,90 @@ export function PosDiscountsModal({
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={!!viewingDiscount} onOpenChange={(open) => !open && setViewingDiscount(null)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Discount details</DialogTitle>
+          <DialogDescription>
+            {viewingDiscount?.product?.name ?? viewingDiscount?.productId}
+          </DialogDescription>
+        </DialogHeader>
+        {viewingDiscount && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Catalog</p>
+                <p className="font-medium tabular-nums">
+                  {viewingDiscount.catalogPrice != null ? formatKsh(viewingDiscount.catalogPrice) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">POS price</p>
+                <p className="font-semibold text-emerald-700 tabular-nums">
+                  {viewingDiscount.discountedPrice != null ? formatKsh(viewingDiscount.discountedPrice) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Discount</p>
+                <p className="font-medium tabular-nums">
+                  {viewingDiscount.discountType === "percentage"
+                    ? `${viewingDiscount.discountValue}%`
+                    : formatKsh(viewingDiscount.discountValue)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <Badge variant={viewingDiscount.effectivelyActive ? "default" : "secondary"} className="text-[10px]">
+                  {viewingDiscount.effectivelyActive ? "Live" : viewingDiscount.status}
+                </Badge>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Applies to</p>
+              <Badge variant="outline" className="font-normal">
+                {audienceLabel(viewingDiscount)}
+              </Badge>
+              {isPerClientDiscount(viewingDiscount) && (
+                <ul className="mt-2 space-y-1.5 rounded-md border bg-muted/20 p-3 max-h-40 overflow-y-auto">
+                  {(viewingDiscount.eligibleCustomerDetails?.length
+                    ? viewingDiscount.eligibleCustomerDetails
+                    : (viewingDiscount.eligibleCustomers ?? []).map((id) => ({ id, name: id, phone: id }))
+                  ).map((c) => (
+                    <li key={c.id} className="text-xs">
+                      <span className="font-medium">{c.name}</span>
+                      {c.phone && c.phone !== c.name && (
+                        <span className="text-muted-foreground"> · {c.phone}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {viewingDiscount.promotionName && (
+              <div>
+                <p className="text-xs text-muted-foreground">Promotion</p>
+                <p className="font-medium">{viewingDiscount.promotionName}</p>
+              </div>
+            )}
+            {viewingDiscount.campaignName && (
+              <div>
+                <p className="text-xs text-muted-foreground">Campaign</p>
+                <p className="font-medium">{viewingDiscount.campaignName}</p>
+              </div>
+            )}
+            {(viewingDiscount.startAt || viewingDiscount.endAt) && (
+              <div className="text-xs text-muted-foreground space-y-1">
+                {viewingDiscount.startAt && <p>Starts: {formatScheduleDate(viewingDiscount.startAt)}</p>}
+                {viewingDiscount.endAt && <p>Ends: {formatScheduleDate(viewingDiscount.endAt)}</p>}
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  </>
   )
 }
