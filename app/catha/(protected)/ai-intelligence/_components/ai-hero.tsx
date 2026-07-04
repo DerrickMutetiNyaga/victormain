@@ -1,7 +1,7 @@
 'use client'
 
-import { Brain, RefreshCw, Shield, TrendingUp, Database, Activity, Users, AlertTriangle, Lightbulb, CircleAlert, BarChart3 } from 'lucide-react'
-import { ScoreGauge, StatCard } from './ai-shared'
+import { Brain, RefreshCw, Shield, Database, Users, AlertTriangle, Lightbulb, CircleAlert, BarChart3 } from 'lucide-react'
+import { ScoreGauge, ScoreBar } from './ai-shared'
 import { cn } from '@/lib/utils'
 
 interface AIHeroProps {
@@ -17,71 +17,87 @@ export function AIHero({ healthScore, overview, lastUpdated, onRefresh, loading 
   const timeStr = updatedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div className="space-y-6">
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 md:p-8 shadow-xl">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-500/10 via-transparent to-transparent" />
-        <div className="absolute top-4 right-4 opacity-[0.03]">
-          <Brain className="h-48 w-48 text-white" />
+    <div className="space-y-4">
+      {/* Header + Health Score */}
+      <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 px-5 md:px-6 py-5 border-b border-border/50">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+              <Brain className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">AI Intelligence</h1>
+              <p className="text-[13px] text-muted-foreground">Business monitoring, risk detection, and growth recommendations</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-[12px] text-muted-foreground">Updated {timeStr}</span>
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 transition-colors',
+                loading && 'opacity-60 cursor-not-allowed'
+              )}
+            >
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              Refresh Analysis
+            </button>
+          </div>
         </div>
-        <div className="relative z-10">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 ring-1 ring-indigo-400/30">
-                  <Brain className="h-5 w-5 text-indigo-400" />
-                </div>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">AI INTELLIGENCE</h1>
-                  <p className="text-sm text-slate-400">Intelligent business monitoring, risk detection, and growth recommendations.</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 mt-4 flex items-center gap-2">
-                <Shield className="h-3 w-3" />
-                AI insights are advisory and based on current operational data. Super admin access only.
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-3 shrink-0">
-              <button
-                onClick={onRefresh}
-                disabled={loading}
-                className={cn(
-                  'inline-flex items-center gap-2 rounded-xl bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-300 ring-1 ring-indigo-400/30 hover:bg-indigo-500/30 transition-all',
-                  loading && 'opacity-60 cursor-not-allowed'
-                )}
-              >
-                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-                Refresh Analysis
-              </button>
-              <span className="text-[11px] text-slate-500">Last updated: {timeStr}</span>
-            </div>
-          </div>
 
-          {/* Health Score Row */}
-          <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 md:gap-6">
-            <ScoreGauge score={healthScore.overall} label="Overall Health" size="lg" />
-            <ScoreGauge score={healthScore.sales} label="Sales" size="sm" />
-            <ScoreGauge score={healthScore.inventory} label="Inventory" size="sm" />
-            <ScoreGauge score={healthScore.dataQuality} label="Data Quality" size="sm" />
-            <ScoreGauge score={healthScore.operations} label="Operations" size="sm" />
-            <ScoreGauge score={healthScore.clientRetention} label="Retention" size="sm" />
+        <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 lg:gap-10 items-center px-5 md:px-6 py-6">
+          <div className="flex justify-center lg:justify-start">
+            <ScoreGauge score={healthScore.overall} label="Overall Business Health" size="lg" />
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+            <ScoreBar score={healthScore.sales} label="Sales" />
+            <ScoreBar score={healthScore.inventory} label="Inventory" />
+            <ScoreBar score={healthScore.operations} label="Operations" />
+            <ScoreBar score={healthScore.clientRetention} label="Customer Retention" />
+            <ScoreBar score={healthScore.dataQuality} label="Data Quality" />
+          </div>
+        </div>
+
+        <div className="px-5 md:px-6 py-3 border-t border-border/40 bg-muted/10">
+          <p className="text-[12px] text-muted-foreground flex items-center gap-1.5">
+            <Shield className="h-3.5 w-3.5 shrink-0" />
+            AI insights are advisory only, based on current operational data. Super admin access.
+          </p>
         </div>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* Key Numbers */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <OverviewCard
+          icon={BarChart3}
+          iconColor="text-primary"
+          iconBg="bg-primary/10"
+          title="Today's Revenue"
+          value={`KES ${overview.todaySales.toLocaleString()}`}
+          subtitle={`${overview.todayOrders} orders`}
+        />
         <OverviewCard
           icon={CircleAlert}
-          iconColor="text-red-500"
+          iconColor="text-red-600"
           iconBg="bg-red-100 dark:bg-red-950"
           title="Risks Detected"
           value={overview.risksCount}
           subtitle="Critical & high severity"
+          highlight={overview.risksCount > 0 ? 'red' : undefined}
+        />
+        <OverviewCard
+          icon={AlertTriangle}
+          iconColor={overview.stockPressure === 'high' ? 'text-red-600' : overview.stockPressure === 'medium' ? 'text-amber-600' : 'text-emerald-600'}
+          iconBg={overview.stockPressure === 'high' ? 'bg-red-100 dark:bg-red-950' : overview.stockPressure === 'medium' ? 'bg-amber-100 dark:bg-amber-950' : 'bg-emerald-100 dark:bg-emerald-950'}
+          title="Stock Pressure"
+          value={overview.stockPressure.charAt(0).toUpperCase() + overview.stockPressure.slice(1)}
+          subtitle="Restock urgency"
+          highlight={overview.stockPressure === 'high' ? 'red' : overview.stockPressure === 'medium' ? 'amber' : undefined}
         />
         <OverviewCard
           icon={Lightbulb}
-          iconColor="text-emerald-500"
+          iconColor="text-emerald-600"
           iconBg="bg-emerald-100 dark:bg-emerald-950"
           title="Profit Opportunities"
           value={overview.profitOpportunities}
@@ -89,54 +105,46 @@ export function AIHero({ healthScore, overview, lastUpdated, onRefresh, loading 
         />
         <OverviewCard
           icon={Database}
-          iconColor="text-violet-500"
+          iconColor="text-violet-600"
           iconBg="bg-violet-100 dark:bg-violet-950"
           title="Data Issues"
           value={overview.dataIssues}
           subtitle="Missing or incomplete"
         />
         <OverviewCard
-          icon={AlertTriangle}
-          iconColor={overview.stockPressure === 'high' ? 'text-red-500' : overview.stockPressure === 'medium' ? 'text-amber-500' : 'text-emerald-500'}
-          iconBg={overview.stockPressure === 'high' ? 'bg-red-100 dark:bg-red-950' : overview.stockPressure === 'medium' ? 'bg-amber-100 dark:bg-amber-950' : 'bg-emerald-100 dark:bg-emerald-950'}
-          title="Stock Pressure"
-          value={overview.stockPressure.charAt(0).toUpperCase() + overview.stockPressure.slice(1)}
-          subtitle="Restock urgency"
-        />
-        <OverviewCard
           icon={Users}
-          iconColor="text-sky-500"
+          iconColor="text-sky-600"
           iconBg="bg-sky-100 dark:bg-sky-950"
           title="Repeat Customers"
           value={overview.repeatCustomerCount}
           subtitle={`of ${overview.totalClients} total`}
-        />
-        <OverviewCard
-          icon={BarChart3}
-          iconColor="text-indigo-500"
-          iconBg="bg-indigo-100 dark:bg-indigo-950"
-          title="Today's Revenue"
-          value={`KES ${overview.todaySales.toLocaleString()}`}
-          subtitle={`${overview.todayOrders} orders`}
         />
       </div>
     </div>
   )
 }
 
-function OverviewCard({ icon: Icon, iconColor, iconBg, title, value, subtitle }: {
+function OverviewCard({ icon: Icon, iconColor, iconBg, title, value, subtitle, highlight }: {
   icon: React.ComponentType<{ className?: string }>
   iconColor: string; iconBg: string
   title: string; value: string | number; subtitle: string
+  highlight?: 'red' | 'amber'
 }) {
   return (
-    <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg mb-3', iconBg)}>
-        <Icon className={cn('h-4 w-4', iconColor)} />
+    <div className={cn(
+      'rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md',
+      highlight === 'red' ? 'border-red-300/70 dark:border-red-800' :
+      highlight === 'amber' ? 'border-amber-300/70 dark:border-amber-800' :
+      'border-border/50'
+    )}>
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg shrink-0', iconBg)}>
+          <Icon className={cn('h-4 w-4', iconColor)} />
+        </div>
+        <p className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight">{title}</p>
       </div>
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{title}</p>
-      <p className="mt-0.5 text-xl font-bold text-foreground">{value}</p>
-      <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
+      <p className="text-xl font-bold text-foreground tabular-nums leading-tight">{value}</p>
+      <p className="text-[12px] text-muted-foreground mt-0.5">{subtitle}</p>
     </div>
   )
 }

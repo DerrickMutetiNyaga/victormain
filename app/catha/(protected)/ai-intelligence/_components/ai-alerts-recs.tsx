@@ -5,22 +5,43 @@ import { useState } from 'react'
 import { AISection, SeverityBadge, ImpactBadge, TypeBadge, ActionLink, EmptyState } from './ai-shared'
 import { cn } from '@/lib/utils'
 
+const severityAccent: Record<string, string> = {
+  critical: 'border-l-red-500',
+  high: 'border-l-orange-400',
+  medium: 'border-l-amber-400',
+  low: 'border-l-sky-400',
+}
+
 // ── Priority Actions ──
 export function AIPriorityActions({ actions }: { actions: any[] }) {
   return (
-    <AISection id="priority-actions" title="TODAY'S PRIORITY ACTIONS" icon={Zap}>
+    <AISection
+      id="priority-actions"
+      title="Today's Priority Actions"
+      description="Do these first — ranked by business impact."
+      icon={Zap}
+    >
       {actions.length === 0 ? (
         <EmptyState message="No urgent actions today. Everything looks good." />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {actions.map((action: any, i: number) => (
-            <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-4 hover:bg-muted/20 transition-colors">
+            <div
+              key={i}
+              className={cn(
+                'flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-border/50 border-l-4 bg-card p-4 hover:shadow-sm transition-shadow',
+                severityAccent[action.severity] || 'border-l-border'
+              )}
+            >
+              <span className="hidden sm:flex h-7 w-7 items-center justify-center rounded-full bg-muted/40 text-[13px] font-bold text-foreground/70 shrink-0 tabular-nums">
+                {i + 1}
+              </span>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <SeverityBadge severity={action.severity} />
-                  <h3 className="text-sm font-semibold text-foreground truncate">{action.title}</h3>
+                  <h3 className="text-[14px] font-semibold text-foreground">{action.title}</h3>
                 </div>
-                <p className="text-xs text-muted-foreground">{action.reason}</p>
+                <p className="text-[13px] text-muted-foreground leading-snug">{action.reason}</p>
               </div>
               <ActionLink href={action.actionLink} label={action.actionLabel} />
             </div>
@@ -34,12 +55,13 @@ export function AIPriorityActions({ actions }: { actions: any[] }) {
 // ── Alerts Section ──
 export function AIAlerts({ alerts }: { alerts: any[] }) {
   const [showAll, setShowAll] = useState(false)
-  const categories = ['data', 'stock', 'operations', 'supplier'] as const
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const categories = ['stock', 'operations', 'supplier', 'data'] as const
   const categoryLabels: Record<string, string> = {
     data: 'Missing Data', stock: 'Stock Risks', operations: 'Operations', supplier: 'Supplier & Delivery',
   }
-  const categoryIcons: Record<string, string> = {
-    data: 'text-violet-500', stock: 'text-orange-500', operations: 'text-slate-500', supplier: 'text-sky-500',
+  const categoryDots: Record<string, string> = {
+    data: 'bg-violet-500', stock: 'bg-orange-500', operations: 'bg-slate-500', supplier: 'bg-sky-500',
   }
 
   const grouped = categories.reduce((acc, cat) => {
@@ -47,22 +69,48 @@ export function AIAlerts({ alerts }: { alerts: any[] }) {
     return acc
   }, {} as Record<string, any[]>)
 
-  const displayAlerts = showAll ? alerts : alerts.slice(0, 6)
+  const filtered = activeCategory ? alerts.filter(a => a.category === activeCategory) : alerts
+  const displayAlerts = showAll ? filtered : filtered.slice(0, 6)
 
   return (
-    <AISection id="ai-alerts" title="AI ALERTS" icon={AlertTriangle}>
+    <AISection
+      id="ai-alerts"
+      title="AI Alerts"
+      description="Detected risks, sorted by severity. Click a category to filter."
+      icon={AlertTriangle}
+    >
       {alerts.length === 0 ? (
         <EmptyState message="No alerts detected. Systems are running smoothly." />
       ) : (
         <>
-          {/* Category Tabs */}
+          {/* Category filters */}
           <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setActiveCategory(null)}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                activeCategory === null
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border/60 bg-muted/20 text-foreground hover:bg-muted/40'
+              )}
+            >
+              All ({alerts.length})
+            </button>
             {categories.map(cat => (
               grouped[cat].length > 0 && (
-                <span key={cat} className={cn('inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-3 py-1 text-xs font-medium')}>
-                  <span className={cn('h-2 w-2 rounded-full', categoryIcons[cat].replace('text-', 'bg-'))} />
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                    activeCategory === cat
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border/60 bg-muted/20 text-foreground hover:bg-muted/40'
+                  )}
+                >
+                  <span className={cn('h-2 w-2 rounded-full', activeCategory === cat ? 'bg-primary-foreground' : categoryDots[cat])} />
                   {categoryLabels[cat]} ({grouped[cat].length})
-                </span>
+                </button>
               )
             ))}
           </div>
@@ -73,13 +121,13 @@ export function AIAlerts({ alerts }: { alerts: any[] }) {
             ))}
           </div>
 
-          {alerts.length > 6 && (
+          {filtered.length > 6 && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="mt-4 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[13px] font-medium text-foreground hover:bg-muted/40 transition-colors"
             >
-              {showAll ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              {showAll ? 'Show fewer' : `Show all ${alerts.length} alerts`}
+              {showAll ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {showAll ? 'Show fewer' : `Show all ${filtered.length} alerts`}
             </button>
           )}
         </>
@@ -92,24 +140,30 @@ function AlertCard({ alert }: { alert: any }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className="rounded-xl border border-border/40 bg-card p-4 hover:shadow-sm transition-shadow">
+    <div className={cn(
+      'rounded-xl border border-border/50 border-l-4 bg-card p-4 hover:shadow-sm transition-shadow',
+      severityAccent[alert.severity] || 'border-l-border'
+    )}>
       <div className="flex flex-col sm:flex-row sm:items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <SeverityBadge severity={alert.severity} />
-            <h3 className="text-sm font-semibold text-foreground">{alert.title}</h3>
+            <h3 className="text-[14px] font-semibold text-foreground">{alert.title}</h3>
           </div>
-          <p className="text-xs text-muted-foreground">{alert.explanation}</p>
+          <p className="text-[13px] text-muted-foreground leading-snug">{alert.explanation}</p>
           {expanded && (
-            <div className="mt-2 rounded-lg bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground"><strong className="text-foreground">Why it matters:</strong> {alert.explanation}</p>
-              <p className="text-xs text-muted-foreground mt-1"><strong className="text-foreground">Recommended:</strong> {alert.action}</p>
+            <div className="mt-2.5 rounded-lg bg-muted/20 border border-border/40 p-3 space-y-1">
+              <p className="text-[13px] text-muted-foreground"><strong className="text-foreground font-semibold">Why it matters:</strong> {alert.explanation}</p>
+              <p className="text-[13px] text-muted-foreground"><strong className="text-foreground font-semibold">Recommended:</strong> {alert.action}</p>
             </div>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setExpanded(!expanded)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            {expanded ? 'Less' : 'More'}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="rounded-lg border border-border/50 px-3 py-2 text-[12.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            {expanded ? 'Less' : 'Details'}
           </button>
           <ActionLink href={alert.actionLink} label="Review" />
         </div>
@@ -131,25 +185,30 @@ export function AIRecommendations({ recommendations }: { recommendations: any[] 
   }, {} as Record<string, any[]>)
 
   return (
-    <AISection id="ai-recommendations" title="AI RECOMMENDATIONS" icon={Lightbulb}>
+    <AISection
+      id="ai-recommendations"
+      title="AI Recommendations"
+      description="Suggested moves to grow revenue, protect margin, and cut waste."
+      icon={Lightbulb}
+    >
       {recommendations.length === 0 ? (
         <EmptyState message="No new recommendations at this time." />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {types.map(type => (
             grouped[type].length > 0 && (
               <div key={type}>
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-2.5">
                   <TypeBadge type={type} />
-                  <h3 className="text-sm font-semibold text-foreground">{typeLabels[type]}</h3>
-                  <span className="text-xs text-muted-foreground">({grouped[type].length})</span>
+                  <h3 className="text-[14px] font-semibold text-foreground">{typeLabels[type]}</h3>
+                  <span className="text-[12.5px] text-muted-foreground">({grouped[type].length})</span>
                 </div>
                 <div className="space-y-2">
                   {grouped[type].map((rec: any, i: number) => (
-                    <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-border/40 bg-muted/10 p-4">
+                    <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-border/50 bg-card p-4 hover:shadow-sm transition-shadow">
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-foreground">{rec.title}</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">{rec.explanation}</p>
+                        <h4 className="text-[14px] font-semibold text-foreground">{rec.title}</h4>
+                        <p className="text-[13px] text-muted-foreground leading-snug mt-0.5">{rec.explanation}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <ImpactBadge impact={rec.impact} />

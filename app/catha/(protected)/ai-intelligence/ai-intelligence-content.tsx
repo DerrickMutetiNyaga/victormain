@@ -7,7 +7,7 @@ import { AIPriorityActions, AIAlerts, AIRecommendations } from './_components/ai
 import {
   ProfitIntelligence, InventoryIntelligence, ClientIntelligence,
   OperationsIntelligence, PeakHoursIntelligence, SupplierIntelligence,
-  OrderSourceIntelligence,
+  OrderSourceIntelligence, ExpenseIntelligence, TodayOpsIntelligence,
 } from './_components/ai-intelligence-sections'
 import { AskAIPanel, AIQuickActions } from './_components/ai-ask-panel'
 import { CommerceIntelligenceSection } from './_components/commerce-intelligence-section'
@@ -27,6 +27,44 @@ interface IntelligenceData {
   peakHoursIntelligence: any
   supplierIntelligence: any
   orderSourceIntelligence: any
+  expenseIntelligence?: any
+  discountIntelligence?: any
+  paymentsSmsIntelligence?: any
+}
+
+const SECTION_NAV = [
+  { id: 'priority-actions', label: 'Priorities' },
+  { id: 'ai-alerts', label: 'Alerts' },
+  { id: 'ai-recommendations', label: 'Recommendations' },
+  { id: 'inventory-intelligence', label: 'Inventory' },
+  { id: 'profit-intelligence', label: 'Profit' },
+  { id: 'today-ops', label: 'Discounts & Payments' },
+  { id: 'expense-intelligence', label: 'Expenses' },
+  { id: 'client-intelligence', label: 'Customers' },
+  { id: 'operations-intelligence', label: 'Operations' },
+  { id: 'peak-hours', label: 'Peak Hours' },
+  { id: 'supplier-intelligence', label: 'Suppliers' },
+  { id: 'ai-action-lab', label: 'Action Lab' },
+  { id: 'catha-commerce-intelligence', label: 'Website' },
+  { id: 'ask-ai', label: 'Ask AI' },
+]
+
+function SectionNav() {
+  return (
+    <nav className="sticky top-2 z-20 -mx-1 px-1">
+      <div className="rounded-2xl border border-border/60 bg-card/95 backdrop-blur shadow-sm px-3 py-2 flex gap-1.5 overflow-x-auto">
+        {SECTION_NAV.map((s) => (
+          <a
+            key={s.id}
+            href={`#${s.id}`}
+            className="whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            {s.label}
+          </a>
+        ))}
+      </div>
+    </nav>
+  )
 }
 
 export default function AIIntelligenceContent() {
@@ -93,7 +131,7 @@ export default function AIIntelligenceContent() {
         <div className="rounded-lg bg-destructive/10 text-destructive px-4 py-2 text-sm">{error}</div>
       )}
 
-      {/* 1. Hero + Health Score + Overview */}
+      {/* 1. Hero: health score + key numbers */}
       <AIHero
         healthScore={data.healthScore}
         overview={data.overview}
@@ -102,50 +140,60 @@ export default function AIIntelligenceContent() {
         loading={loading}
       />
 
-      {/* 2. Priority Actions */}
+      {/* Jump navigation */}
+      <SectionNav />
+
+      {/* 2. What to do right now */}
       <AIPriorityActions actions={data.priorityActions} />
 
-      {/* 3. AI Alerts */}
+      {/* 3. Detected risks */}
       <AIAlerts alerts={data.alerts} />
 
-      {/* 4. AI Recommendations */}
+      {/* 4. Growth & savings opportunities */}
       <AIRecommendations recommendations={data.recommendations} />
 
-      {/* 5-6. Profit + Inventory (side by side on large screens) */}
+      {/* 5. Core money & stock: Inventory + Profit */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <ProfitIntelligence data={data.profitIntelligence} />
         <InventoryIntelligence data={data.inventoryIntelligence} />
+        <ProfitIntelligence data={data.profitIntelligence} />
       </div>
 
-      {/* 7-8. Client + Operations */}
+      {/* 6. Discounts, M-Pesa verifications, SMS health (new features) */}
+      <TodayOpsIntelligence discounts={data.discountIntelligence} paymentsSms={data.paymentsSmsIntelligence} />
+
+      {/* 7. Expenses + Customers */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <ExpenseIntelligence data={data.expenseIntelligence} />
         <ClientIntelligence data={data.clientIntelligence} />
-        <OperationsIntelligence data={data.operationsIntelligence} />
       </div>
 
-      {/* 9. Peak Hours (full width for charts) */}
+      {/* 8. Operations quality */}
+      <OperationsIntelligence data={data.operationsIntelligence} />
+
+      {/* 9. Peak hours (full width for charts) */}
       <PeakHoursIntelligence data={data.peakHoursIntelligence} />
 
-      {/* 10-11. Supplier + Order Source */}
+      {/* 10. Supply chain + channels */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <SupplierIntelligence data={data.supplierIntelligence} />
         <OrderSourceIntelligence data={data.orderSourceIntelligence} />
       </div>
 
+      {/* 11. Planning tools */}
       <AIActionLab data={data} />
 
-      {/* 12. Catha AI Commerce Intelligence */}
+      {/* 12. Website & storefront analytics */}
       <CommerceIntelligenceSection />
 
       {/* 13. Ask AI */}
       <AskAIPanel intelligenceData={data} />
 
-      {/* 14. Quick Actions */}
+      {/* 14. Quick links */}
       <AIQuickActions />
 
       {/* Footer Advisory */}
-      <div className="text-center py-4 border-t border-border/30">
-        <p className="text-[11px] text-muted-foreground">
+      <div className="text-center py-4 border-t border-border/40">
+        <p className="text-[12px] text-muted-foreground">
           AI Intelligence is advisory only. Insights are based on current operational data and do not make automatic changes to your system.
         </p>
       </div>
@@ -391,10 +439,15 @@ function AIActionLab({ data }: { data: IntelligenceData }) {
   }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-border/50 bg-card p-4 md:p-6 shadow-sm">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-primary" />
-        <h2 className="text-sm font-semibold text-foreground">AI ACTION LAB</h2>
+    <section id="ai-action-lab" className="space-y-4 rounded-2xl border border-border/60 bg-card shadow-sm p-4 md:p-6 scroll-mt-28">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+          <Sparkles className="h-[18px] w-[18px] text-primary" />
+        </div>
+        <div>
+          <h2 className="text-[15px] font-bold text-foreground tracking-tight leading-tight">AI Action Lab</h2>
+          <p className="text-[12.5px] text-muted-foreground leading-snug mt-0.5">Plan the day: missions, simulations, briefings, and weekly goals.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -403,8 +456,8 @@ function AIActionLab({ data }: { data: IntelligenceData }) {
             <Target className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">Mission of the Day</h3>
           </div>
-          <p className="text-sm text-foreground">{mission}</p>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-[14px] font-medium text-foreground leading-snug">{mission}</p>
+          <p className="text-[12.5px] text-muted-foreground mt-2">
             Do this first to maximize today's business impact.
           </p>
         </div>
@@ -416,14 +469,14 @@ function AIActionLab({ data }: { data: IntelligenceData }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {opportunities.map((item) => (
-              <div key={item.title} className="rounded-lg border border-border/30 bg-background/60 p-3">
+              <div key={item.title} className="rounded-lg border border-border/40 bg-background/60 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-foreground">{item.title}</p>
-                  <span className="text-[10px] rounded-full border border-border/40 px-2 py-0.5 text-muted-foreground">
+                  <p className="text-[13px] font-semibold text-foreground">{item.title}</p>
+                  <span className="text-[11px] font-medium rounded-full border border-border/50 px-2 py-0.5 text-muted-foreground shrink-0">
                     {item.impact} impact
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{item.detail}</p>
+                <p className="text-[12.5px] text-muted-foreground leading-snug mt-1">{item.detail}</p>
               </div>
             ))}
           </div>
@@ -551,11 +604,11 @@ function AIActionLab({ data }: { data: IntelligenceData }) {
             <h3 className="text-sm font-semibold text-foreground">AI Shift Briefing for Cashiers</h3>
           </div>
           {shiftLoading ? (
-            <p className="text-xs text-muted-foreground">Preparing shift notes...</p>
+            <p className="text-[13px] text-muted-foreground">Preparing shift notes...</p>
           ) : (
             <ul className="space-y-1.5">
               {shiftBriefing.map((line) => (
-                <li key={line} className="text-xs text-foreground flex gap-2">
+                <li key={line} className="text-[13px] text-foreground flex gap-2 leading-snug">
                   <span className="text-primary">•</span>
                   <span>{line}</span>
                 </li>

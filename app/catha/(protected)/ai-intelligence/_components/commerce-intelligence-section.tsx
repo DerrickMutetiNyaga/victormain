@@ -98,7 +98,12 @@ export function CommerceIntelligenceSection() {
   }, [data])
 
   return (
-    <AISection id="catha-commerce-intelligence" title="CATHA AI COMMERCE INTELLIGENCE" icon={Sparkles}>
+    <AISection
+      id="catha-commerce-intelligence"
+      title="Website & Storefront Analytics"
+      description="Visitor traffic, product interest, search behavior, and online conversion."
+      icon={Sparkles}
+    >
       <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">

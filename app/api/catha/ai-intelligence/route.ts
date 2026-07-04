@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
 import { requireSuperAdminApi } from '@/lib/catha-auth'
+import {
+  loadPosDiscountContext,
+  isDiscountEffectivelyActive,
+  sumPosDiscountSavingsFromOrders,
+} from '@/lib/pos-product-discounts'
+import { countPendingManualMpesaVerifications } from '@/lib/catha-manual-mpesa-verification'
+import { getShiftSmsQueueMetrics } from '@/lib/models/shift-sms-queue'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -260,6 +267,82 @@ export async function GET() {
       orderSourceMap[source].revenue += o.total || 0
     }
 
+    // ── EXPENSE ANALYSIS (30 days) ──
+    const totalExpenses30d = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0)
+    const expenseCategoryMap: Record<string, number> = {}
+    for (const e of expenses) {
+      const cat = e.category || 'other'
+      expenseCategoryMap[cat] = (expenseCategoryMap[cat] || 0) + (Number(e.amount) || 0)
+    }
+    const topExpenseCategories = Object.entries(expenseCategoryMap)
+      .map(([category, amount]) => ({ category, amount: Math.round(amount) }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6)
+    const monthSales = completedOrders.reduce((s: number, o: any) => s + (o.total || 0), 0)
+    const expenseToRevenueRatio = monthSales > 0 ? Math.round((totalExpenses30d / monthSales) * 100) : null
+
+    // ── POS DISCOUNTS ANALYSIS (added today) ──
+    let discountIntelligence = {
+      activeProductRules: 0,
+      activeCategoryRules: 0,
+      totalActiveRules: 0,
+      savingsToday: 0,
+      savings30d: 0,
+      discountedOrders30d: 0,
+    }
+    try {
+      const discountCtx = await loadPosDiscountContext(db, now)
+      let activeProductRules = 0
+      let activeCategoryRules = 0
+      for (const rule of discountCtx.productDiscounts.values()) {
+        if (isDiscountEffectivelyActive(rule, now)) activeProductRules++
+      }
+      for (const rule of discountCtx.categoryDiscounts.values()) {
+        if (isDiscountEffectivelyActive(rule, now)) activeCategoryRules++
+      }
+      const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+      const discountedOrders30d = completedOrders.filter((o: any) =>
+        (o.items || []).some((it: any) => Number(it.posDiscountAmount ?? 0) > 0)
+      ).length
+      discountIntelligence = {
+        activeProductRules,
+        activeCategoryRules,
+        totalActiveRules: activeProductRules + activeCategoryRules,
+        savingsToday: sumPosDiscountSavingsFromOrders(completedOrders as any, todayStart, tomorrowStart),
+        savings30d: sumPosDiscountSavingsFromOrders(completedOrders as any, thirtyDaysAgo, tomorrowStart),
+        discountedOrders30d,
+      }
+    } catch (e) {
+      console.error('[AI Intelligence API] Discount analysis failed:', e)
+    }
+
+    // ── PAYMENTS & SMS HEALTH (added today) ──
+    let pendingMpesaVerifications = 0
+    try {
+      pendingMpesaVerifications = await countPendingManualMpesaVerifications(db)
+    } catch (e) {
+      console.error('[AI Intelligence API] Manual M-Pesa count failed:', e)
+    }
+
+    let smsHealth: {
+      failed: number; permanentlyFailed: number; pending: number
+      delivered: number; sent: number; successRate: number; unresolvedCriticalAlerts: number
+    } = { failed: 0, permanentlyFailed: 0, pending: 0, delivered: 0, sent: 0, successRate: 100, unresolvedCriticalAlerts: 0 }
+    try {
+      const m = await getShiftSmsQueueMetrics()
+      smsHealth = {
+        failed: m.failed,
+        permanentlyFailed: m.permanentlyFailed,
+        pending: m.pending,
+        delivered: m.delivered,
+        sent: m.sent,
+        successRate: m.successRate,
+        unresolvedCriticalAlerts: m.unresolvedCriticalAlerts,
+      }
+    } catch (e) {
+      console.error('[AI Intelligence API] SMS metrics failed:', e)
+    }
+
     // ── BUILD ALERTS ──
     const alerts: any[] = []
 
@@ -277,6 +360,11 @@ export async function GET() {
     if (cancelRate > 5) alerts.push({ id: 'high-cancel-rate', severity: cancelRate > 15 ? 'critical' : 'high', category: 'operations', title: `${cancelRate}% order cancellation rate`, explanation: 'High cancellation rates may indicate operational issues or staff behavior concerns.', action: 'Review cancelled orders.', actionLink: '/catha/orders?filter=cancelled', count: cancelledOrders.length })
     if (manualAdjustments.length > 10) alerts.push({ id: 'manual-adjustments', severity: 'medium', category: 'operations', title: `${manualAdjustments.length} manual stock adjustments this month`, explanation: 'Frequent manual adjustments may indicate inventory process gaps.', action: 'Review stock movements.', actionLink: '/catha/stock-movement', count: manualAdjustments.length })
 
+    if (pendingMpesaVerifications > 0) alerts.push({ id: 'pending-mpesa-verifications', severity: 'high', category: 'operations', title: `${pendingMpesaVerifications} M-Pesa payment${pendingMpesaVerifications === 1 ? '' : 's'} awaiting manual verification`, explanation: 'Unverified manual M-Pesa payments delay order completion and reconciliation.', action: 'Review and approve pending verifications.', actionLink: '/catha/mpesa-transactions', count: pendingMpesaVerifications })
+    if (smsHealth.permanentlyFailed > 0) alerts.push({ id: 'sms-permanent-failures', severity: 'critical', category: 'operations', title: `${smsHealth.permanentlyFailed} SMS message${smsHealth.permanentlyFailed === 1 ? '' : 's'} permanently failed`, explanation: 'Staff or customers did not receive important SMS notifications after all retries.', action: 'Check SMS logs and phone numbers in Settings.', actionLink: '/catha/settings', count: smsHealth.permanentlyFailed })
+    else if (smsHealth.failed > 0) alerts.push({ id: 'sms-failures', severity: 'medium', category: 'operations', title: `${smsHealth.failed} SMS message${smsHealth.failed === 1 ? '' : 's'} failing and retrying`, explanation: 'Some SMS notifications are failing. They will retry automatically.', action: 'Monitor SMS delivery in Settings.', actionLink: '/catha/settings', count: smsHealth.failed })
+    if (expenseToRevenueRatio !== null && expenseToRevenueRatio > 50) alerts.push({ id: 'high-expense-ratio', severity: expenseToRevenueRatio > 80 ? 'high' : 'medium', category: 'operations', title: `Expenses are ${expenseToRevenueRatio}% of 30-day revenue`, explanation: 'Operating expenses are consuming a large share of revenue.', action: 'Review expenses by category.', actionLink: '/catha/expenses', count: Math.round(totalExpenses30d) })
+
     if (supplierLowStock.length > 0) alerts.push({ id: 'supplier-low-stock', severity: 'high', category: 'supplier', title: `${supplierLowStock.length} supplier-linked items at low stock`, explanation: 'Items linked to suppliers need reordering.', action: 'Contact suppliers for restocking.', actionLink: '/catha/inventory?filter=supplier-low-stock', count: supplierLowStock.length })
     if (missingSupplier.length > 0) alerts.push({ id: 'missing-supplier', severity: 'low', category: 'data', title: `${missingSupplier.length} products without supplier linkage`, explanation: 'Linking products to suppliers helps with restocking workflows.', action: 'Assign suppliers to products.', actionLink: '/catha/inventory?filter=missing-supplier', count: missingSupplier.length })
 
@@ -288,6 +376,8 @@ export async function GET() {
     if (deadStock.length > 3) priorityActions.push({ severity: 'medium', title: `Reduce stock for ${deadStock.length} slow-moving products`, reason: 'Dead stock ties up capital with no return.', actionLabel: 'Open Inventory', actionLink: '/catha/inventory?filter=dead-stock' })
     if (inactiveClients.length > 0) priorityActions.push({ severity: 'medium', title: `Re-engage ${inactiveClients.length} inactive customers`, reason: 'These repeat customers have not ordered recently.', actionLabel: 'Open Clients', actionLink: '/catha/clients?segment=inactive-repeat' })
     if (missingPrice.length > 0) priorityActions.push({ severity: 'critical', title: `Set selling prices for ${missingPrice.length} products`, reason: 'Products without prices cannot generate proper revenue.', actionLabel: 'Review Products', actionLink: '/catha/inventory?filter=missing-price' })
+    if (pendingMpesaVerifications > 0) priorityActions.push({ severity: 'high', title: `Approve ${pendingMpesaVerifications} pending M-Pesa verification${pendingMpesaVerifications === 1 ? '' : 's'}`, reason: 'Manual M-Pesa payments are waiting for admin approval.', actionLabel: 'Open M-Pesa', actionLink: '/catha/mpesa-transactions' })
+    if (smsHealth.permanentlyFailed > 0) priorityActions.push({ severity: 'high', title: `Fix ${smsHealth.permanentlyFailed} permanently failed SMS`, reason: 'Notifications never reached staff or customers. Check phone numbers.', actionLabel: 'Open Settings', actionLink: '/catha/settings' })
 
     // ── BUILD RECOMMENDATIONS ──
     const recommendations: any[] = []
@@ -304,6 +394,7 @@ export async function GET() {
     if (missingCost.length > 0) recommendations.push({ type: 'fix', title: `Add buying prices to ${missingCost.length} products`, explanation: `Profit visibility is limited: ${missingCost.length} of ${products.length} products lack cost data.`, impact: 'data', actionLink: '/catha/inventory?filter=missing-cost' })
     if (cancelRate > 5) recommendations.push({ type: 'monitor', title: 'Monitor order cancellation patterns', explanation: `Current ${cancelRate}% rate is above healthy threshold.`, impact: 'operations', actionLink: '/catha/orders?filter=cancelled' })
     if (inactiveClients.length > 0) recommendations.push({ type: 'monitor', title: `Watch ${inactiveClients.length} repeat customers becoming inactive`, explanation: 'Customers who previously ordered multiple times have stopped.', impact: 'retention', actionLink: '/catha/clients?segment=inactive-repeat' })
+    if (discountIntelligence.totalActiveRules > 0) recommendations.push({ type: 'monitor', title: `Track ${discountIntelligence.totalActiveRules} active POS discount rule${discountIntelligence.totalActiveRules === 1 ? '' : 's'}`, explanation: `KES ${Math.round(discountIntelligence.savings30d).toLocaleString()} given as discounts in 30 days across ${discountIntelligence.discountedOrders30d} orders. Confirm they are driving volume.`, impact: 'profit', actionLink: '/catha/inventory' })
 
     // ── OVERALL HEALTH SCORE ──
     const overallHealth = Math.round(
@@ -416,6 +507,22 @@ export async function GET() {
         sources: Object.entries(orderSourceMap).map(([source, data]) => ({
           source, count: data.count, revenue: Math.round(data.revenue),
         })).sort((a, b) => b.revenue - a.revenue),
+      },
+      expenseIntelligence: {
+        total30d: Math.round(totalExpenses30d),
+        expenseCount30d: expenses.length,
+        topCategories: topExpenseCategories,
+        expenseToRevenueRatio,
+        revenue30d: Math.round(monthSales),
+      },
+      discountIntelligence: {
+        ...discountIntelligence,
+        savingsToday: Math.round(discountIntelligence.savingsToday),
+        savings30d: Math.round(discountIntelligence.savings30d),
+      },
+      paymentsSmsIntelligence: {
+        pendingMpesaVerifications,
+        sms: smsHealth,
       },
     })
   } catch (error: any) {

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   Brain, Send, Sparkles, ExternalLink, Package, ShoppingCart, BarChart3,
-  Users, Truck, Wallet2, Settings, ArrowLeftRight, Receipt, Clock,
+  Users, Truck, Wallet2, Settings, ArrowLeftRight, Receipt, Smartphone,
 } from 'lucide-react'
 import { AISection } from './ai-shared'
 import Link from 'next/link'
@@ -12,13 +12,13 @@ import { cn } from '@/lib/utils'
 const SUGGESTED_PROMPTS = [
   { text: 'What should I restock today?', key: 'restock' },
   { text: 'Which products make the most money?', key: 'top-revenue' },
-  { text: 'Which items are missing buying price?', key: 'missing-cost' },
+  { text: 'How are my POS discounts performing?', key: 'discounts' },
+  { text: 'How much am I spending on expenses?', key: 'expenses' },
   { text: 'What are my busiest hours?', key: 'peak-hours' },
   { text: 'Which products should I reduce ordering for?', key: 'reduce-order' },
   { text: 'Which customers are slowing down?', key: 'inactive-clients' },
   { text: 'What should I promote this weekend?', key: 'promote' },
   { text: 'Are there unusual order patterns?', key: 'anomalies' },
-  { text: 'What is hurting profit visibility?', key: 'profit-gaps' },
   { text: 'Which products sell but are not profitable enough?', key: 'low-margin' },
 ]
 
@@ -42,7 +42,12 @@ export function AskAIPanel({ intelligenceData }: AskAIPanelProps) {
   }
 
   return (
-    <AISection id="ask-ai" title="ASK AI" icon={Brain}>
+    <AISection
+      id="ask-ai"
+      title="Ask AI"
+      description="Ask a business question and get an instant answer from your live data."
+      icon={Brain}
+    >
       <div className="space-y-4">
         {/* Suggested Prompts */}
         <div className="flex flex-wrap gap-2">
@@ -105,6 +110,50 @@ export function AskAIPanel({ intelligenceData }: AskAIPanelProps) {
 
 function generateAnswer(query: string, data: any): { title: string; points: string[]; source?: string } {
   const q = query.toLowerCase()
+
+  if (q.includes('discount')) {
+    const d = data?.discountIntelligence
+    if (!d || d.totalActiveRules === 0) {
+      return { title: 'POS Discounts', points: ['No POS discount rules are currently active.', 'Create product or category discounts from Inventory to promote slow movers.'], source: 'POS discount data' }
+    }
+    return {
+      title: 'POS Discount Performance',
+      points: [
+        `${d.totalActiveRules} discount rule${d.totalActiveRules === 1 ? '' : 's'} active (${d.activeProductRules} product, ${d.activeCategoryRules} category).`,
+        `KES ${Number(d.savingsToday || 0).toLocaleString()} given as discounts today.`,
+        `KES ${Number(d.savings30d || 0).toLocaleString()} given in the last 30 days across ${d.discountedOrders30d} orders.`,
+        'Check that discounted items are selling more volume, otherwise the discount is only cutting margin.',
+      ],
+      source: 'POS discounts + Orders (30 days)',
+    }
+  }
+
+  if (q.includes('expense') || q.includes('spending')) {
+    const e = data?.expenseIntelligence
+    if (!e || e.expenseCount30d === 0) {
+      return { title: 'Expenses', points: ['No expenses recorded in the last 30 days.'], source: 'Expense data (30 days)' }
+    }
+    const points = [
+      `Total expenses in 30 days: KES ${Number(e.total30d || 0).toLocaleString()} across ${e.expenseCount30d} entries.`,
+    ]
+    if (e.expenseToRevenueRatio !== null) points.push(`That is ${e.expenseToRevenueRatio}% of your 30-day revenue (KES ${Number(e.revenue30d || 0).toLocaleString()}).`)
+    if ((e.topCategories || []).length > 0) points.push(`Biggest category: ${e.topCategories[0].category} at KES ${e.topCategories[0].amount.toLocaleString()}.`)
+    return { title: 'Expense Summary (30 Days)', points, source: 'Expenses + Orders (30 days)' }
+  }
+
+  if (q.includes('sms') || q.includes('mpesa') || q.includes('m-pesa') || q.includes('verification')) {
+    const p = data?.paymentsSmsIntelligence
+    const points: string[] = []
+    const pending = Number(p?.pendingMpesaVerifications || 0)
+    points.push(pending > 0 ? `${pending} manual M-Pesa payment${pending === 1 ? '' : 's'} awaiting verification — approve them from M-Pesa Transactions.` : 'No manual M-Pesa payments waiting for verification.')
+    const sms = p?.sms
+    if (sms) {
+      if (Number(sms.permanentlyFailed || 0) > 0) points.push(`${sms.permanentlyFailed} SMS permanently failed — check phone numbers in Settings.`)
+      else if (Number(sms.failed || 0) > 0) points.push(`${sms.failed} SMS failing and retrying automatically.`)
+      else points.push(`SMS delivery is healthy (${sms.successRate}% success rate).`)
+    }
+    return { title: 'Payments & SMS Health', points, source: 'M-Pesa verifications + SMS queue' }
+  }
 
   if (q.includes('restock') || q.includes('stock today') || q.includes('low stock')) {
     const items = data?.inventoryIntelligence?.restockNow || []
@@ -235,13 +284,19 @@ export function AIQuickActions() {
     { label: 'Open Clients', href: '/catha/clients', icon: Users },
     { label: 'Open Suppliers', href: '/catha/suppliers', icon: Truck },
     { label: 'Open Expenses', href: '/catha/expenses', icon: Wallet2 },
+    { label: 'M-Pesa Transactions', href: '/catha/mpesa-transactions', icon: Smartphone },
     { label: 'Stock Movements', href: '/catha/stock-movement', icon: ArrowLeftRight },
     { label: 'POS Sales', href: '/catha/pos', icon: ShoppingCart },
     { label: 'Settings', href: '/catha/settings', icon: Settings },
   ]
 
   return (
-    <AISection id="quick-actions" title="QUICK ACTIONS" icon={ExternalLink}>
+    <AISection
+      id="quick-actions"
+      title="Quick Links"
+      description="Jump straight to the tools you need to act on these insights."
+      icon={ExternalLink}
+    >
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
         {actions.map(action => (
           <Link
