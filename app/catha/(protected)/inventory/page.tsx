@@ -5,10 +5,7 @@ import { Header } from "@/components/layout/header"
 import { InventoryStats } from "@/components/inventory/inventory-stats"
 import { InventoryTable } from "@/components/inventory/inventory-table"
 import { AddStockModal } from "@/components/inventory/add-stock-modal"
-<<<<<<< HEAD
 import { PosDiscountsModal } from "@/components/inventory/pos-discounts-modal"
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 import { Button } from "@/components/ui/button"
 import { Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -17,12 +14,8 @@ import { useCathaPermissions } from "@/hooks/use-catha-permissions"
 export default function BarInventoryPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [isBackfillingVisibility, setIsBackfillingVisibility] = useState(false)
-<<<<<<< HEAD
   const { canView, canAdd, canEdit: canEditInventory } = useCathaPermissions("inventory")
   const { canEdit: canManagePosDiscounts } = useCathaPermissions("posDiscounts")
-=======
-  const { canView, canAdd, canEdit } = useCathaPermissions("inventory")
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 
   const handleExport = async () => {
     try {
@@ -102,11 +95,7 @@ export default function BarInventoryPage() {
             </p>
           </div>
           <div className="flex gap-3">
-<<<<<<< HEAD
             {canEditInventory && (
-=======
-            {canEdit && (
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
               <Button
                 variant="outline"
                 className="gap-2 rounded-xl border-border/70 bg-background/60 hover:bg-background hover:border-primary/40 shadow-sm"
@@ -128,10 +117,7 @@ export default function BarInventoryPage() {
                 {isExporting ? 'Exporting...' : 'Export'}
               </Button>
             )}
-<<<<<<< HEAD
             {canManagePosDiscounts && <PosDiscountsModal />}
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
             {canAdd && <AddStockModal />}
           </div>
         </div>
@@ -145,11 +131,7 @@ export default function BarInventoryPage() {
             </p>
           </div>
           <div className="flex gap-2">
-<<<<<<< HEAD
             {canEditInventory && (
-=======
-            {canEdit && (
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
               <Button
                 variant="outline"
                 size="sm"
@@ -173,10 +155,7 @@ export default function BarInventoryPage() {
                 {isExporting ? 'Exporting...' : 'Export'}
               </Button>
             )}
-<<<<<<< HEAD
             {canManagePosDiscounts && <PosDiscountsModal size="sm" className="flex-1" />}
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
             {canAdd && <AddStockModal />}
           </div>
         </div>
@@ -199,4 +178,3 @@ export default function BarInventoryPage() {
     </>
   )
 }
-

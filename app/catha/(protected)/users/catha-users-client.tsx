@@ -1300,11 +1300,7 @@ const PERMISSION_GROUPS: {
   modules: (keyof CathaPermissions)[]
 }[] = [
   { name: 'System', modules: ['dashboard', 'myShift', 'users', 'settings', 'reports'] },
-<<<<<<< HEAD
   { name: 'Sales & POS', modules: ['pos', 'posDiscounts', 'orders'] },
-=======
-  { name: 'Sales & POS', modules: ['pos', 'orders'] },
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   { name: 'Operations', modules: ['tables', 'tableQrCodes'] },
   { name: 'Inventory', modules: ['inventory', 'suppliers', 'stockMovement'] },
   { name: 'Financial', modules: ['mpesa', 'expenses'] },
@@ -1316,10 +1312,7 @@ const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
   myShift: 'My Shift Access',
   users: 'User Management',
   pos: 'POS Sales',
-<<<<<<< HEAD
   posDiscounts: 'POS Discounts (Manage)',
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   orders: 'Orders',
   inventory: 'Inventory',
   suppliers: 'Suppliers',

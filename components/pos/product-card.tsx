@@ -12,7 +12,6 @@ interface ProductCardProps {
   onAddToCart: (product: Product & { size?: string }) => void
 }
 
-<<<<<<< HEAD
 function formatKsh(amount: number) {
   return amount.toLocaleString("en-KE", {
     minimumFractionDigits: 2,
@@ -20,8 +19,6 @@ function formatKsh(amount: number) {
   })
 }
 
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 export const POSProductCard = memo(function POSProductCard({
   product,
   inCart,
@@ -30,13 +27,9 @@ export const POSProductCard = memo(function POSProductCard({
   const isOutOfStock = (product.stock || 0) <= 0
   const isLowStock = product.stock < product.minStock
   const productSize = product.size || ''
-<<<<<<< HEAD
   const hasPosDiscount = Boolean(product.posDiscount && product.originalPrice != null)
   const displayPrice = product.price
   const originalPrice = product.originalPrice ?? product.price
-=======
-  const uniqueId = productSize ? `${product.id}-${productSize}` : product.id
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 
   return (
     <button
@@ -50,7 +43,6 @@ export const POSProductCard = memo(function POSProductCard({
         isOutOfStock && "opacity-60 cursor-not-allowed hover:translate-y-0 hover:shadow-none",
       )}
     >
-      {/* Image - fixed aspect ratio, no stretching */}
       <div className="relative aspect-[4/3] bg-muted overflow-hidden">
         <Image
           src={product.image || "/placeholder.svg?height=150&width=200&query=drink bottle"}
@@ -62,25 +54,18 @@ export const POSProductCard = memo(function POSProductCard({
           unoptimized={product.image?.startsWith('/placeholder')}
         />
 
-<<<<<<< HEAD
-        {/* POS discount badge */}
         {hasPosDiscount && product.posDiscount && (
           <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[9px] font-bold z-20 shadow-sm">
             {product.posDiscount.badgeLabel}
           </div>
         )}
 
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
-        {/* Quantity badge if in cart */}
         {inCart && (
           <div className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center z-20">
             {inCart.quantity}
           </div>
         )}
 
-<<<<<<< HEAD
-        {/* Low stock - smaller, top-left (offset if discount badge present) */}
         {isOutOfStock ? (
           <div className={cn(
             "absolute top-1.5 px-1.5 py-0.5 rounded-md bg-gray-800 text-white text-[9px] font-bold z-20",
@@ -96,27 +81,14 @@ export const POSProductCard = memo(function POSProductCard({
           <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-destructive text-destructive-foreground text-[9px] font-bold z-20">
             Low
           </div>
-=======
-        {/* Low stock - smaller, top-left */}
-        {isOutOfStock ? (
-          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-gray-800 text-white text-[9px] font-bold z-20">
-            Out
-          </div>
-        ) : isLowStock ? (
-          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-destructive text-destructive-foreground text-[9px] font-bold z-20">
-            Low
-          </div>
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
         ) : null}
 
-        {/* Size badge */}
         {productSize && (
           <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-emerald-600/90 text-white text-[9px] font-bold z-20">
             {productSize}
           </div>
         )}
 
-        {/* Jaba badge - smaller, top-right when not in cart */}
         {product.isJaba && !inCart && (
           <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[9px] font-bold z-20">
             Jaba
@@ -124,7 +96,6 @@ export const POSProductCard = memo(function POSProductCard({
         )}
       </div>
 
-      {/* Info - compact, prominent price */}
       <div className="p-2 flex-1 flex flex-col bg-card min-h-0 border-t border-border/50">
         <div className="mb-1 flex-shrink-0">
           <h3 className="text-sm font-bold text-foreground line-clamp-2 text-left leading-tight">
@@ -141,7 +112,6 @@ export const POSProductCard = memo(function POSProductCard({
         </div>
         <div className="flex items-end justify-between mt-auto pt-1.5 border-t border-border/30 flex-shrink-0 min-h-[48px]">
           <div className="flex flex-col items-start min-w-0 flex-1">
-<<<<<<< HEAD
             {hasPosDiscount ? (
               <div className="flex flex-col items-start gap-0.5">
                 <span className="text-[10px] text-muted-foreground line-through tabular-nums">
@@ -162,22 +132,10 @@ export const POSProductCard = memo(function POSProductCard({
                 </span>
               </div>
             )}
-=======
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase">Ksh</span>
-              <span className="text-base font-extrabold text-emerald-700 leading-none tabular-nums">
-                {product.price.toLocaleString("en-KE", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            </div>
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
             <span className="text-[9px] text-muted-foreground font-medium mt-0.5">
               {isOutOfStock ? "Out of stock" : `${product.stock} in stock`}
             </span>
           </div>
-          {/* Add button - min 44px touch target, prominent */}
           <div className={cn(
             "h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 rounded-xl flex items-center justify-center transition-all touch-manipulation ml-2",
             isOutOfStock ? "bg-gray-200" : "bg-emerald-100 group-hover:bg-emerald-200",
@@ -189,17 +147,12 @@ export const POSProductCard = memo(function POSProductCard({
     </button>
   )
 }, (prevProps, nextProps) => {
-<<<<<<< HEAD
-=======
-  // Only re-render if product data or cart status actually changed
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   const prevInCart = prevProps.inCart
   const nextInCart = nextProps.inCart
-  
+
   return (
     prevProps.product.id === nextProps.product.id &&
     prevProps.product.price === nextProps.product.price &&
-<<<<<<< HEAD
     prevProps.product.originalPrice === nextProps.product.originalPrice &&
     prevProps.product.stock === nextProps.product.stock &&
     prevProps.product.image === nextProps.product.image &&
@@ -208,12 +161,3 @@ export const POSProductCard = memo(function POSProductCard({
     prevInCart?.quantity === nextInCart?.quantity
   )
 })
-=======
-    prevProps.product.stock === nextProps.product.stock &&
-    prevProps.product.image === nextProps.product.image &&
-    prevProps.product.size === nextProps.product.size &&
-    prevInCart?.quantity === nextInCart?.quantity
-  )
-})
-
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d

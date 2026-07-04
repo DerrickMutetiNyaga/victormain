@@ -260,10 +260,7 @@ export async function POST(request: Request) {
     const priced = await resolveBarOrderLines(db, body.items as unknown[], {
       allowCustomLines,
       rejectCustomLines: false,
-<<<<<<< HEAD
       applyPosDiscounts: true,
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
     })
     if (!priced.ok) {
       logOrderSecurityEvent({
@@ -631,10 +628,7 @@ export async function PUT(request: Request) {
       const priced = await resolveBarOrderLines(db, updateData.items, {
         allowCustomLines,
         rejectCustomLines: false,
-<<<<<<< HEAD
         applyPosDiscounts: true,
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
       })
       if (!priced.ok) {
         logOrderSecurityEvent({

@@ -18,11 +18,8 @@ export type CathaPermissions = {
   myShift?: PermissionActions
   users?: PermissionActions
   pos?: PermissionActions
-<<<<<<< HEAD
   /** POS-only product/category discount management (edit = manage) */
   posDiscounts?: PermissionActions
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   orders?: PermissionActions
   inventory?: PermissionActions
   suppliers?: PermissionActions
@@ -45,10 +42,7 @@ const MODULE_KEYS: CathaModuleKey[] = [
   'myShift',
   'users',
   'pos',
-<<<<<<< HEAD
   'posDiscounts',
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
   'orders',
   'inventory',
   'suppliers',
@@ -137,10 +131,7 @@ export const ROLE_TEMPLATES: Record<CathaRoleTemplateKey, CathaPermissions> = {
     dashboard: { view: true, add: false, edit: false, delete: false },
     users: { view: true, add: true, edit: true, delete: false },
     pos: { view: true, add: true, edit: true, delete: false },
-<<<<<<< HEAD
     posDiscounts: { view: true, add: true, edit: true, delete: true },
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
     orders: { view: true, add: true, edit: true, delete: false },
     inventory: { view: true, add: true, edit: true, delete: false },
     suppliers: { view: true, add: true, edit: true, delete: false },

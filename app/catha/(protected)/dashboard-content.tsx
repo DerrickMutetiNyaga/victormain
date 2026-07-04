@@ -8,10 +8,7 @@ import { CategoryChart } from "@/components/dashboard/category-chart"
 import { TopSelling } from "@/components/dashboard/top-selling"
 import { RecentTransactions } from "@/components/dashboard/recent-transactions"
 import { StockAlerts } from "@/components/dashboard/stock-alerts"
-<<<<<<< HEAD
 import { PosDiscountsWidget } from "@/components/dashboard/pos-discounts-widget"
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
 import { Loader2 } from "lucide-react"
 
 export default function BarDashboardContent({ userName }: { userName: string }) {
@@ -68,12 +65,9 @@ export default function BarDashboardContent({ userName }: { userName: string }) 
           <RecentTransactions transactions={dashboardData?.recentTransactions} />
           <StockAlerts items={dashboardData?.lowStockItems} products={dashboardData?.products} />
         </div>
-<<<<<<< HEAD
         <div className="grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
           <PosDiscountsWidget />
         </div>
-=======
->>>>>>> 3411e520f0915d2f45cd3b71eaa4860363e9369d
       </div>
     </>
   )
