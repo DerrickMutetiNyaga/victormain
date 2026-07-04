@@ -25,6 +25,7 @@ import {
   type EcommerceOpeningHoursSettings,
 } from "@/lib/ecommerce-opening-hours"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
+import { normalizePhoneNumbers } from "@/lib/jaba-sms"
 import Link from "next/link"
 
 const EO_DAY_DEFS: { value: number; label: string }[] = [
@@ -537,9 +538,7 @@ export default function SettingsPage() {
       .split(",")
       .map((n) => n.trim())
       .filter(Boolean)
-    const normalizedManualApprovalPhones = manualApprovalPhonesRaw
-      .map((n) => normalizeKenyaPhone(n))
-      .filter((n): n is string => Boolean(n))
+    const normalizedManualApprovalPhones = normalizePhoneNumbers(manualApprovalPhonesRaw)
     if (
       manualMpesaApprovalSmsEnabled &&
       manualApprovalPhonesRaw.length > 0 &&

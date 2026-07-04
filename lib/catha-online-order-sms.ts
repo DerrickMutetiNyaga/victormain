@@ -1,14 +1,6 @@
 import type { Db } from "mongodb"
 import { sendJabaSmsStrict } from "@/lib/jaba-sms"
-import { normalizeKenyaPhone } from "@/lib/phone-utils"
-
-function normalizeKenyaRecipients(input: unknown): string[] {
-  const arr = Array.isArray(input) ? input : []
-  const normalized = arr
-    .map((n) => normalizeKenyaPhone(String(n ?? "")))
-    .filter((n): n is string => Boolean(n))
-  return [...new Set(normalized)]
-}
+import { getCathaNotificationSettings } from "@/lib/catha-notification-settings"
 
 function buildOnlineOrderSmsMessage(order: Record<string, unknown>): string {
   const orderId = String(order.orderId || order.id || "").trim() || "N/A"
@@ -25,8 +17,8 @@ export async function maybeSendOnlineOrderSms(
   order: Record<string, unknown>
 ): Promise<{ sent: boolean; reason?: string }> {
   try {
-    const settings = await db.collection("catha_settings").findOne({})
-    const phones = normalizeKenyaRecipients(settings?.notifications?.onlineOrderSmsPhones ?? [])
+    const notifications = await getCathaNotificationSettings(db)
+    const phones = notifications.onlineOrderSmsPhones
     if (!phones.length) return { sent: false, reason: "no_recipients" }
     const message = buildOnlineOrderSmsMessage(order)
     await sendJabaSmsStrict(message, phones)
@@ -36,4 +28,3 @@ export async function maybeSendOnlineOrderSms(
     return { sent: false, reason: "sms_send_failed" }
   }
 }
-

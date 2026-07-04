@@ -1165,9 +1165,20 @@ export default function OrdersPage() {
       }
 
       if (data?.pending) {
-        toast.success(
-          data?.message || `Submitted for manager approval${data?.verification?.id ? ` (${data.verification.id})` : ""}`
-        )
+        const baseMessage =
+          data?.message ||
+          `Submitted for manager approval${data?.verification?.id ? ` (${data.verification.id})` : ""}`
+        if (data?.approvalSmsSent) {
+          toast.success(`${baseMessage} Manager approval SMS sent.`)
+        } else if (data?.approvalSmsReason === "disabled") {
+          toast.success(`${baseMessage} Enable approval SMS in Settings to notify managers.`)
+        } else if (data?.approvalSmsReason === "no_recipients") {
+          toast.success(`${baseMessage} Add manager numbers under Manual M-Pesa approval in Settings.`)
+        } else if (data?.approvalSmsReason) {
+          toast.warning(`${baseMessage} Approval SMS was not sent: ${data.approvalSmsReason}`)
+        } else {
+          toast.success(baseMessage)
+        }
         setProcessingPayment(null)
         setSelectedPaymentMethod("")
         setManualTxCode("")

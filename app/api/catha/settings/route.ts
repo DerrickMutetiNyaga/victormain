@@ -3,7 +3,6 @@ import { getDatabase } from '@/lib/mongodb'
 import { auth } from '@/lib/auth-catha'
 import { normalizePermissions, hasCathaPermission } from '@/lib/catha-permissions-model'
 import { normalizePhoneNumbers } from '@/lib/jaba-sms'
-import { normalizeKenyaPhone } from '@/lib/phone-utils'
 import {
   defaultEcommerceOpeningHours,
   validateEcommerceOpeningHoursPayload,
@@ -144,18 +143,6 @@ const defaultSettings: Settings = {
   ecommerceOpeningHours: { ...defaultEcommerceOpeningHours },
 }
 
-function normalizeKenyaPhoneList(input: unknown): string[] {
-  const parsed = Array.isArray(input)
-    ? input.map((v) => String(v ?? ''))
-    : String(input ?? '')
-        .split(',')
-        .map((v) => v.trim())
-  const normalized = parsed
-    .map((n) => normalizeKenyaPhone(String(n || '')))
-    .filter((n): n is string => Boolean(n))
-  return [...new Set(normalized)]
-}
-
 export async function GET() {
   // Public: allows unauthenticated callers (checkout, delivery options).
 
@@ -251,6 +238,7 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json()
     const db = await getDatabase('infusion_jaba')
+    const existing = await db.collection<Settings>('catha_settings').findOne({})
     
     const updateData: any = {
       updatedAt: new Date(),
@@ -263,34 +251,35 @@ export async function PUT(request: Request) {
       updateData.receipt = body.receipt
     }
     if (body.notifications !== undefined) {
-      const notifications = { ...body.notifications }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'securityAlertNumbers')) {
+      const existingNotifications = existing?.notifications ?? {}
+      const notifications = { ...existingNotifications, ...body.notifications }
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'securityAlertNumbers')) {
         notifications.securityAlertNumbers = normalizePhoneNumbers(notifications.securityAlertNumbers ?? [])
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'shiftNotificationPhones')) {
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'shiftNotificationPhones')) {
         notifications.shiftNotificationPhones = normalizePhoneNumbers(notifications.shiftNotificationPhones ?? [])
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'onlineOrderSmsPhones')) {
-        notifications.onlineOrderSmsPhones = normalizeKenyaPhoneList(notifications.onlineOrderSmsPhones ?? [])
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'onlineOrderSmsPhones')) {
+        notifications.onlineOrderSmsPhones = normalizePhoneNumbers(notifications.onlineOrderSmsPhones ?? [])
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'securityDeniedBurstThreshold')) {
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'securityDeniedBurstThreshold')) {
         const n = Number(notifications.securityDeniedBurstThreshold)
         notifications.securityDeniedBurstThreshold = Number.isFinite(n) ? Math.min(100, Math.max(3, Math.round(n))) : 10
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'securitySmsAlertsEnabled')) {
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'securitySmsAlertsEnabled')) {
         notifications.securitySmsAlertsEnabled = Boolean(notifications.securitySmsAlertsEnabled)
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalPhones')) {
-        notifications.manualMpesaApprovalPhones = normalizeKenyaPhoneList(
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'manualMpesaApprovalPhones')) {
+        notifications.manualMpesaApprovalPhones = normalizePhoneNumbers(
           notifications.manualMpesaApprovalPhones ?? []
         )
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalSmsEnabled')) {
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'manualMpesaApprovalSmsEnabled')) {
         notifications.manualMpesaApprovalSmsEnabled = Boolean(
           notifications.manualMpesaApprovalSmsEnabled
         )
       }
-      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalLinkExpiryMinutes')) {
+      if (Object.prototype.hasOwnProperty.call(body.notifications, 'manualMpesaApprovalLinkExpiryMinutes')) {
         const n = Number(notifications.manualMpesaApprovalLinkExpiryMinutes)
         notifications.manualMpesaApprovalLinkExpiryMinutes = Number.isFinite(n)
           ? Math.min(24 * 60, Math.max(15, Math.round(n)))
@@ -319,7 +308,6 @@ export async function PUT(request: Request) {
     }
 
     // Set createdAt on first creation
-    const existing = await db.collection<Settings>('catha_settings').findOne({})
     if (!existing) {
       updateData.createdAt = new Date()
     }

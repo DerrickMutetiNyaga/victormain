@@ -104,6 +104,7 @@ export async function POST(request: Request) {
       verification: result.verification,
       message: 'Submitted for manager approval.',
       approvalSmsSent: smsResult.sent,
+      approvalSmsReason: smsResult.sent ? undefined : smsResult.reason,
     })
     res.headers.set('Cache-Control', 'no-store')
 
