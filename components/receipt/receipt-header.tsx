@@ -9,6 +9,7 @@ interface ReceiptHeaderProps {
   orderId: string
   status: string
   timestamp: Date | string
+  highlightOrderId?: boolean
   className?: string
 }
 
@@ -18,6 +19,7 @@ export function ReceiptHeader({
   orderId,
   status,
   timestamp,
+  highlightOrderId = false,
   className,
 }: ReceiptHeaderProps) {
   const statusConfig = getReceiptStatus(status)
@@ -33,10 +35,19 @@ export function ReceiptHeader({
       )}
 
       {/* Order ID + Status Row */}
-      <div className="flex items-center justify-center gap-3 mt-4">
-        <span className="font-mono text-sm font-semibold text-[#0f172a] bg-[#f1f5f9] px-3 py-1 rounded-md">
-          #{orderId}
-        </span>
+      <div className={cn("mt-4", highlightOrderId && "rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-3")}>
+        {highlightOrderId && (
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800 mb-1">Order ID — use for payment</p>
+        )}
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <span
+            className={cn(
+              "font-mono font-black text-[#0f172a] bg-[#f1f5f9] px-3 py-1.5 rounded-md break-all",
+              highlightOrderId ? "text-lg sm:text-xl" : "text-sm font-semibold"
+            )}
+          >
+            #{orderId}
+          </span>
         <span
           className={cn(
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide",
@@ -47,6 +58,7 @@ export function ReceiptHeader({
           <span className="h-1.5 w-1.5 rounded-full bg-current" />
           {statusConfig.label}
         </span>
+        </div>
       </div>
 
       {/* Date/Time */}

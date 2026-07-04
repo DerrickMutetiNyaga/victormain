@@ -12,6 +12,7 @@ import { ReceiptItems } from "./receipt-items"
 import { ReceiptTotals } from "./receipt-totals"
 import { ReceiptFooter } from "./receipt-footer"
 import { formatKsh, formatDate, formatReceiptTime } from "@/lib/receipt-utils"
+import { scanToPayPrintHtml } from "./scan-to-pay-block"
 
 // Receipt order type
 export interface ReceiptOrder {
@@ -86,6 +87,13 @@ export function ReceiptModal({
   if (!order) return null
 
   const isPaid = order.status === "completed" || order.status === "PAID"
+  const amountDueForPay =
+    order.balanceDue != null && order.balanceDue > 0
+      ? order.balanceDue
+      : !isPaid && order.total != null
+        ? order.total
+        : 0
+  const showScanToPay = !isPaid && amountDueForPay > 0
 
   const handlePrint = () => {
     setIsPrinting(true)
@@ -587,29 +595,13 @@ export function ReceiptModal({
 
             <!-- Footer -->
             <div class="receipt-footer">
-              ${
-                showQRCode
-                  ? `
-                <div class="qr-container">
-                  <svg class="qr-code" viewBox="0 0 100 100" fill="none">
-                    <rect width="100" height="100" fill="white"/>
-                    <rect x="10" y="10" width="25" height="25" fill="#0f172a"/>
-                    <rect x="13" y="13" width="19" height="19" fill="white"/>
-                    <rect x="16" y="16" width="13" height="13" fill="#0f172a"/>
-                    <rect x="65" y="10" width="25" height="25" fill="#0f172a"/>
-                    <rect x="68" y="13" width="19" height="19" fill="white"/>
-                    <rect x="71" y="16" width="13" height="13" fill="#0f172a"/>
-                    <rect x="10" y="65" width="25" height="25" fill="#0f172a"/>
-                    <rect x="13" y="68" width="19" height="19" fill="white"/>
-                    <rect x="16" y="71" width="13" height="13" fill="#0f172a"/>
-                    <rect x="40" y="40" width="20" height="20" fill="#0f172a"/>
-                    <rect x="44" y="44" width="12" height="12" fill="white"/>
-                    <rect x="47" y="47" width="6" height="6" fill="#0f172a"/>
-                  </svg>
-                </div>
-              `
-                  : ""
-              }
+              ${scanToPayPrintHtml({
+                orderId: order.id,
+                amountDue: amountDueForPay,
+                tillNumber: tillNumber || undefined,
+                isPaid,
+                baseUrl: typeof window !== "undefined" ? window.location.origin : "https://www.infusionjaba.co.ke",
+              })}
               <div class="thank-you">Thank you for your order!</div>
               <div class="appreciate">We appreciate your business</div>
               <div class="printed-at">Printed: ${new Date().toLocaleString("en-KE")}</div>
@@ -658,6 +650,7 @@ export function ReceiptModal({
               orderId={order.id}
               status={order.status}
               timestamp={order.timestamp}
+              highlightOrderId={showScanToPay}
             />
 
             <ReceiptMeta
@@ -690,7 +683,13 @@ export function ReceiptModal({
               paymentStatusLabel={order.paymentStatusLabel}
             />
 
-            <ReceiptFooter orderId={order.id} showQRCode={showQRCode} />
+            <ReceiptFooter
+              orderId={order.id}
+              showQRCode={showQRCode}
+              amountDue={amountDueForPay}
+              tillNumber={tillNumber}
+              isPaid={isPaid}
+            />
           </div>
         </div>
 
