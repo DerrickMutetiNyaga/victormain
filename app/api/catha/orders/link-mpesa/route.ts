@@ -64,6 +64,10 @@ export async function POST(request: Request) {
         : body?.allocationMode === 'full_transaction'
           ? ('full_transaction' as const)
           : ('order_balance_then_tx' as const)
+    const paymentLinkSource =
+      linkSource === 'stk' || linkSource === 'reconcile'
+        ? ('automatic' as const)
+        : ('staff_link' as const)
 
     const db = await getDatabase('infusion_jaba')
     const linkedBy = (session.user as any).name || session.user.email || 'System'
@@ -75,6 +79,7 @@ export async function POST(request: Request) {
       allocatedAmount,
       notes,
       allocationMode,
+      linkSource: paymentLinkSource,
     })
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status })

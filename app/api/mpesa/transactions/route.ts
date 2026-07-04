@@ -50,6 +50,7 @@ export async function GET(request: Request) {
         { checkout_request_id: { $regex: search, $options: 'i' } },
         { merchant_request_id: { $regex: search, $options: 'i' } },
         { transaction_id: { $regex: search, $options: 'i' } },
+        { mpesa_receipt_number: { $regex: search, $options: 'i' } },
         { account_reference: { $regex: search, $options: 'i' } },
         { phone_number: { $regex: search, $options: 'i' } },
       ]

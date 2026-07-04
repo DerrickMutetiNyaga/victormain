@@ -17,6 +17,8 @@ export const ROUTE_PERMISSION_MAP: Record<string, PermissionPageKey> = {
   '/catha/suppliers': 'suppliers',
   '/catha/stock-movement': 'stock-movement',
   '/catha/mpesa-transactions': 'mpesa-transactions',
+  '/catha/manual-mpesa-review': 'mpesa-transactions',
+  '/catha/finance': 'reports',
   '/catha/expenses': 'expenses',
   '/catha/clients': 'clients',
   '/catha/users': 'users',

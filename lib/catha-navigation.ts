@@ -49,6 +49,8 @@ export const CATHA_NAV_ITEMS: CathaNavItem[] = [
   { name: 'Suppliers', href: '/catha/suppliers', icon: Truck, color: 'sky', permissionKey: 'inventory.suppliers' },
   { name: 'Stock Movement', href: '/catha/stock-movement', icon: ArrowLeftRight, color: 'violet', permissionKey: 'inventory.stockMovement' },
   { name: 'M-Pesa Transactions', href: '/catha/mpesa-transactions', icon: Smartphone, color: 'emerald', permissionKey: 'financial.mpesaTransactions' },
+  { name: 'Manual M-Pesa Review', href: '/catha/manual-mpesa-review', icon: ShieldCheck, color: 'amber', permissionKey: 'financial.mpesaTransactions' },
+  { name: 'Finance', href: '/catha/finance', icon: Wallet2, color: 'violet', permissionKey: 'financial.expenses' },
   { name: 'Expenses', href: '/catha/expenses', icon: Wallet2, color: 'rose', permissionKey: 'financial.expenses' },
   { name: 'Clients', href: '/catha/clients', icon: UserCircle2, color: 'sky', permissionKey: 'management.clients' },
   { name: 'User Management', href: '/catha/users', icon: Users, color: 'amber', permissionKey: 'system.userManagement' },
@@ -91,6 +93,8 @@ export const CATHA_NAV_SECTIONS: CathaNavSection[] = [
     title: 'Finance',
     items: [
       { name: 'M-Pesa Transactions', href: '/catha/mpesa-transactions', icon: Smartphone, permissionKey: 'financial.mpesaTransactions' },
+      { name: 'Manual M-Pesa Review', href: '/catha/manual-mpesa-review', icon: ShieldCheck, permissionKey: 'financial.mpesaTransactions' },
+      { name: 'Finance', href: '/catha/finance', icon: Wallet2, permissionKey: 'financial.expenses' },
       { name: 'Expenses', href: '/catha/expenses', icon: Wallet2, permissionKey: 'financial.expenses' },
       { name: 'Reports', href: '/catha/reports', icon: BarChart3, permissionKey: 'system.reports' },
       { name: 'Workforce Hub', href: '/catha/workforce-hub', icon: Clock3, permissionKey: 'sales.posSales' },

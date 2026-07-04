@@ -21,6 +21,8 @@ export type CathaPermissions = {
   /** POS-only product/category discount management (edit = manage) */
   posDiscounts?: PermissionActions
   orders?: PermissionActions
+  /** Manual M-Pesa recovery (transaction code entry on orders) */
+  payments?: PermissionActions
   inventory?: PermissionActions
   suppliers?: PermissionActions
   stockMovement?: PermissionActions
@@ -44,6 +46,7 @@ const MODULE_KEYS: CathaModuleKey[] = [
   'pos',
   'posDiscounts',
   'orders',
+  'payments',
   'inventory',
   'suppliers',
   'stockMovement',
@@ -133,6 +136,7 @@ export const ROLE_TEMPLATES: Record<CathaRoleTemplateKey, CathaPermissions> = {
     pos: { view: true, add: true, edit: true, delete: false },
     posDiscounts: { view: true, add: true, edit: true, delete: true },
     orders: { view: true, add: true, edit: true, delete: false },
+    payments: { view: true, add: false, edit: true, delete: false },
     inventory: { view: true, add: true, edit: true, delete: false },
     suppliers: { view: true, add: true, edit: true, delete: false },
     stockMovement: { view: true, add: true, edit: true, delete: false },
@@ -197,6 +201,30 @@ export function canManageOrderMpesaPayments(
   if (hasCathaPermission(perms, 'orders', 'edit')) return true
   if (hasCathaPermission(perms, 'orders', 'add')) return true
   if (r === 'CASHIER' || r === 'ADMIN') return true
+  return false
+}
+
+/**
+ * Manual M-Pesa transaction code entry (callback recovery).
+ * Stricter than link/STK — cashiers need explicit `payments.edit`.
+ */
+export function canManuallyAddMpesaTransaction(
+  permissions: CathaPermissions | null | undefined,
+  role: string | null | undefined
+): boolean {
+  const r = (role ?? '').toUpperCase()
+  if (r === 'SUPER_ADMIN' || r === 'ADMIN') return true
+  const perms = normalizePermissions(permissions)
+  return hasCathaPermission(perms, 'payments', 'edit')
+}
+
+/** Approve/reject pending manual M-Pesa verifications — managers only. */
+export function canApproveManualMpesaVerifications(
+  permissions: CathaPermissions | null | undefined,
+  role: string | null | undefined
+): boolean {
+  const r = (role ?? '').toUpperCase()
+  if (r === 'SUPER_ADMIN' || r === 'ADMIN') return true
   return false
 }
 

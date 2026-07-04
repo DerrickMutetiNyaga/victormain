@@ -60,6 +60,9 @@ interface Settings {
     shiftNotificationPhones?: string[]
     onlineOrderSmsPhones?: string[]
     securityDeniedBurstThreshold?: number
+    manualMpesaApprovalSmsEnabled?: boolean
+    manualMpesaApprovalPhones?: string[]
+    manualMpesaApprovalLinkExpiryMinutes?: number
   }
   security?: {
     requirePinForVoids: boolean
@@ -179,6 +182,9 @@ export default function SettingsPage() {
   const [securityAlertNumbersText, setSecurityAlertNumbersText] = useState("")
   const [shiftNotificationPhonesText, setShiftNotificationPhonesText] = useState("")
   const [onlineOrderSmsPhonesText, setOnlineOrderSmsPhonesText] = useState("")
+  const [manualMpesaApprovalSmsEnabled, setManualMpesaApprovalSmsEnabled] = useState(false)
+  const [manualMpesaApprovalPhonesText, setManualMpesaApprovalPhonesText] = useState("")
+  const [manualMpesaApprovalLinkExpiryMinutes, setManualMpesaApprovalLinkExpiryMinutes] = useState(60)
   const [securityDeniedBurstThreshold, setSecurityDeniedBurstThreshold] = useState(10)
   
   // Security State
@@ -321,6 +327,16 @@ export default function SettingsPage() {
             )
             const threshold = Number(settings.notifications.securityDeniedBurstThreshold)
             setSecurityDeniedBurstThreshold(Number.isFinite(threshold) ? Math.max(3, Math.min(100, Math.round(threshold))) : 10)
+            setManualMpesaApprovalSmsEnabled(!!settings.notifications.manualMpesaApprovalSmsEnabled)
+            setManualMpesaApprovalPhonesText(
+              Array.isArray(settings.notifications.manualMpesaApprovalPhones)
+                ? settings.notifications.manualMpesaApprovalPhones.join(", ")
+                : ""
+            )
+            const linkMins = Number(settings.notifications.manualMpesaApprovalLinkExpiryMinutes)
+            setManualMpesaApprovalLinkExpiryMinutes(
+              Number.isFinite(linkMins) ? Math.max(15, Math.min(24 * 60, Math.round(linkMins))) : 60
+            )
           }
           
           // Security
@@ -517,6 +533,25 @@ export default function SettingsPage() {
       })
       return
     }
+    const manualApprovalPhonesRaw = manualMpesaApprovalPhonesText
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean)
+    const normalizedManualApprovalPhones = manualApprovalPhonesRaw
+      .map((n) => normalizeKenyaPhone(n))
+      .filter((n): n is string => Boolean(n))
+    if (
+      manualMpesaApprovalSmsEnabled &&
+      manualApprovalPhonesRaw.length > 0 &&
+      normalizedManualApprovalPhones.length !== manualApprovalPhonesRaw.length
+    ) {
+      toast({
+        title: "Validation error",
+        description: "Manual M-Pesa approval numbers must be valid Kenyan numbers in +254 format.",
+        variant: "destructive",
+      })
+      return
+    }
     setSaving(true)
     try {
       const response = await fetch('/api/catha/settings', {
@@ -539,6 +574,12 @@ export default function SettingsPage() {
               .filter(Boolean),
             onlineOrderSmsPhones: normalizedOnlineOrderPhones,
             securityDeniedBurstThreshold: Math.max(3, Math.min(100, Math.round(Number(securityDeniedBurstThreshold) || 10))),
+            manualMpesaApprovalSmsEnabled,
+            manualMpesaApprovalPhones: normalizedManualApprovalPhones,
+            manualMpesaApprovalLinkExpiryMinutes: Math.max(
+              15,
+              Math.min(24 * 60, Math.round(Number(manualMpesaApprovalLinkExpiryMinutes) || 60))
+            ),
           },
         }),
       })
@@ -1263,6 +1304,45 @@ export default function SettingsPage() {
                     />
                     <p className="text-xs text-muted-foreground">
                       Receives SMS alerts when new online orders are placed. Use comma-separated +254 numbers.
+                    </p>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Manual M-Pesa approval SMS</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Send managers a one-time approval link when staff submit a manual M-Pesa recovery entry.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={manualMpesaApprovalSmsEnabled}
+                      onCheckedChange={setManualMpesaApprovalSmsEnabled}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-mpesa-approval-phones">Manual M-Pesa approval numbers</Label>
+                    <Input
+                      id="manual-mpesa-approval-phones"
+                      value={manualMpesaApprovalPhonesText}
+                      onChange={(e) => setManualMpesaApprovalPhonesText(e.target.value)}
+                      placeholder="+254712345678, +254700000000"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Managers receive an SMS with a secure one-time link to approve or reject pending manual payments.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="manual-mpesa-approval-expiry">Approval link expiry (minutes)</Label>
+                    <Input
+                      id="manual-mpesa-approval-expiry"
+                      type="number"
+                      min={15}
+                      max={1440}
+                      value={manualMpesaApprovalLinkExpiryMinutes}
+                      onChange={(e) => setManualMpesaApprovalLinkExpiryMinutes(Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default 60 minutes. Link can only be used once.
                     </p>
                   </div>
                   <Button onClick={saveNotifications} disabled={saving}>

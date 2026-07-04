@@ -34,6 +34,9 @@ export interface Settings {
     shiftNotificationPhones?: string[]
     onlineOrderSmsPhones?: string[]
     securityDeniedBurstThreshold?: number
+    manualMpesaApprovalSmsEnabled?: boolean
+    manualMpesaApprovalPhones?: string[]
+    manualMpesaApprovalLinkExpiryMinutes?: number
   }
   security?: {
     requirePinForVoids: boolean
@@ -99,6 +102,9 @@ const defaultSettings: Settings = {
     shiftNotificationPhones: [],
     onlineOrderSmsPhones: [],
     securityDeniedBurstThreshold: 10,
+    manualMpesaApprovalSmsEnabled: false,
+    manualMpesaApprovalPhones: [],
+    manualMpesaApprovalLinkExpiryMinutes: 60,
   },
   security: {
     requirePinForVoids: true,
@@ -273,6 +279,22 @@ export async function PUT(request: Request) {
       }
       if (Object.prototype.hasOwnProperty.call(notifications, 'securitySmsAlertsEnabled')) {
         notifications.securitySmsAlertsEnabled = Boolean(notifications.securitySmsAlertsEnabled)
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalPhones')) {
+        notifications.manualMpesaApprovalPhones = normalizeKenyaPhoneList(
+          notifications.manualMpesaApprovalPhones ?? []
+        )
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalSmsEnabled')) {
+        notifications.manualMpesaApprovalSmsEnabled = Boolean(
+          notifications.manualMpesaApprovalSmsEnabled
+        )
+      }
+      if (Object.prototype.hasOwnProperty.call(notifications, 'manualMpesaApprovalLinkExpiryMinutes')) {
+        const n = Number(notifications.manualMpesaApprovalLinkExpiryMinutes)
+        notifications.manualMpesaApprovalLinkExpiryMinutes = Number.isFinite(n)
+          ? Math.min(24 * 60, Math.max(15, Math.round(n)))
+          : 60
       }
       updateData.notifications = notifications
     }

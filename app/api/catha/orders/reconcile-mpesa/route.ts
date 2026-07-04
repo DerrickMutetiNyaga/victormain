@@ -22,7 +22,12 @@ export async function POST() {
 
     const completedTx = await db
       .collection('mpesa_transactions')
-      .find({ status: 'COMPLETED', account_reference: { $exists: true, $ne: null } })
+      .find({
+        status: 'COMPLETED',
+        account_reference: { $exists: true, $ne: null },
+        source: { $ne: 'MANUAL' },
+        transaction_type: { $ne: 'MANUAL' },
+      })
       .toArray()
 
     if (!completedTx.length) {

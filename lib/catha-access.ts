@@ -218,6 +218,8 @@ export const ROUTE_PERMISSION_MAP: Record<string, CanonicalPermissionKey | null>
   '/catha/suppliers': 'inventory.suppliers',
   '/catha/stock-movement': 'inventory.stockMovement',
   '/catha/mpesa-transactions': 'financial.mpesaTransactions',
+  '/catha/manual-mpesa-review': 'financial.mpesaTransactions',
+  '/catha/finance': 'financial.expenses',
   '/catha/expenses': 'financial.expenses',
   '/catha/clients': 'management.clients',
   '/catha/users': 'system.userManagement',

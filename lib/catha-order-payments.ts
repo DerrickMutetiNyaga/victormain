@@ -19,6 +19,11 @@ export interface LinkedMpesaPayment {
   transactionDate?: string | Date | null
   linkedAt: string | Date
   linkedBy: string
+  /** How this payment was attached: automatic callback, staff link picker, or manual code entry */
+  linkSource?: 'automatic' | 'staff_link' | 'manual' | null
+  /** Optional reason/notes (manual entry) */
+  notes?: string | null
+  verifiedAt?: string | Date | null
 }
 
 export interface OrderPaymentSummary {
@@ -57,6 +62,9 @@ export function getEffectiveLinkedPayments(order: {
       transactionDate: p.transactionDate ?? null,
       linkedAt: p.linkedAt ?? new Date().toISOString(),
       linkedBy: String(p.linkedBy || "System"),
+      linkSource: p.linkSource ?? null,
+      notes: p.notes != null ? String(p.notes) : null,
+      verifiedAt: p.verifiedAt ?? null,
     }))
 
   if (cleaned.length > 0) return cleaned

@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { type Transaction } from "@/lib/dummy-data"
-import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2, Truck, RefreshCw, ChevronLeft, ChevronRight, CreditCard } from "lucide-react"
-import { normalizeKenyaPhone } from "@/lib/phone-utils"
+import { Receipt, Download, TrendingUp, ShoppingBag, Wallet2, Edit2, Plus, CheckSquare, Square, Search, X, Minus, Eye, Trash2, Banknote, Smartphone, Users, Printer, LayoutGrid, TableIcon, Filter, MoreVertical, UtensilsCrossed, ShoppingCart, CheckCircle2, Loader2, Truck, RefreshCw, ChevronLeft, ChevronRight, CreditCard, XCircle, AlertTriangle } from "lucide-react"
+import { normalizeKenyaPhone, getPhoneValidationError } from "@/lib/phone-utils"
 import { normalizeMpesaStatus } from "@/lib/mpesa-status"
 import { toast } from "sonner"
 import {
@@ -34,11 +34,61 @@ import { UserChip } from "@/components/orders/user-chip"
 import { getStatusLabel } from "@/lib/order-utils"
 import { ReceiptModal, type ReceiptOrder } from "@/components/receipt"
 import { summarizeCathaOrderPayments } from "@/lib/catha-order-payments"
-import { canManageOrderMpesaPayments, normalizePermissions } from "@/lib/catha-permissions-model"
+import { canManageOrderMpesaPayments, canManuallyAddMpesaTransaction, normalizePermissions } from "@/lib/catha-permissions-model"
 import type { OrdersDashboardSummary } from "@/lib/catha-orders-dashboard-summary"
 import { Textarea } from "@/components/ui/textarea"
 
 const ORDERS_PAGE_SIZE = 72
+
+function linkedMpesaPaymentTitle(p: { linkSource?: string | null }) {
+  if (p.linkSource === "manual") return "Manual M-Pesa Transaction Added"
+  if (p.linkSource === "automatic") return "Payment linked automatically"
+  return "M-Pesa payment linked"
+}
+
+type ManualTxLookup =
+  | { status: "invalid"; transactionCode: string }
+  | {
+      status: "already_linked"
+      transactionCode: string
+      orderId: string
+      amount: number
+      linkedBy: string
+      linkedAt: string
+      linkSource?: string | null
+      orderTable?: number | null
+      customerName?: string | null
+    }
+  | {
+      status: "exists_unlinked"
+      transactionCode: string
+      transactionId: string
+      amount: number
+      phoneMasked: string | null
+      receivedAt: string
+      remainingUnallocated: number
+      allocatedTotal?: number
+      transactionType?: string | null
+      importedFromSafaricom?: boolean
+    }
+  | { status: "not_found"; transactionCode: string }
+
+function formatLookupWhen(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  const now = new Date()
+  const time = d.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })
+  if (d.toDateString() === now.toDateString()) return `Today ${time}`
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`
+  return d.toLocaleString("en-KE", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
 
 function patchOrderFromMpesaLinkResponse(data: any) {
   if (!data?.summary) return {}
@@ -243,6 +293,14 @@ export default function OrdersPage() {
       ),
     [session?.user]
   )
+  const canManualMpesa = useMemo(
+    () =>
+      canManuallyAddMpesaTransaction(
+        normalizePermissions((session?.user as { permissions?: unknown })?.permissions),
+        (session?.user as { role?: string })?.role
+      ),
+    [session?.user]
+  )
   const [mounted, setMounted] = useState(false)
   const [view, setView] = useState<"table" | "cards">("cards")
   const [searchQuery, setSearchQuery] = useState("")
@@ -267,7 +325,7 @@ export default function OrdersPage() {
   const [showCardDialog, setShowCardDialog] = useState(false)
   const [cardTransactionReference, setCardTransactionReference] = useState("")
   const [isProcessingCardPayment, setIsProcessingCardPayment] = useState(false)
-  const [mpesaFlowTab, setMpesaFlowTab] = useState<"link" | "request">("link")
+  const [mpesaFlowTab, setMpesaFlowTab] = useState<"link" | "request" | "manual">("link")
   const [mpesaExactAmountSearch, setMpesaExactAmountSearch] = useState("")
   const [mpesaLinkCandidates, setMpesaLinkCandidates] = useState<any[]>([])
   const [loadingMpesaCandidates, setLoadingMpesaCandidates] = useState(false)
@@ -284,6 +342,16 @@ export default function OrdersPage() {
   const [pendingMpesaOrderId, setPendingMpesaOrderId] = useState<string | null>(null)
   const [mpesaError, setMpesaError] = useState<{ message: string; status: string } | null>(null)
   const [mpesaCheckoutRequestId, setMpesaCheckoutRequestId] = useState<string | null>(null)
+  const [manualTxCode, setManualTxCode] = useState("")
+  const [manualTxPhone, setManualTxPhone] = useState("")
+  const [manualTxAmount, setManualTxAmount] = useState("")
+  const [manualTxDate, setManualTxDate] = useState("")
+  const [manualTxNotes, setManualTxNotes] = useState("")
+  const [manualTxSubmitting, setManualTxSubmitting] = useState(false)
+  const [manualTxLookup, setManualTxLookup] = useState<ManualTxLookup | null>(null)
+  const [manualTxLookupLoading, setManualTxLookupLoading] = useState(false)
+  const [debouncedManualTxCode, setDebouncedManualTxCode] = useState("")
+  const [manualTxConfirmed, setManualTxConfirmed] = useState(false)
   const mpesaPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const mpesaCandidatesLoadModeRef = useRef<"recent" | "exact">("recent")
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -792,6 +860,15 @@ export default function OrdersPage() {
     setMpesaLinkCandidates([])
     setSelectedMpesaTransactionId(null)
     setMpesaAllocationInput("")
+    setManualTxCode("")
+    setManualTxPhone(String((order as any).customerPhone || ""))
+    setManualTxAmount(hint > 0 ? hint.toFixed(2) : "")
+    setManualTxDate(new Date().toISOString().slice(0, 10))
+    setManualTxNotes("")
+    setManualTxLookup(null)
+    setManualTxLookupLoading(false)
+    setDebouncedManualTxCode("")
+    setManualTxConfirmed(false)
     const existingPhone = String((order as any).customerPhone || "")
     setMpesaPhoneNumber(existingPhone)
     setPaymentCustomerPhone(existingPhone)
@@ -874,6 +951,76 @@ export default function OrdersPage() {
     [processingPayment]
   )
 
+  const loadMpesaLinkBySearch = useCallback(
+    async (query: string) => {
+      if (!processingPayment || !query.trim()) return
+      try {
+        setLoadingMpesaCandidates(true)
+        mpesaCandidatesLoadModeRef.current = "recent"
+        const url = `/api/mpesa/transactions?linkableOnly=1&search=${encodeURIComponent(query.trim())}&recentLimit=40`
+        const response = await fetch(url, { cache: "no-store" })
+        const data = await response.json()
+        const txs = Array.isArray(data?.transactions) ? data.transactions : []
+        setMpesaLinkCandidates(txs)
+      } catch {
+        setMpesaLinkCandidates([])
+      } finally {
+        setLoadingMpesaCandidates(false)
+      }
+    },
+    [processingPayment]
+  )
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedManualTxCode(manualTxCode.trim().toUpperCase().replace(/\s+/g, ""))
+    }, 400)
+    return () => clearTimeout(t)
+  }, [manualTxCode])
+
+  useEffect(() => {
+    if (mpesaFlowTab !== "manual" || !processingPayment || !canManualMpesa) return
+    const code = debouncedManualTxCode
+    if (code.length < 3) {
+      setManualTxLookup(null)
+      setManualTxLookupLoading(false)
+      setManualTxConfirmed(false)
+      return
+    }
+
+    let cancelled = false
+    setManualTxLookupLoading(true)
+    setManualTxConfirmed(false)
+
+    ;(async () => {
+      try {
+        const url = `/api/catha/orders/manual-mpesa/lookup?code=${encodeURIComponent(code)}&orderId=${encodeURIComponent(processingPayment.id)}`
+        const res = await fetch(url, { cache: "no-store" })
+        const data = (await res.json()) as ManualTxLookup
+        if (cancelled) return
+        if (!res.ok) {
+          setManualTxLookup(null)
+          return
+        }
+        setManualTxLookup(data)
+        if (data.status === "exists_unlinked") {
+          const live = summarizeCathaOrderPayments(processingPayment as any)
+          const rem = Math.max(0, Number(data.remainingUnallocated || 0))
+          const def = live.balanceDue > 0.005 ? Math.min(live.balanceDue, rem) : rem
+          if (def > 0) setManualTxAmount(def.toFixed(2))
+        }
+      } catch {
+        if (!cancelled) setManualTxLookup(null)
+      } finally {
+        if (!cancelled) setManualTxLookupLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedManualTxCode, processingPayment?.id, mpesaFlowTab, canManualMpesa])
+
   useEffect(() => {
     if (!processingPayment || selectedPaymentMethod !== "mpesa" || mpesaFlowTab !== "link") return
     loadMpesaLinkCandidates("recent")
@@ -938,6 +1085,129 @@ export default function OrdersPage() {
       toast.error(error?.message || "Failed to link M-Pesa transaction")
     } finally {
       setLinkingMpesaTransaction(false)
+    }
+  }
+
+  const handleUseSuggestLink = async (lookup?: Extract<ManualTxLookup, { status: "exists_unlinked" }>) => {
+    const row =
+      lookup ??
+      (manualTxLookup?.status === "exists_unlinked" ? manualTxLookup : null)
+    if (!row || !processingPayment) return
+    const receipt = row.transactionCode || manualTxCode.trim()
+    setMpesaFlowTab("link")
+    setSelectedMpesaTransactionId(row.transactionId)
+    const live = summarizeCathaOrderPayments(processingPayment as any)
+    const rem = Math.max(0, Number(row.remainingUnallocated || 0))
+    const def = live.balanceDue > 0.005 ? Math.min(live.balanceDue, rem) : rem
+    setMpesaAllocationInput(def > 0 ? def.toFixed(2) : "")
+    await loadMpesaLinkBySearch(receipt)
+    toast.message("Confirm the allocation on Link Existing Transaction.")
+  }
+
+  const handleManualMpesaSubmit = async () => {
+    if (!processingPayment || manualTxSubmitting) return
+    const code = manualTxCode.trim().toUpperCase().replace(/\s+/g, "")
+    if (!code) {
+      toast.error("Transaction code is required.")
+      return
+    }
+    const amountNum = Number(manualTxAmount)
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      toast.error("Enter a valid amount greater than zero.")
+      return
+    }
+    const live = summarizeCathaOrderPayments(processingPayment as any)
+    if (amountNum > live.balanceDue + 0.005) {
+      toast.error(`Amount exceeds remaining balance (KSh ${live.balanceDue.toFixed(2)}).`)
+      return
+    }
+    if (manualTxPhone.trim()) {
+      const phoneErr = getPhoneValidationError(manualTxPhone)
+      if (phoneErr) {
+        toast.error(phoneErr)
+        return
+      }
+    }
+    setManualTxSubmitting(true)
+    try {
+      const phoneNorm = manualTxPhone.trim() ? normalizeKenyaPhone(manualTxPhone.trim()) : null
+      const response = await fetch("/api/catha/orders/manual-mpesa", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: processingPayment.id,
+          transactionCode: code,
+          amount: amountNum,
+          phone: phoneNorm,
+          paymentDate: manualTxDate || undefined,
+          notes: manualTxNotes.trim() || undefined,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        if (data?.code === "SUGGEST_LINK" && data?.suggestLink) {
+          setManualTxLookup({
+            status: "exists_unlinked",
+            transactionCode: code,
+            transactionId: data.suggestLink.transactionId,
+            amount: Number(data.suggestLink.amount || 0),
+            phoneMasked: null,
+            receivedAt: new Date().toISOString(),
+            remainingUnallocated: Number(data.suggestLink.remainingUnallocated || 0),
+            allocatedTotal: 0,
+            importedFromSafaricom: true,
+          })
+          toast.error(data.error || "Use Link Existing Transaction instead.")
+          return
+        }
+        throw new Error(data?.error || "Failed to submit for approval")
+      }
+
+      if (data?.pending) {
+        toast.success(
+          data?.message || `Submitted for manager approval${data?.verification?.id ? ` (${data.verification.id})` : ""}`
+        )
+        setProcessingPayment(null)
+        setSelectedPaymentMethod("")
+        setManualTxCode("")
+        setManualTxAmount("")
+        setManualTxNotes("")
+        setManualTxLookup(null)
+        setManualTxConfirmed(false)
+        return
+      }
+
+      const patch = patchOrderFromMpesaLinkResponse(data)
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === processingPayment.id ? ({ ...o, ...patch } as Transaction) : o
+        )
+      )
+      const paidFull =
+        data?.summary?.paymentStatus === "PAID" || data?.summary?.paymentStatus === "OVERPAID"
+      if (paidFull) {
+        toast.success(`Order ${processingPayment.id} fully paid via manual M-Pesa entry`)
+        setProcessingPayment(null)
+        setSelectedPaymentMethod("")
+        setManualTxCode("")
+        setManualTxAmount("")
+        setManualTxNotes("")
+      } else {
+        toast.success(
+          `Manual M-Pesa payment linked — balance KSh ${Number(data?.summary?.balanceDue ?? 0).toFixed(2)} remaining`
+        )
+        const updated = { ...processingPayment, ...patch } as Transaction
+        setProcessingPayment(updated)
+        const bal = Number(data?.summary?.balanceDue ?? 0)
+        setManualTxAmount(bal > 0 ? bal.toFixed(2) : "")
+        setManualTxCode("")
+        setManualTxNotes("")
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to verify and link transaction")
+    } finally {
+      setManualTxSubmitting(false)
     }
   }
 
@@ -2939,20 +3209,40 @@ export default function OrdersPage() {
                               className="flex flex-wrap items-start justify-between gap-2 rounded border border-green-100 bg-white p-2"
                             >
                               <div className="space-y-0.5 min-w-0">
+                                <p className="text-[10px] font-semibold text-green-900">
+                                  {linkedMpesaPaymentTitle(p)}
+                                </p>
                                 <p className="font-mono font-medium truncate">{p.receiptNumber || p.transactionId}</p>
                                 <p>
-                                  KSh {Number(p.amount || 0).toFixed(2)} · {p.phone || "—"}
+                                  KSh {Number(p.amount || 0).toFixed(2)}
+                                  {p.phone ? ` · ${p.phone}` : ""}
                                   {p.payerName ? ` · ${p.payerName}` : ""}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  {p.mpesaStatus ? `${p.mpesaStatus} · ` : ""}
-                                  {p.transactionDate
-                                    ? new Date(p.transactionDate).toLocaleString()
-                                    : p.linkedAt
-                                      ? new Date(p.linkedAt).toLocaleString()
-                                      : "—"}{" "}
-                                  · {p.linkedBy || "—"}
+                                  {p.linkSource === "manual" ? (
+                                    <>
+                                      Added by {p.linkedBy || "—"}
+                                      {p.linkedAt
+                                        ? ` · ${new Date(p.linkedAt).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}`
+                                        : ""}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {p.mpesaStatus ? `${p.mpesaStatus} · ` : ""}
+                                      {p.transactionDate
+                                        ? new Date(p.transactionDate).toLocaleString()
+                                        : p.linkedAt
+                                          ? new Date(p.linkedAt).toLocaleString()
+                                          : "—"}{" "}
+                                      · {p.linkedBy || "—"}
+                                    </>
+                                  )}
                                 </p>
+                                {p.linkSource === "manual" && p.notes && (
+                                  <p className="text-[10px] text-amber-900">
+                                    Reason: {p.notes}
+                                  </p>
+                                )}
                               </div>
                               {canManageMpesa && viewingOrder.status !== "cancelled" && (
                                 <Button
@@ -3428,11 +3718,11 @@ export default function OrdersPage() {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-green-800">M-Pesa Payment Flow</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className={`grid gap-2 ${canManualMpesa ? "grid-cols-3" : "grid-cols-2"}`}>
                     <Button
                       type="button"
                       variant={mpesaFlowTab === "link" ? "default" : "outline"}
-                      className={mpesaFlowTab === "link" ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+                      className={`text-xs sm:text-sm ${mpesaFlowTab === "link" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
                       onClick={() => setMpesaFlowTab("link")}
                     >
                       Link Existing Transaction
@@ -3440,11 +3730,21 @@ export default function OrdersPage() {
                     <Button
                       type="button"
                       variant={mpesaFlowTab === "request" ? "default" : "outline"}
-                      className={mpesaFlowTab === "request" ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+                      className={`text-xs sm:text-sm ${mpesaFlowTab === "request" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
                       onClick={() => setMpesaFlowTab("request")}
                     >
                       Send M-Pesa Request
                     </Button>
+                    {canManualMpesa && (
+                      <Button
+                        type="button"
+                        variant={mpesaFlowTab === "manual" ? "default" : "outline"}
+                        className={`text-xs sm:text-sm ${mpesaFlowTab === "manual" ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+                        onClick={() => setMpesaFlowTab("manual")}
+                      >
+                        Manual Transaction
+                      </Button>
+                    )}
                   </div>
 
                   {mpesaFlowTab === "link" && (() => {
@@ -3504,6 +3804,9 @@ export default function OrdersPage() {
                                 className="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5 text-[11px]"
                               >
                                 <div className="min-w-0 space-y-0.5">
+                                  <p className="text-[10px] font-semibold text-slate-800">
+                                    {linkedMpesaPaymentTitle(p)}
+                                  </p>
                                   <p className="font-mono font-medium truncate">
                                     {p.receiptNumber || p.transactionId}
                                   </p>
@@ -3512,6 +3815,9 @@ export default function OrdersPage() {
                                     {p.phone ? ` · ${p.phone}` : ""}
                                     {p.payerName ? ` · ${p.payerName}` : ""}
                                   </p>
+                                  {p.linkSource === "manual" && p.notes && (
+                                    <p className="text-[10px] text-amber-900">Reason: {p.notes}</p>
+                                  )}
                                 </div>
                                 {canManageMpesa && processingPayment.status !== "cancelled" && (
                                   <Button
@@ -3665,6 +3971,225 @@ export default function OrdersPage() {
                       <p className="text-xs text-slate-500">Status: {mpesaRequestStatus === "idle" ? "Ready" : mpesaRequestStatus === "sent" ? "Request Sent" : mpesaRequestStatus === "waiting" ? "Waiting for Payment" : mpesaRequestStatus === "paid" ? "Paid" : "Failed"}</p>
                     </div>
                   )}
+
+                  {mpesaFlowTab === "manual" && canManualMpesa && (() => {
+                    const live = summarizeCathaOrderPayments(processingPayment as any)
+                    const codeReady = manualTxCode.trim().replace(/\s+/g, "").length >= 3
+                    return (
+                    <div className="space-y-3 rounded-md bg-white p-3 border border-green-200">
+                      <p className="text-xs text-slate-600 leading-snug">
+                        Recover a payment when Safaricom completed it but the callback failed. Entries are submitted for manager approval before linking.
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="manual-tx-code" className="text-xs font-semibold">
+                          Transaction Code <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="manual-tx-code"
+                          type="text"
+                          placeholder="UG3GD9SAQE"
+                          value={manualTxCode}
+                          onChange={(e) => {
+                            setManualTxCode(e.target.value.toUpperCase().replace(/\s+/g, ""))
+                            setManualTxConfirmed(false)
+                          }}
+                          onBlur={() => {
+                            const c = manualTxCode.trim().replace(/\s+/g, "")
+                            if (c.length >= 3) setDebouncedManualTxCode(c)
+                          }}
+                          className="h-10 font-mono uppercase"
+                        />
+                      </div>
+
+                      {codeReady && manualTxLookupLoading && (
+                        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                          <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                          Checking linked payments and M-Pesa transactions…
+                        </div>
+                      )}
+
+                      {codeReady && !manualTxLookupLoading && manualTxLookup?.status === "already_linked" && (
+                        <div className="rounded-md border border-red-300 bg-red-50 p-3 space-y-2 text-xs">
+                          <div className="flex items-center gap-2 font-semibold text-red-900">
+                            <XCircle className="h-4 w-4 shrink-0" />
+                            Already Linked
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-red-950/90">
+                            <span className="text-red-800/80">Transaction</span>
+                            <span className="font-mono font-medium text-right">{manualTxLookup.transactionCode}</span>
+                            <span className="text-red-800/80">Order</span>
+                            <span className="font-mono font-medium text-right">{manualTxLookup.orderId}</span>
+                            {manualTxLookup.orderTable != null && (
+                              <>
+                                <span className="text-red-800/80">Table</span>
+                                <span className="font-medium text-right">{manualTxLookup.orderTable}</span>
+                              </>
+                            )}
+                            {manualTxLookup.customerName && (
+                              <>
+                                <span className="text-red-800/80">Customer</span>
+                                <span className="font-medium text-right truncate">{manualTxLookup.customerName}</span>
+                              </>
+                            )}
+                            <span className="text-red-800/80">Amount</span>
+                            <span className="font-mono font-medium text-right">KES {manualTxLookup.amount.toFixed(2)}</span>
+                            <span className="text-red-800/80">Linked by</span>
+                            <span className="font-medium text-right">{manualTxLookup.linkedBy}</span>
+                            <span className="text-red-800/80">Linked</span>
+                            <span className="font-medium text-right">{formatLookupWhen(manualTxLookup.linkedAt)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {codeReady && !manualTxLookupLoading && manualTxLookup?.status === "exists_unlinked" && (() => {
+                        const alloc = Number(manualTxLookup.allocatedTotal ?? 0)
+                        const total = Number(manualTxLookup.amount || 0)
+                        const rem = Number(manualTxLookup.remainingUnallocated || 0)
+                        const pct = total > 0 ? Math.min(100, (alloc / total) * 100) : 0
+                        return (
+                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2.5 text-xs">
+                          <div className="flex items-center gap-2 font-semibold text-amber-950">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                            Existing Payment Found
+                          </div>
+                          {manualTxLookup.importedFromSafaricom !== false && (
+                            <p className="text-emerald-800 font-medium flex items-center gap-1">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Imported from Safaricom
+                            </p>
+                          )}
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-amber-950/90">
+                            <span className="text-amber-900/80">Transaction</span>
+                            <span className="font-mono font-medium text-right">{manualTxLookup.transactionCode}</span>
+                            <span className="text-amber-900/80">Amount</span>
+                            <span className="font-mono font-medium text-right">KES {total.toFixed(2)}</span>
+                            {manualTxLookup.phoneMasked && (
+                              <>
+                                <span className="text-amber-900/80">Phone</span>
+                                <span className="font-mono font-medium text-right">{manualTxLookup.phoneMasked}</span>
+                              </>
+                            )}
+                            <span className="text-amber-900/80">Received</span>
+                            <span className="font-medium text-right">{formatLookupWhen(manualTxLookup.receivedAt)}</span>
+                            <span className="text-amber-900/80">Status</span>
+                            <span className="font-semibold text-right text-amber-800">Unlinked</span>
+                          </div>
+                          {total > 0 && (
+                            <div className="rounded-md bg-white/80 border border-amber-200 p-2.5 space-y-1.5">
+                              <div className="flex justify-between text-[10px] font-medium text-amber-950">
+                                <span>KES {total.toFixed(2)}</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-amber-100 overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full transition-all"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between gap-2 text-[10px]">
+                                <span className="text-amber-900/80">
+                                  Allocated KES {alloc.toFixed(2)}
+                                </span>
+                                <span className="font-semibold text-amber-900">
+                                  Remaining KES {rem.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                            onClick={() => void handleUseSuggestLink(manualTxLookup)}
+                          >
+                            Link Existing
+                          </Button>
+                        </div>
+                        )
+                      })()}
+
+                      {codeReady && !manualTxLookupLoading && manualTxLookup?.status === "not_found" && (
+                        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2.5 text-xs">
+                          <div className="flex items-center gap-2 font-semibold text-slate-800">
+                            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-300 text-[10px] text-slate-700">○</span>
+                            Transaction not found
+                          </div>
+                          <p className="text-slate-600 leading-snug">
+                            This payment does not exist in imported M-Pesa transactions. You may create a manual payment.
+                          </p>
+                          {!manualTxConfirmed ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => setManualTxConfirmed(true)}
+                            >
+                              Continue
+                            </Button>
+                          ) : (
+                            <p className="text-[10px] text-emerald-700 font-medium">Ready to create manual payment.</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="manual-tx-phone" className="text-xs font-medium">
+                          Customer Phone (optional)
+                        </Label>
+                        <Input
+                          id="manual-tx-phone"
+                          type="tel"
+                          placeholder="0712345678 or +254…"
+                          value={manualTxPhone}
+                          onChange={(e) => setManualTxPhone(e.target.value)}
+                          className="h-10"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="manual-tx-amount" className="text-xs font-semibold">
+                          Amount <span className="text-red-600">*</span>
+                        </Label>
+                        <Input
+                          id="manual-tx-amount"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={manualTxAmount}
+                          onChange={(e) => setManualTxAmount(e.target.value)}
+                          className="h-10 font-mono"
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Balance remaining: KSh {live.balanceDue.toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="manual-tx-date" className="text-xs font-medium">
+                          Payment Date
+                        </Label>
+                        <Input
+                          id="manual-tx-date"
+                          type="date"
+                          value={manualTxDate}
+                          onChange={(e) => setManualTxDate(e.target.value)}
+                          className="h-10"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="manual-tx-notes" className="text-xs font-medium">
+                          Notes (optional)
+                        </Label>
+                        <Textarea
+                          id="manual-tx-notes"
+                          placeholder="Reason for manual entry (e.g. callback timeout)"
+                          value={manualTxNotes}
+                          onChange={(e) => setManualTxNotes(e.target.value)}
+                          className="min-h-[72px] text-xs"
+                        />
+                      </div>
+                    </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -3677,6 +4202,11 @@ export default function OrdersPage() {
                 setShowCardDialog(false)
                 setPaymentCustomerPhone("")
                 setMpesaPhoneNumber("")
+                setManualTxCode("")
+                setManualTxAmount("")
+                setManualTxNotes("")
+                setManualTxLookup(null)
+                setManualTxConfirmed(false)
               }}>
                 Cancel
               </Button>
@@ -3692,6 +4222,30 @@ export default function OrdersPage() {
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   {linkingMpesaTransaction ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Linking...</> : <><Smartphone className="h-4 w-4 mr-2" />Link M-Pesa payment</>}
+                </Button>
+              ) : selectedPaymentMethod === "mpesa" && mpesaFlowTab === "manual" && canManualMpesa ? (
+                <Button
+                  onClick={() => void handleManualMpesaSubmit()}
+                  disabled={
+                    manualTxSubmitting ||
+                    !manualTxCode.trim() ||
+                    !manualTxAmount.trim() ||
+                    Number(manualTxAmount) <= 0 ||
+                    manualTxLookupLoading ||
+                    manualTxLookup?.status === "already_linked" ||
+                    manualTxLookup?.status === "exists_unlinked" ||
+                    (manualTxLookup?.status === "not_found" && !manualTxConfirmed) ||
+                    (manualTxCode.trim().replace(/\s+/g, "").length >= 3 &&
+                      !manualTxLookup &&
+                      !manualTxLookupLoading)
+                  }
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {manualTxSubmitting ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting...</>
+                  ) : (
+                    <><CheckCircle2 className="h-4 w-4 mr-2" />Submit for Approval</>
+                  )}
                 </Button>
               ) : (
                 <Button

@@ -25,6 +25,8 @@ export type AppendMpesaPaymentParams = {
   /** When set, this amount is applied to the order (must fit remaining transaction balance). */
   allocatedAmount?: number | null
   notes?: string | null
+  linkSource?: 'automatic' | 'staff_link' | 'manual'
+  verifiedAt?: Date | null
   /**
    * When allocatedAmount is omitted:
    * - full_transaction — min(remaining, full tx amount) for STK / reconcile flows
@@ -68,6 +70,9 @@ export function baseLinkedListFromOrder(order: any): LinkedMpesaPayment[] {
         transactionDate: p.transactionDate ?? null,
         linkedAt: p.linkedAt ?? new Date(),
         linkedBy: String(p.linkedBy || 'System'),
+        linkSource: p.linkSource ?? null,
+        notes: p.notes != null ? String(p.notes) : null,
+        verifiedAt: p.verifiedAt ?? null,
       }))
   }
   const legacy = order.mpesaTransactionId ? String(order.mpesaTransactionId).trim() : ''
@@ -241,6 +246,9 @@ export async function appendMpesaPaymentToOrder(db: Db, params: AppendMpesaPayme
     payerName = parts.length ? parts.map((x: unknown) => String(x).trim()).join(' ') : null
   }
   const transactionDateRaw = tx.transaction_date ?? tx.createdAt ?? linkedAt
+  const linkSource = params.linkSource ?? 'staff_link'
+  const paymentNotes = notes ?? null
+  const verifiedAt = params.verifiedAt ?? (linkSource === 'manual' ? linkedAt : null)
 
   const list = [...listSansThis]
   list.push({
@@ -254,6 +262,9 @@ export async function appendMpesaPaymentToOrder(db: Db, params: AppendMpesaPayme
     transactionDate: transactionDateRaw,
     linkedAt,
     linkedBy,
+    linkSource,
+    notes: paymentNotes,
+    verifiedAt,
   })
 
   await upsertMpesaOrderAllocation(db, {

@@ -56,6 +56,7 @@ export function buildOrdersListMongoFilter(query: OrdersListQuery): Filter<Recor
       { waiter: { $regex: esc, $options: 'i' } },
       { glovoOrderNumber: { $regex: esc, $options: 'i' } },
       { mpesaReceiptNumber: { $regex: esc, $options: 'i' } },
+      { 'linkedPayments.receiptNumber': { $regex: esc, $options: 'i' } },
       { 'items.name': { $regex: esc, $options: 'i' } },
     ]
     if (/^\d+$/.test(t)) {

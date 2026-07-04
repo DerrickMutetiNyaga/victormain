@@ -1300,7 +1300,7 @@ const PERMISSION_GROUPS: {
   modules: (keyof CathaPermissions)[]
 }[] = [
   { name: 'System', modules: ['dashboard', 'myShift', 'users', 'settings', 'reports'] },
-  { name: 'Sales & POS', modules: ['pos', 'posDiscounts', 'orders'] },
+  { name: 'Sales & POS', modules: ['pos', 'posDiscounts', 'orders', 'payments'] },
   { name: 'Operations', modules: ['tables', 'tableQrCodes'] },
   { name: 'Inventory', modules: ['inventory', 'suppliers', 'stockMovement'] },
   { name: 'Financial', modules: ['mpesa', 'expenses'] },
@@ -1314,6 +1314,7 @@ const MODULE_LABELS: Record<keyof CathaPermissions, string> = {
   pos: 'POS Sales',
   posDiscounts: 'POS Discounts (Manage)',
   orders: 'Orders',
+  payments: 'Payments (Manual M-Pesa)',
   inventory: 'Inventory',
   suppliers: 'Suppliers',
   stockMovement: 'Stock Movement',
