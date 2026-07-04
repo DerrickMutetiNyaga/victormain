@@ -113,7 +113,13 @@ export async function GET(
     }
 
     const summary = summarizeCathaOrderPayments(order as Record<string, unknown>)
-    const isPaid = summary.paymentStatus === "PAID" || summary.paymentStatus === "OVERPAID"
+    // The M-Pesa callback finalizes orders by setting status/paymentStatus directly
+    // (without appending linkedPayments), so check those flags too — otherwise the
+    // pay page never detects the payment.
+    const computedPaid = summary.paymentStatus === "PAID" || summary.paymentStatus === "OVERPAID"
+    const explicitPaid = ["PAID", "OVERPAID"].includes(String(order.paymentStatus || "").toUpperCase())
+    const statusCompleted = String(order.status || "").toLowerCase() === "completed"
+    const isPaid = computedPaid || explicitPaid || statusCompleted
     const amountDue = isPaid ? 0 : summary.balanceDue > 0 ? summary.balanceDue : summary.orderTotal
 
     const tillNumber = String(

@@ -213,6 +213,26 @@ export function PayOrderClient({ orderId }: { orderId: string }) {
     return () => stopPolling()
   }, [load, stopPolling])
 
+  // If the tab was left open (e.g. customer paid earlier, comes back later),
+  // re-check the order when the page regains focus so it flips to "paid".
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== "visible") return
+      fetchPayStatus()
+        .then((json) => {
+          setData(json)
+          if (json.isPaid) setPaymentState("paid")
+        })
+        .catch(() => {})
+    }
+    document.addEventListener("visibilitychange", refreshIfVisible)
+    window.addEventListener("focus", refreshIfVisible)
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfVisible)
+      window.removeEventListener("focus", refreshIfVisible)
+    }
+  }, [fetchPayStatus])
+
   const resetPaymentAttempt = () => {
     stopPolling()
     setPaymentState("idle")

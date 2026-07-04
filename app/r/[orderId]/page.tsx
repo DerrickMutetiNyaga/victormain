@@ -1,17 +1,6 @@
 import { notFound } from "next/navigation"
-import {
-  BadgeCheck,
-  Bookmark,
-  CalendarDays,
-  Check,
-  CircleCheckBig,
-  CreditCard,
-  Heart,
-  Leaf,
-  Package,
-  ReceiptText,
-  ShoppingBag,
-} from "lucide-react"
+import { CheckCircle2, ShieldCheck, Wine } from "lucide-react"
+import { PrintReceiptButton } from "./print-receipt-button"
 
 type PublicReceipt = {
   businessName: string
@@ -34,34 +23,15 @@ function formatMoney(v: number): string {
   return `KSh ${Number(v || 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function formatDateTime(value: string | Date): { date: string; time: string } {
+function formatDateTime(value: string | Date): string {
   const dt = new Date(value)
-  return {
-    date: dt.toLocaleDateString("en-GB"),
-    time: dt.toLocaleTimeString("en-GB", { hour12: false }),
-  }
-}
-
-function DetailRow({
-  icon,
-  label,
-  value,
-  valueClassName,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: React.ReactNode
-  valueClassName?: string
-}) {
-  return (
-    <div className="flex items-start gap-2 sm:gap-2.5">
-      <div className="mt-0.5 rounded-lg border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-700">{icon}</div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">{label}</p>
-        <p className={`mt-0.5 break-words text-sm font-semibold text-slate-900 sm:text-[15px] ${valueClassName || ""}`}>{value}</p>
-      </div>
-    </div>
-  )
+  return dt.toLocaleString("en-KE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }
 
 async function fetchReceipt(orderId: string): Promise<PublicReceipt | null> {
@@ -74,7 +44,7 @@ async function fetchReceipt(orderId: string): Promise<PublicReceipt | null> {
 }
 
 export const metadata = {
-  title: "Receipt | catha lounge",
+  title: "Receipt | Catha Lounge",
   robots: { index: false, follow: false },
 }
 
@@ -83,137 +53,123 @@ export default async function PublicReceiptPage({ params }: { params: Promise<{ 
   const receipt = await fetchReceipt(orderId)
   if (!receipt) notFound()
 
-  const dt = formatDateTime(receipt.timestamp)
-  const lineTotal = (qty: number, price: number) => Number(qty || 0) * Number(price || 0)
-  const statusText = receipt.paymentStatus === "OVERPAID" ? "Paid" : "Paid"
+  const paidAt = formatDateTime(receipt.timestamp)
   const paymentText = receipt.paymentMethod ? String(receipt.paymentMethod).toUpperCase() : "—"
 
   return (
-    <main className="min-h-screen bg-[#f5f7f9] px-2 py-4 sm:px-4 sm:py-8 lg:px-6 lg:py-10">
-      <div className="mx-auto w-full max-w-xl sm:max-w-2xl">
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-          <div className="h-4 bg-[#166534] sm:h-5" />
-          <div className="px-4 pb-5 pt-4 sm:px-6 sm:pb-7 sm:pt-5 lg:px-7 lg:pb-8 lg:pt-6">
-            {/* Header */}
-            <div className="text-center">
-              <div className="relative mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 sm:h-20 sm:w-20">
-                <CircleCheckBig className="h-9 w-9 text-emerald-600 sm:h-11 sm:w-11" />
-                <span className="absolute -left-1 top-2 h-2 w-2 rounded-full bg-emerald-500" />
-                <span className="absolute -right-0.5 top-5 h-1.5 w-1.5 rounded-full bg-amber-400" />
-                <span className="absolute -left-0.5 bottom-4 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <span className="absolute -right-1 bottom-3 h-2 w-2 rounded-full bg-emerald-500" />
+    <main className="relative min-h-screen overflow-hidden bg-[#0c0a09] text-stone-100 print:bg-white">
+      {/* Ambient gold glow */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[420px] w-[620px] -translate-x-1/2 rounded-full bg-amber-500/15 blur-[120px] print:hidden" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-64 w-64 rounded-full bg-amber-700/10 blur-[100px] print:hidden" />
+
+      <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-8 sm:pt-12 print:max-w-full print:px-0 print:pt-0">
+        {/* Brand */}
+        <header className="mb-6 text-center print:hidden">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10">
+            <Wine className="h-5 w-5 text-amber-300" />
+          </div>
+          <p className="font-serif text-2xl uppercase tracking-[0.3em] text-amber-100">Catha Lounge</p>
+          <div className="mx-auto mt-2 h-px w-16 bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
+          <p className="mt-2 text-[11px] uppercase tracking-[0.35em] text-stone-400">Infusion Jaba</p>
+        </header>
+
+        <div className="flex-1">
+          <div className="overflow-hidden rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] print:rounded-none print:shadow-none">
+            {/* Success banner */}
+            <div className="relative bg-gradient-to-b from-emerald-900 via-emerald-950 to-stone-950 px-6 pb-8 pt-9 text-center print:bg-white print:text-black">
+              <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-emerald-400/20 blur-[70px] print:hidden" />
+              <div className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center print:hidden">
+                <span className="absolute inset-[-8px] rounded-full border border-amber-400/30" />
+                <span className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-emerald-300 bg-emerald-400/15 shadow-[0_0_40px_rgba(52,211,153,0.35)]">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-200" />
+                </span>
               </div>
-              <div className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700 sm:px-4 sm:text-xs">
-                Payment Received
-              </div>
-              <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">{receipt.businessName}</h1>
-              <p className="mt-1 text-sm text-slate-600 sm:text-base">Thank you for your order!</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-emerald-300/90 print:text-black">
+                Official receipt
+              </p>
+              <h1 className="mt-1 font-serif text-[2rem] leading-tight text-amber-50 print:text-black">
+                Payment received
+              </h1>
+              <p className="mt-3 font-serif text-4xl tabular-nums text-emerald-200 print:text-black">
+                {formatMoney(receipt.total)}
+              </p>
+              <div className="mx-auto mt-4 h-px w-24 bg-gradient-to-r from-transparent via-amber-400/60 to-transparent print:hidden" />
             </div>
 
-            {/* Details */}
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-[#f9fffb] p-3.5 sm:mt-5 sm:p-5">
-              <div className="grid gap-3.5 sm:grid-cols-2 sm:gap-4">
-                <DetailRow
-                  icon={<ReceiptText className="h-4 w-4" />}
-                  label="Order ID"
-                  value={receipt.orderId}
-                  valueClassName="font-mono"
-                />
-                <DetailRow
-                  icon={<CalendarDays className="h-4 w-4" />}
-                  label="Date & Time"
-                  value={
-                    <span>
-                      {dt.date}, <span className="font-semibold">{dt.time}</span>
-                    </span>
-                  }
-                />
-                <DetailRow icon={<CreditCard className="h-4 w-4" />} label="Payment Method" value={paymentText} />
-                <DetailRow
-                  icon={<BadgeCheck className="h-4 w-4" />}
-                  label="Status"
-                  value={
-                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-sm font-semibold text-emerald-700">
-                      {statusText}
-                    </span>
-                  }
-                />
-                <div className="sm:col-span-2">
-                  <DetailRow
-                    icon={<Bookmark className="h-4 w-4" />}
-                    label="Receipt Reference"
-                    value={receipt.receiptNumber || "—"}
-                    valueClassName="text-emerald-700"
-                  />
+            {/* Ivory receipt panel */}
+            <div className="bg-[#faf7f0] px-6 py-5 text-stone-900 print:bg-white">
+              <div className="space-y-2.5 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-stone-500">Order</span>
+                  <span className="break-all text-right font-mono font-black">#{receipt.orderId}</span>
+                </div>
+                {receipt.receiptNumber && (
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-stone-500">M-Pesa receipt</span>
+                    <span className="font-mono font-bold">{receipt.receiptNumber}</span>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-stone-500">Date</span>
+                  <span className="font-semibold">{paidAt}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-stone-500">Payment</span>
+                  <span className="font-semibold">{paymentText}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-stone-500">Status</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-emerald-800">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                    Paid
+                  </span>
                 </div>
               </div>
-            </div>
 
-            {/* Items */}
-            <div className="mt-5 sm:mt-6">
-              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-800 sm:text-sm">
-                <ShoppingBag className="h-4 w-4 text-emerald-700" />
-                Order Items
-              </h2>
-              <div className="mt-2.5 space-y-2.5 sm:mt-3">
-                {receipt.items.map((item, idx) => (
-                  <div
-                    key={`${item.name}-${idx}`}
-                    className="grid grid-cols-[48px_1fr_auto] items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-2.5 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)] sm:grid-cols-[56px_1fr_auto] sm:gap-3 sm:px-3 sm:py-3"
-                  >
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 sm:h-14 sm:w-14">
-                      <Package className="h-6 w-6 sm:h-7 sm:w-7" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{item.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
-                        {item.quantity} x {formatMoney(item.price)}
-                      </p>
-                    </div>
-                    <p className="text-base font-extrabold text-slate-900 sm:text-xl">{formatMoney(lineTotal(item.quantity, item.price))}</p>
+              {receipt.items.length > 0 && (
+                <>
+                  <div className="my-4 border-t border-dashed border-stone-300" />
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.25em] text-stone-500">
+                    Order items
+                  </p>
+                  <div className="space-y-1.5 text-sm">
+                    {receipt.items.map((item, i) => (
+                      <div key={i} className="flex items-baseline gap-2">
+                        <span className="text-stone-700">
+                          {item.quantity}× {item.name}
+                        </span>
+                        <span className="flex-1 border-b border-dotted border-stone-300" />
+                        <span className="font-semibold tabular-nums">
+                          {formatMoney(item.price * item.quantity)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </>
+              )}
 
-            {/* Summary */}
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:p-4">
-              <div className="flex items-center justify-between text-sm text-slate-700 sm:text-base">
-                <span>Subtotal</span>
-                <span>{formatMoney(receipt.subtotal)}</span>
+              <div className="my-4 border-t-2 border-stone-900" />
+              <div className="flex items-baseline justify-between">
+                <span className="text-base font-black uppercase tracking-wide">Total paid</span>
+                <span className="font-serif text-2xl tabular-nums">{formatMoney(receipt.total)}</span>
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-sm text-slate-700 sm:text-base">
-                <span>VAT</span>
-                <span>{formatMoney(receipt.vat)}</span>
-              </div>
-              <div className="my-3 border-t border-dashed border-slate-300" />
-              <div className="flex items-center justify-between">
-                <span className="text-lg font-bold text-emerald-700 sm:text-2xl">Total Paid</span>
-                <span className="text-2xl font-extrabold tracking-tight text-emerald-700 sm:text-4xl">{formatMoney(receipt.total)}</span>
-              </div>
-            </div>
 
-            {/* Thank you */}
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-[#fbfdfc] p-4 text-center sm:p-5">
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm sm:h-11 sm:w-11">
-                <Heart className="h-5 w-5 fill-current" />
-              </div>
-              <p className="text-xl font-bold text-slate-900 sm:text-[28px]">Thank you for visiting us!</p>
-              <p className="mx-auto mt-1 max-w-sm text-sm text-slate-600 sm:text-base">
-                We appreciate your support and look forward to serving you again.
+              <p className="mt-5 text-center text-sm text-stone-600">
+                Thank you for choosing <span className="font-serif font-semibold">Catha Lounge</span>.
+                We look forward to serving you again.
               </p>
-            </div>
 
-            {/* Branding */}
-            <div className="mt-6 text-center">
-              <p className="inline-flex items-center gap-2 text-xl font-semibold text-slate-900 sm:text-[28px]">
-                <Leaf className="h-6 w-6 text-emerald-700 sm:h-7 sm:w-7" />
-                catha lounge
-              </p>
-              <p className="mt-1 text-xs text-slate-500 sm:text-base">Good Food • Great Moments • Always</p>
+              <div className="mt-5">
+                <PrintReceiptButton />
+              </div>
             </div>
           </div>
-        </section>
+        </div>
+
+        <footer className="mt-8 flex items-center justify-center gap-1.5 text-[11px] text-stone-500 print:hidden">
+          <ShieldCheck className="h-3.5 w-3.5 text-amber-500/70" />
+          Secured by M-Pesa · infusionjaba.co.ke
+        </footer>
       </div>
     </main>
   )
