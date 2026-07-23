@@ -47,7 +47,7 @@ export const ProductCard = memo(function ProductCard({
         <p className={styles.desc}>{item.description || ""}</p>
         <div className={styles.footer}>
           <span className={styles.price}>
-            KES {item.price.toLocaleString()}
+            KES {(Number(item.price) || 0).toLocaleString()}
           </span>
           <button
             onClick={(e) => {

@@ -36,7 +36,7 @@ export const StickyCartBar = memo(function StickyCartBar({
               </div>
               <p className={styles.summary}>
                 {itemCount} {itemCount === 1 ? "item" : "items"} · KES{" "}
-                {total.toLocaleString()}
+                {(Number(total) || 0).toLocaleString()}
               </p>
             </div>
             <div className={styles.cta}>

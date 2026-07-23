@@ -99,7 +99,7 @@ export const ProductSheet = memo(function ProductSheet({
         <div className={styles.priceBox}>
           <p className={styles.priceLabel}>Price</p>
           <p className={styles.priceValue}>
-            KES {item.price.toLocaleString()}
+            KES {(Number(item.price) || 0).toLocaleString()}
           </p>
         </div>
 

@@ -118,7 +118,7 @@ export const CartDrawer = memo(function CartDrawer({
                 <div className="flex-1 min-w-0">
                   <h4 className={styles.itemName}>{item.name}</h4>
                   <p className={styles.itemPrice}>
-                    KES {item.unitPrice.toLocaleString()}
+                    KES {(Number(item.unitPrice) || 0).toLocaleString()}
                   </p>
                   <div className="flex items-center justify-between gap-2 mt-2">
                     <div className={styles.qtyPill}>
@@ -139,7 +139,7 @@ export const CartDrawer = memo(function CartDrawer({
 
                     <div className="flex items-center gap-2">
                       <span className={styles.lineTotal}>
-                        KES {(item.unitPrice * item.quantity).toLocaleString()}
+                        KES {((Number(item.unitPrice) || 0) * item.quantity).toLocaleString()}
                       </span>
                       <button
                         className={styles.removeBtn}

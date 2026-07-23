@@ -55,7 +55,7 @@ export const PopularRow = memo(function PopularRow({
               <p className={styles.desc}>{item.description}</p>
               <div className={styles.row}>
                 <span className={styles.price}>
-                  KES {item.price.toLocaleString()}
+                  KES {(Number(item.price) || 0).toLocaleString()}
                 </span>
                 <button
                   type="button"

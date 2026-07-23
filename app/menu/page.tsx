@@ -96,7 +96,7 @@ function MenuContent() {
           id: p.id,
           name: p.name,
           description: p.size ? `${p.size}${p.unit ? " " + p.unit : ""}` : (p.unit || ""),
-          price: p.price,
+          price: Number(p.price) || 0,
           image: p.image && p.image !== "/placeholder.svg" ? p.image : "/placeholder.jpg",
           category: p.category?.toLowerCase().replace(/\s+/g, "-") || "other",
           inStock: (p.stock || 0) > 0,

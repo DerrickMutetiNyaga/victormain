@@ -180,11 +180,11 @@ export function PaymentModal({
                   <div>
                     <div className="flex justify-between text-[rgba(242,232,216,0.4)] text-xs mt-1">
                       <span>Amount</span>
-                      <span className="tabular-nums">KES {amount.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="tabular-nums">KES {(Number(amount) || 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-[#f2e8d8] font-bold text-sm mt-1.5 pt-1.5 border-t border-[rgba(185,138,68,0.14)]">
                       <span>Total</span>
-                      <span className="tabular-nums">KES {amount.toLocaleString()}</span>
+                      <span className="tabular-nums">KES {(Number(amount) || 0).toLocaleString()}</span>
                     </div>
                   </div>
                 </DialogDescription>
@@ -242,10 +242,10 @@ export function PaymentModal({
                 <div className="p-4 rounded-2xl bg-[rgba(28,20,16,0.7)] border border-[rgba(185,138,68,0.14)]">
                   <p className="text-[rgba(242,232,216,0.4)] text-[10px] font-semibold uppercase tracking-[0.16em] mb-1">Amount Due</p>
                   <p className="text-3xl font-extrabold text-[#c8722a] tabular-nums">
-                    KES {amount.toLocaleString()}
+                    KES {(Number(amount) || 0).toLocaleString()}
                   </p>
                   <div className="flex gap-3 mt-1.5">
-                    <span className="text-[rgba(242,232,216,0.35)] text-xs tabular-nums">Total: KES {amount.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-[rgba(242,232,216,0.35)] text-xs tabular-nums">Total: KES {(Number(amount) || 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
 
@@ -301,10 +301,10 @@ export function PaymentModal({
                 <div className="p-4 rounded-2xl bg-[rgba(28,20,16,0.7)] border border-[rgba(185,138,68,0.14)]">
                   <p className="text-[rgba(242,232,216,0.4)] text-[10px] font-semibold uppercase tracking-[0.16em] mb-1">Amount to Pay</p>
                   <p className="text-3xl font-extrabold text-[#c8722a] tabular-nums">
-                    KES {amount.toLocaleString()}
+                    KES {(Number(amount) || 0).toLocaleString()}
                   </p>
                   <div className="flex gap-3 mt-1.5">
-                    <span className="text-[rgba(242,232,216,0.35)] text-xs tabular-nums">Total: KES {amount.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-[rgba(242,232,216,0.35)] text-xs tabular-nums">Total: KES {(Number(amount) || 0).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <p className="text-[rgba(200,114,42,0.8)] text-xs mt-2 font-medium">Cash payment at the bar</p>
                 </div>
