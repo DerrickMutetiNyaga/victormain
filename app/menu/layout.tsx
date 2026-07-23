@@ -22,7 +22,7 @@ export default function MenuLayout({
 }: {
   children: React.ReactNode
 }) {
-  const fontVars = `${playfair.variable} ${inter.variable}`
+  const fontVars = [playfair.variable, inter.variable].filter(Boolean).join(" ")
 
   return (
     <MenuFontScope className={fontVars}>

@@ -42,9 +42,6 @@ export const ProductSheet = memo(function ProductSheet({
   onAdd,
   onRemove,
 }: ProductSheetProps) {
-  if (!item) return null
-
-  const tag = item.tag ? tagConfig[item.tag] : null
   const [isDesktop, setIsDesktop] = useState(false)
 
   useEffect(() => {
@@ -54,6 +51,10 @@ export const ProductSheet = memo(function ProductSheet({
     mq.addEventListener("change", apply)
     return () => mq.removeEventListener("change", apply)
   }, [])
+
+  if (!item) return null
+
+  const tag = item.tag ? tagConfig[item.tag] : null
 
   const content = (
     <motion.div
