@@ -69,6 +69,11 @@ function MenuContent() {
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([])
   const [menuLoading, setMenuLoading] = useState(true)
   const jabaSectionRef = useRef<HTMLDivElement>(null)
+  /** Local cart is source of truth while ordering — only hydrate once from draft. */
+  const cartHydratedRef = useRef(false)
+  const cartSyncGenRef = useRef(0)
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSyncItemsRef = useRef<CartItem[] | null>(null)
 
   const debouncedSearch = useDebounce(searchQuery, 150)
 
@@ -158,45 +163,56 @@ function MenuContent() {
     }
   }, [tableNumber, customerNumberResolved])
 
-  // Load active unpaid order when table + customer/guest are known
+  // Track active unpaid order. Hydrate cart from draft ONCE — never overwrite
+  // local cart on every store notify (that caused add/remove flicker).
   useEffect(() => {
     if (!tableNumber || !customerNumberResolved) return
 
-    const loadActive = () => {
+    cartHydratedRef.current = false
+
+    const refreshActiveOrder = () => {
       const cust = customerNumber ?? null
       const guest = customerNumber == null ? guestSessionId : null
       const order = orderStore.getActiveUnpaidOrder(tableNumber, cust, guest)
       setActiveOrder(order ?? null)
 
+      if (!cartHydratedRef.current) {
+        cartHydratedRef.current = true
+        if (order?.status === "draft" && Array.isArray(order.items) && order.items.length > 0) {
+          setCart(order.items)
+        }
+        return
+      }
+
+      // After hydrate: only react to terminal transitions (sent / paid / gone)
       if (!order) {
-        // No active unpaid order — the customer's order was paid/cancelled by admin
-        // or they haven't started one yet. Clear any leftover cart items that
-        // belonged to a now-completed order (a fresh cart would have no draft).
-        const hasDraft = orderStore.getOrders().some(
+        // Unpaid order vanished (paid/cancelled). Don't clear mid-sync drafts.
+        const stillDrafting = orderStore.getOrders().some(
           (o) =>
             o.status === "draft" &&
             (cust ? o.customerNumber === cust : o.guestSessionId === guest)
         )
-        if (!hasDraft) setCart([])
+        if (!stillDrafting && pendingSyncItemsRef.current == null) {
+          setCart([])
+        }
         return
       }
 
-      if (order.status === "draft") {
-        // Draft: pre-fill cart so customer can continue editing
-        setCart(order.items)
-      } else {
-        // Sent / active: order is at the bar — clear cart unless user is building NEW items
+      if (order.status === "sent" || order.status === "active" || order.status === "paid") {
         setCart((prev) => {
           const orderItemIds = new Set(order.items.map((i) => i.id))
           const hasNewItems = prev.some((i) => !orderItemIds.has(i.id))
-          return hasNewItems ? prev : []
+          return hasNewItems ? prev.filter((i) => !orderItemIds.has(i.id)) : []
         })
       }
     }
 
-    loadActive()
-    const unsub = orderStore.subscribe(loadActive)
-    return unsub
+    refreshActiveOrder()
+    const unsub = orderStore.subscribe(refreshActiveOrder)
+    return () => {
+      unsub()
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    }
   }, [tableNumber, customerNumber, guestSessionId, customerNumberResolved])
 
   const handleCustomerContinue = useCallback((cust: string) => {
@@ -232,6 +248,77 @@ function MenuContent() {
   const vat = 0
   const total = subtotal
 
+  const flushCartSync = useCallback(
+    async (items: CartItem[]) => {
+      if (!tableNumber || !customerNumberResolved) return
+
+      const gen = ++cartSyncGenRef.current
+      const cust = customerNumber ?? null
+      const guest = customerNumber == null ? guestSessionId : null
+      const existing = orderStore.getActiveUnpaidOrder(tableNumber, cust, guest)
+
+      // Never modify an order that's already been sent to / accepted by the bar.
+      if (existing && (existing.status === "sent" || existing.status === "active")) {
+        return
+      }
+
+      const newTotal = items.reduce(
+        (s, i) => s + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0),
+        0
+      )
+
+      try {
+        if (existing) {
+          if (items.length === 0) {
+            // Empty draft — keep draft row but clear lines; don't fight UI
+            await orderStore.updateOrder(existing.orderId, {
+              items: [],
+              total: 0,
+            })
+          } else {
+            await orderStore.updateOrder(existing.orderId, {
+              items,
+              total: newTotal,
+            })
+          }
+          if (gen !== cartSyncGenRef.current) return
+          const latest = orderStore.getActiveUnpaidOrder(tableNumber, cust, guest)
+          setActiveOrder(latest ?? null)
+        } else if (items.length > 0) {
+          const order = await orderStore.createOrder({
+            tableId: tableNumber,
+            tableNumber,
+            customerNumber: cust,
+            guestSessionId: guest,
+            status: "draft",
+            paymentStatus: "UNPAID",
+            items,
+            total: newTotal,
+          })
+          if (gen !== cartSyncGenRef.current) return
+          setActiveOrder(order)
+        }
+      } finally {
+        if (gen === cartSyncGenRef.current) {
+          pendingSyncItemsRef.current = null
+        }
+      }
+    },
+    [tableNumber, customerNumber, guestSessionId, customerNumberResolved]
+  )
+
+  const syncCartToOrder = useCallback(
+    (items: CartItem[]) => {
+      pendingSyncItemsRef.current = items
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+      syncTimerRef.current = setTimeout(() => {
+        const payload = pendingSyncItemsRef.current
+        if (payload) void flushCartSync(payload)
+      }, 280)
+    },
+    [flushCartSync]
+  )
+
   const handleAddToCart = useCallback(
     (item: MenuItem) => {
       if (!tableNumber) return
@@ -261,50 +348,7 @@ function MenuContent() {
         return next
       })
     },
-    [tableNumber, customerNumberResolved]
-  )
-
-  const syncCartToOrder = useCallback(
-    async (items: CartItem[]) => {
-      if (!tableNumber || !customerNumberResolved) return
-
-      const cust = customerNumber ?? null
-      const guest = customerNumber == null ? guestSessionId : null
-      const existing = orderStore.getActiveUnpaidOrder(tableNumber, cust, guest)
-
-      // Never modify an order that's already been sent to / accepted by the bar.
-      // Those stay untouched — the cart is for a NEW order only.
-      if (existing && (existing.status === "sent" || existing.status === "active")) {
-        return
-      }
-
-      const newSubtotal = items.reduce(
-        (s, i) => s + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0),
-        0
-      )
-      const newTotal = newSubtotal
-
-      if (existing) {
-        await orderStore.updateOrder(existing.orderId, {
-          items,
-          total: newTotal,
-        })
-        setActiveOrder({ ...existing, items, total: newTotal })
-      } else if (items.length > 0) {
-        const order = await orderStore.createOrder({
-          tableId: tableNumber,
-          tableNumber,
-          customerNumber: cust,
-          guestSessionId: guest,
-          status: "draft",
-          paymentStatus: "UNPAID",
-          items,
-          total: newTotal,
-        })
-        setActiveOrder(order)
-      }
-    },
-    [tableNumber, customerNumber, guestSessionId, customerNumberResolved]
+    [tableNumber, customerNumberResolved, syncCartToOrder]
   )
 
   const handleUpdateQuantity = useCallback(
@@ -337,16 +381,22 @@ function MenuContent() {
   )
 
   // Clicking "Send Order" in cart opens the payment method selection
-  const handleSendNow = useCallback(() => {
+  const handleSendNow = useCallback(async () => {
     if (!tableNumber || cart.length === 0) return
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    const payload = pendingSyncItemsRef.current ?? cart
+    await flushCartSync(payload)
     setCartOpen(false)
     setShowPaymentModal(true)
-  }, [tableNumber, cart.length])
+  }, [tableNumber, cart, flushCartSync])
 
-  const handlePayNow = useCallback(() => {
+  const handlePayNow = useCallback(async () => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    const payload = pendingSyncItemsRef.current ?? cart
+    await flushCartSync(payload)
     setCartOpen(false)
     setShowPaymentModal(true)
-  }, [])
+  }, [cart, flushCartSync])
 
   // When order already at bar and customer wants to switch from cash → M-Pesa
   const handlePayMpesa = useCallback(() => {
