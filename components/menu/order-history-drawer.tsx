@@ -47,20 +47,20 @@ export function OrderHistoryDrawer({
         )}
       </DrawerTrigger>
 
-      <DrawerContent className="max-h-[88vh] rounded-t-3xl border-t border-white/[0.08] bg-[#13131E]">
+      <DrawerContent className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(185,138,68,0.22)] bg-[#14100c]">
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-1">
-          <div className="h-1 w-10 rounded-full bg-white/20" />
+          <div className="h-1 w-10 rounded-full bg-[rgba(242,232,216,0.2)]" />
         </div>
 
-        <DrawerHeader className="border-b border-white/[0.06] py-3 px-5">
+        <DrawerHeader className="border-b border-[rgba(185,138,68,0.14)] py-3 px-5">
           <DrawerTitle className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-white/[0.08] flex items-center justify-center">
-              <Receipt className="h-5 w-5 text-white/60" />
+            <div className="h-10 w-10 rounded-2xl bg-[rgba(28,20,16,0.9)] border border-[rgba(185,138,68,0.18)] flex items-center justify-center">
+              <Receipt className="h-5 w-5 text-[#b98a44]" />
             </div>
             <div>
-              <span className="text-base font-bold text-white">Order History</span>
-              <p className="text-[12px] text-white/40 font-normal mt-0.5">
+              <span className="text-base font-semibold text-[#f2e8d8] font-[family-name:var(--menu-font-display)]">Order History</span>
+              <p className="text-[12px] text-[rgba(242,232,216,0.4)] font-normal mt-0.5">
                 {orders.length} {orders.length === 1 ? "paid order" : "paid orders"}
               </p>
             </div>

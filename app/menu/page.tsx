@@ -9,8 +9,7 @@ import React, {
   useRef,
 } from "react"
 import { useSearchParams } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { ShoppingCart, Search, History, QrCode, X, TableIcon, ClipboardList } from "lucide-react"
+import { Search, History, QrCode, X, TableIcon, ClipboardList } from "lucide-react"
 import { ProductCard } from "@/components/menu/product-card"
 import { CartDrawer } from "@/components/menu/cart-drawer"
 import { CategoryTabs } from "@/components/menu/category-tabs"
@@ -28,6 +27,7 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
 import { SiteLogo } from "@/components/branding/site-logo"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
+import styles from "./menu.module.css"
 
 const GUEST_SESSION_KEY = "menu_guest_session"
 const MENU_TABLE_KEY = "menu_table"
@@ -508,36 +508,38 @@ function MenuContent() {
     }
 
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0A0A0F]">
-        <div className="max-w-sm w-full space-y-8">
-          {/* QR hint */}
+      <div className={styles.gate}>
+        <div className={styles.gateCard}>
           <div className="text-center space-y-4">
-            <div className="h-20 w-20 rounded-2xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center mx-auto">
-              <QrCode className="h-10 w-10 text-amber-400" />
+            <div className={styles.gateIcon}>
+              <QrCode className="h-10 w-10" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Scan your table QR</h1>
-              <p className="text-white/50 mt-2 text-sm leading-relaxed">
+              <p className={cn(styles.eyebrow, "mb-2")}>Table Service</p>
+              <h1 className={cn(styles.display, "text-3xl")}>Scan your table QR</h1>
+              <p className="text-[rgba(242,232,216,0.5)] mt-3 text-sm leading-relaxed">
                 Point your camera at the QR code on your table to start ordering
               </p>
             </div>
           </div>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-white/[0.08]" />
-            <span className="text-white/25 text-xs font-medium uppercase tracking-widest">or</span>
-            <div className="flex-1 h-px bg-white/[0.08]" />
+          <div className="flex items-center gap-3 my-8">
+            <div className="flex-1">
+              <div className={styles.hairline} />
+            </div>
+            <span className={styles.eyebrow}>or</span>
+            <div className="flex-1">
+              <div className={styles.hairline} />
+            </div>
           </div>
 
-          {/* Manual table entry */}
           <form onSubmit={handleManualTable} className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-white/50 text-xs font-semibold uppercase tracking-widest block">
+              <label className={cn(styles.eyebrow, "block")}>
                 Enter your table number
               </label>
               <div className="relative">
-                <TableIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/25 pointer-events-none" />
+                <TableIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[rgba(242,232,216,0.28)] pointer-events-none" />
                 <input
                   type="text"
                   inputMode="numeric"
@@ -548,17 +550,17 @@ function MenuContent() {
                     setManualTableInput(e.target.value.replace(/\D/g, ""))
                     setManualTableError("")
                   }}
-                  className="w-full h-12 pl-10 pr-4 rounded-xl bg-white/[0.07] border border-white/[0.10] text-white placeholder:text-white/25 text-base focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition-all"
+                  className={styles.gateInput}
                 />
               </div>
               {manualTableError && (
-                <p className="text-red-400 text-xs pl-1">{manualTableError}</p>
+                <p className="text-[#c07070] text-xs pl-1">{manualTableError}</p>
               )}
             </div>
             <button
               type="submit"
               disabled={!manualTableInput.trim()}
-              className="w-full h-12 rounded-xl font-bold text-[15px] bg-gradient-to-r from-amber-500 to-amber-400 text-black disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              className={styles.primaryBtn}
             >
               Go to Menu
             </button>
@@ -572,20 +574,21 @@ function MenuContent() {
   if (showOrderTracking && placedOrderId) {
     const currentOrder = orderStore.getOrder(placedOrderId)
     return (
-      <div className="min-h-screen bg-[#0A0A0F]">
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className={styles.page}>
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 relative z-[1]">
           <button
             onClick={() => {
               setShowOrderTracking(false)
               setPlacedOrderId(null)
             }}
-            className="flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium"
+            className={styles.trackingBack}
           >
             ← Back to Menu
           </button>
-          <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-white">Order sent! 🎉</h1>
-            <p className="text-white/50 text-sm">
+          <div className="text-center space-y-2">
+            <p className={styles.eyebrow}>Order Status</p>
+            <h1 className={cn(styles.display, "text-3xl")}>Order sent</h1>
+            <p className="text-[rgba(242,232,216,0.5)] text-sm">
               Your order has been received and is being prepared
             </p>
           </div>
@@ -616,48 +619,36 @@ function MenuContent() {
 
   // ─── Main menu view ───────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,_#1b2740_0%,_#0b111d_46%,_#06080f_100%)]">
+    <div className={styles.page}>
 
-      {/* ══════════════════════════════════════════════════
-          PREMIUM HEADER — 3 LAYERS
-      ══════════════════════════════════════════════════ */}
-      <header className="sticky top-0 z-40"
-        style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(13,21,32,0.92) 100%)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", boxShadow: "0 1px 0 rgba(255,255,255,0.04), 0 10px 32px rgba(0,0,0,0.38)" }}>
+      <header className={styles.header}>
 
-        {/* ── LAYER 1: BRAND + STATUS + ACTION ICONS ── */}
         <div className="max-w-screen-xl mx-auto px-4 sm:px-5">
-          <div className="mt-2 sm:mt-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className={styles.brandPanel}>
             <div className="flex items-center justify-between gap-3 pt-3 pb-2.5 px-3 sm:px-4">
 
-            {/* Left: logo + status pills */}
             <div className="min-w-0 flex-1">
               <SiteLogo
                 className="h-10 w-[138px] sm:h-11 sm:w-[158px]"
                 imageClassName="drop-shadow-[0_5px_12px_rgba(0,0,0,0.3)]"
                 priority
               />
-              <div className="flex items-center gap-2 mt-1">
-                {/* Table badge */}
-                <span className="inline-flex items-center gap-1 px-2.5 py-[2px] rounded-full text-[10px] font-semibold"
-                  style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.2)" }}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400/70" />
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className={styles.tablePill}>
+                  <span className={cn("h-1.5 w-1.5 rounded-full bg-[#e08a3c]", styles.goldShimmer)} />
                   Table {tableNumber}
                 </span>
-                {/* Phone pill — green soft glow */}
                 {customerNumber && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-[2px] rounded-full text-[10px] font-semibold"
-                    style={{ background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.18)", boxShadow: "0 0 8px rgba(16,185,129,0.12)" }}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/70" />
+                  <span className={styles.phonePill}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#b98a44]/70" />
                     {customerNumber}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Right: circular glass buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
 
-              {/* 1. History — paid orders */}
               <OrderHistoryDrawer
                 orders={historyOrders}
                 onSelectOrder={(order) => {
@@ -667,14 +658,12 @@ function MenuContent() {
               >
                 <button
                   title="Order History"
-                  className="relative h-9 w-9 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)" }}
+                  className={styles.iconBtn}
                 >
-                  <History className="h-4 w-4 text-white/65" />
+                  <History className="h-4 w-4" />
                 </button>
               </OrderHistoryDrawer>
 
-              {/* 2. Active Orders — unpaid/sent */}
               <ActiveOrdersDrawer
                 orders={activeOrders}
                 onSelectOrder={(order) => {
@@ -688,12 +677,11 @@ function MenuContent() {
               >
                 <button
                   title="My Orders"
-                  className="relative h-9 w-9 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
-                  style={{ background: activeOrders.length > 0 ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.06)", border: activeOrders.length > 0 ? "1px solid rgba(245,158,11,0.2)" : "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(12px)" }}
+                  className={cn(styles.iconBtn, activeOrders.length > 0 && styles.iconBtnActive)}
                 >
-                  <ClipboardList className={cn("h-4 w-4", activeOrders.length > 0 ? "text-amber-400" : "text-white/65")} />
+                  <ClipboardList className="h-4 w-4" />
                   {activeOrders.length > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-amber-500 text-black text-[9px] font-bold flex items-center justify-center animate-pulse">
+                    <span className={styles.badge}>
                       {activeOrders.length}
                     </span>
                   )}
@@ -705,29 +693,20 @@ function MenuContent() {
           </div>
         </div>
 
-        {/* Subtle separator */}
-        <div className="mx-4 mt-1.5" style={{ height: "1px", background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.05) 30%, rgba(255,255,255,0.05) 70%, transparent)" }} />
+        <div className="mx-4 mt-2">
+          <div className={styles.hairline} />
+        </div>
 
-        {/* ── LAYER 2: REDESIGNED SEARCH BAR ── */}
         <div className="max-w-screen-xl mx-auto px-4 sm:px-5 pt-2.5 pb-2.5 sm:pt-3 sm:pb-3">
-          <div className="relative group">
-            <div
-              className="absolute -inset-px rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-300"
-              style={{
-                background: "linear-gradient(135deg, rgba(245,158,11,0.4), rgba(251,191,36,0.15), transparent 60%)",
-                borderRadius: "inherit",
-              }}
-            />
-            <div className="relative flex items-center rounded-2xl overflow-hidden"
-              style={{
-                background: "rgba(255,255,255,0.035)",
-                border: "1px solid rgba(255,255,255,0.055)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
-              }}>
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                <Search className="h-4 w-4 transition-colors duration-200"
-                  style={{ color: searchFocused ? "rgba(245,158,11,0.9)" : "rgba(255,255,255,0.35)" }} />
-                <span className="hidden sm:block h-4 w-px bg-white/10" />
+          <div className={styles.searchWrap}>
+            <div className={styles.searchGlow} />
+            <div className={styles.searchField}>
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none z-10">
+                <Search
+                  className="h-4 w-4 transition-colors duration-500"
+                  style={{ color: searchFocused ? "#c8722a" : "rgba(242,232,216,0.35)" }}
+                />
+                <span className="hidden sm:block h-4 w-px bg-[rgba(185,138,68,0.2)]" />
               </div>
               <input
                 type="text"
@@ -736,23 +715,22 @@ function MenuContent() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setSearchFocused(false)}
-                className="w-full h-11 sm:h-12 pl-12 sm:pl-14 pr-12 bg-transparent text-white placeholder:text-white/25 outline-none text-[14px] transition-colors"
+                className={styles.searchInput}
               />
               {searchQuery && (
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 rounded-xl flex items-center justify-center transition-all hover:bg-white/10 active:scale-95"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 rounded-xl flex items-center justify-center transition-all hover:bg-[rgba(200,114,42,0.12)] active:scale-95 z-10"
                   onClick={() => setSearchQuery("")}
                   aria-label="Clear search"
                 >
-                  <X className="h-4 w-4 text-white/50" />
+                  <X className="h-4 w-4 text-[rgba(242,232,216,0.5)]" />
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* ── LAYER 3: CATEGORY SCROLL PILLS ── */}
         <div className="pb-1">
           <CategoryTabs
             categories={menuCategories}
@@ -764,8 +742,8 @@ function MenuContent() {
         </div>
 
         <div className="max-w-screen-xl mx-auto px-4 sm:px-5 pb-2.5">
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2 flex items-center justify-between gap-2">
-            <p className="text-[12px] text-white/65 font-medium">
+          <div className={styles.metaStrip}>
+            <p className="text-[12px] text-[rgba(242,232,216,0.6)] font-medium">
               {menuLoading
                 ? "Loading menu..."
                 : `${filteredProducts.length} item${filteredProducts.length === 1 ? "" : "s"} in ${selectedCategory === "all"
@@ -777,7 +755,7 @@ function MenuContent() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="text-[11px] px-2.5 py-1 rounded-full border border-white/10 bg-white/[0.04] text-amber-300 hover:bg-white/[0.07] transition-colors"
+                className={styles.clearChip}
               >
                 Clear search
               </button>
@@ -787,11 +765,10 @@ function MenuContent() {
 
       </header>
 
-      {/* ── JABA ROW ── */}
       {!menuLoading && selectedCategory === "all" && !debouncedSearch && (
-        <div ref={jabaSectionRef} className="pt-1">
+        <div ref={jabaSectionRef} className="pt-1 relative z-[1]">
           <div className="max-w-screen-xl mx-auto px-4 sm:px-5">
-            <div className="rounded-3xl border border-white/[0.08] bg-[#0f172a]/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <div className={styles.featuredPanel}>
               <PopularRow
                 items={menuItems}
                 onItemClick={handleItemClick}
@@ -802,13 +779,10 @@ function MenuContent() {
         </div>
       )}
 
-      {/* ── PRODUCTS GRID ── */}
-      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-36 pt-4">
-        {/* Section heading */}
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-36 pt-5 relative z-[1]">
         {!debouncedSearch && (
-          <div className="flex items-center gap-2 mb-4">
-            <div className="h-1 w-1 rounded-full bg-amber-500" />
-            <p className="text-white/40 text-xs font-semibold uppercase tracking-widest">
+          <div className={styles.sectionLabel}>
+            <p className={styles.eyebrow}>
               {selectedCategory === "all"
                 ? "All Drinks"
                 : menuCategories.find((c) => c.id === selectedCategory)?.name ?? selectedCategory}
@@ -817,21 +791,21 @@ function MenuContent() {
         )}
 
         {menuLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className={styles.grid}>
             {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="rounded-2xl bg-white/[0.05] animate-pulse aspect-[3/4]" />
+              <div key={i} className={styles.skeleton} />
             ))}
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="py-20 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-white/[0.05] flex items-center justify-center mx-auto mb-4">
-              <Search className="h-8 w-8 text-white/20" />
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>
+              <Search className="h-8 w-8 text-[rgba(242,232,216,0.2)]" />
             </div>
-            <p className="text-white font-semibold">No drinks found</p>
-            <p className="text-white/40 text-sm mt-1">Try a different search or category</p>
+            <p className={cn(styles.display, "text-xl")}>No drinks found</p>
+            <p className="text-[rgba(242,232,216,0.4)] text-sm mt-2">Try a different search or category</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className={styles.grid}>
             {filteredProducts.map((item) => (
               <ProductCard
                 key={item.id}
@@ -844,14 +818,12 @@ function MenuContent() {
         )}
       </div>
 
-      {/* ── STICKY CART BAR ── */}
       <StickyCartBar
         items={cart}
         total={total}
         onOpenCart={() => setCartOpen(true)}
       />
 
-      {/* ── PRODUCT DETAIL SHEET ── */}
       {selectedItem && (
         <ProductSheet
           open={productSheetOpen}
@@ -863,7 +835,6 @@ function MenuContent() {
         />
       )}
 
-      {/* ── CART DRAWER ── */}
       <CartDrawer
         open={cartOpen}
         onOpenChange={setCartOpen}
@@ -884,7 +855,6 @@ function MenuContent() {
         activeOrderTotal={activeOrder?.total}
       />
 
-      {/* ── MODALS ── */}
       <CustomerNumberModal
         open={showCustomerModal}
         onContinue={handleCustomerContinue}
@@ -897,11 +867,9 @@ function MenuContent() {
         phone={customerNumber ?? ""}
         onSuccess={handlePaymentSuccess}
         skipToMpesa={
-          // Order already at the bar — go straight to M-Pesa, no cash option
           !!(activeOrder?.status === "sent" || activeOrder?.status === "active")
         }
         mpesaOnly={
-          // Hide cash entirely for orders already at the bar
           !!(activeOrder?.status === "sent" || activeOrder?.status === "active")
         }
       />
@@ -913,11 +881,9 @@ export default function MenuPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#0A0A0F]">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-10 w-10 rounded-full border-2 border-amber-500/30 border-t-amber-500 animate-spin" />
-            <p className="text-white/40 text-sm">Loading menu...</p>
-          </div>
+        <div className={styles.loader}>
+          <div className={styles.spinner} />
+          <p className="text-[rgba(242,232,216,0.4)] text-sm">Loading menu...</p>
         </div>
       }
     >

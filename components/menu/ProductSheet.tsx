@@ -14,6 +14,7 @@ import { MenuItem } from "@/types/menu"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
+import styles from "./product-sheet.module.css"
 
 interface ProductSheetProps {
   open: boolean
@@ -25,12 +26,12 @@ interface ProductSheetProps {
 }
 
 const tagConfig: Record<string, { label: string; className: string }> = {
-  popular: { label: "Popular", className: "bg-amber-500 text-black" },
-  "best-seller": { label: "Best Seller", className: "bg-orange-500 text-white" },
-  "premium-pick": { label: "Premium", className: "bg-purple-500 text-white" },
-  "house-favorite": { label: "House Fav", className: "bg-rose-500 text-white" },
-  "staff-pick": { label: "Staff Pick", className: "bg-sky-500 text-white" },
-  "best-value": { label: "Best Value", className: "bg-emerald-500 text-white" },
+  popular: { label: "Popular", className: styles.tagPopular },
+  "best-seller": { label: "Best Seller", className: styles.tagGold },
+  "premium-pick": { label: "Premium", className: styles.tagGold },
+  "house-favorite": { label: "House Fav", className: styles.tagOxblood },
+  "staff-pick": { label: "Staff Pick", className: styles.tagGold },
+  "best-value": { label: "Best Value", className: styles.tagPopular },
 }
 
 export const ProductSheet = memo(function ProductSheet({
@@ -56,134 +57,108 @@ export const ProductSheet = memo(function ProductSheet({
 
   const content = (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="flex flex-col h-full bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.12),transparent_55%),#111827]"
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      className={styles.panel}
     >
-      <div className="relative h-56 w-full overflow-hidden bg-[#0f172a] flex-shrink-0">
-        <div className="absolute top-0 left-0 right-0 flex justify-center pt-3 pb-1 z-30 pointer-events-none md:hidden">
-          <div className="h-1 w-10 rounded-full bg-white/20" />
-        </div>
+      <div className={styles.hero}>
+        <div className={styles.handle} />
         <Image
           src={item.image || "/placeholder.jpg"}
           alt={item.name}
           fill
-          className="object-cover"
+          className={styles.heroImage}
           sizes="100vw"
           priority
         />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#111827] to-transparent" />
+        <div className={styles.heroFade} />
 
         <button
           onClick={() => onOpenChange(false)}
-          className="absolute top-3 right-3 h-10 w-10 rounded-full bg-black/45 border border-white/15 backdrop-blur-sm text-white flex items-center justify-center z-20 active:scale-90 transition-transform"
+          className={styles.close}
+          aria-label="Close"
         >
           <X className="h-5 w-5" />
         </button>
 
         {tag && (
-          <span
-            className={cn(
-              "absolute top-3 left-3 px-3 py-1 rounded-full text-[11px] font-bold z-20",
-              tag.className
-            )}
-          >
-            {tag.label}
-          </span>
+          <span className={cn(styles.tag, tag.className)}>{tag.label}</span>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+      <div className={styles.content}>
         <SheetHeader>
-          {item.brand && (
-            <p className="text-amber-400/80 text-[11px] font-semibold uppercase tracking-widest mb-1">
-              {item.brand}
-            </p>
-          )}
-          <SheetTitle className="text-white text-xl font-extrabold text-left leading-tight">
-            {item.name}
-          </SheetTitle>
+          {item.brand && <p className={styles.brand}>{item.brand}</p>}
+          <SheetTitle className={styles.title}>{item.name}</SheetTitle>
         </SheetHeader>
 
-        <p className="text-white/55 text-sm leading-relaxed mt-3">
-          {item.description}
-        </p>
+        <p className={styles.desc}>{item.description}</p>
 
-        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-          <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.16em]">Price</p>
-          <p className="text-amber-400 text-2xl font-extrabold mt-1 tracking-tight">
+        <div className={styles.priceBox}>
+          <p className={styles.priceLabel}>Price</p>
+          <p className={styles.priceValue}>
             KES {item.price.toLocaleString()}
           </p>
         </div>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/[0.07]">
+        <div className={styles.qtyRow}>
           <div>
-            <p className="text-white/45 text-xs font-semibold uppercase tracking-[0.16em]">Quantity</p>
-            <p className="text-white text-lg font-bold mt-1">
-              {quantity} in order
-            </p>
+            <p className={styles.qtyLabel}>Quantity</p>
+            <p className={styles.qtyValue}>{quantity} in order</p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className={styles.qtyControls}>
             <button
               onClick={onRemove}
               disabled={quantity <= 0}
-              className="h-11 w-11 rounded-xl border border-white/[0.16] bg-white/[0.02] text-white flex items-center justify-center active:scale-90 transition-all hover:border-white/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={styles.qtyBtn}
             >
               <Minus className="h-5 w-5" />
             </button>
-            <span className="text-white text-xl font-extrabold min-w-[2rem] text-center">
-              {quantity}
-            </span>
-            <button
-              onClick={onAdd}
-              className="h-11 w-11 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black flex items-center justify-center active:scale-90 transition-all"
-            >
+            <span className={styles.qtyNum}>{quantity}</span>
+            <button onClick={onAdd} className={styles.qtyBtnAdd}>
               <Plus className="h-5 w-5" strokeWidth={2.5} />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 flex-shrink-0 border-t border-white/[0.08] bg-[#0f172a]/65 backdrop-blur-xl">
+      <div className={styles.footer}>
         {item.inStock ? (
-          <button
-            onClick={onAdd}
-            className="w-full h-14 rounded-2xl font-bold text-[15px] bg-gradient-to-r from-amber-500 to-amber-400 text-black flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl shadow-amber-500/25"
-          >
+          <button onClick={onAdd} className={styles.addCta}>
             <Plus className="h-5 w-5" strokeWidth={2.5} />
-            {quantity > 0 ? `Add Another (${quantity} in order)` : "Add to Order"}
+            {quantity > 0
+              ? `Add Another (${quantity} in order)`
+              : "Add to Order"}
           </button>
         ) : (
-          <div className="w-full h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-            <p className="text-red-400 font-semibold text-sm">Currently Out of Stock</p>
+          <div className={styles.oosBox}>
+            <p className={styles.oosText}>Currently Out of Stock</p>
           </div>
         )}
       </div>
     </motion.div>
   )
 
-  return (
-    isDesktop ? (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          showCloseButton={false}
-          className="p-0 overflow-hidden border border-white/[0.1] bg-[#13131E] max-w-xl rounded-3xl"
-        >
-          {content}
-        </DialogContent>
-      </Dialog>
-    ) : (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="bottom"
-          showClose={false}
-          className="p-0 overflow-hidden rounded-t-3xl border-t border-white/[0.08] bg-[#13131E] max-h-[88vh]"
-        >
-          {content}
-        </SheetContent>
-      </Sheet>
-    )
+  return isDesktop ? (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className={styles.dialogShell}
+      >
+        {content}
+      </DialogContent>
+    </Dialog>
+  ) : (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        showClose={false}
+        className={styles.sheetShell}
+      >
+        {content}
+      </SheetContent>
+    </Sheet>
   )
 })

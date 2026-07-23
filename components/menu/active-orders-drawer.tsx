@@ -49,19 +49,19 @@ export function ActiveOrdersDrawer({
         )}
       </DrawerTrigger>
 
-      <DrawerContent className="max-h-[88vh] rounded-t-3xl border-t border-white/[0.08] bg-[#13131E]">
+      <DrawerContent className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(185,138,68,0.22)] bg-[#14100c]">
         <div className="flex justify-center pt-3 pb-1">
-          <div className="h-1 w-10 rounded-full bg-white/20" />
+          <div className="h-1 w-10 rounded-full bg-[rgba(242,232,216,0.2)]" />
         </div>
 
-        <DrawerHeader className="border-b border-white/[0.06] py-3 px-5">
+        <DrawerHeader className="border-b border-[rgba(185,138,68,0.14)] py-3 px-5">
           <DrawerTitle className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-amber-500/15 flex items-center justify-center">
-              <ClipboardList className="h-5 w-5 text-amber-400" />
+            <div className="h-10 w-10 rounded-2xl bg-[rgba(200,114,42,0.14)] border border-[rgba(185,138,68,0.22)] flex items-center justify-center">
+              <ClipboardList className="h-5 w-5 text-[#e08a3c]" />
             </div>
             <div>
-              <span className="text-base font-bold text-white">Active Orders</span>
-              <p className="text-[12px] text-white/40 font-normal mt-0.5">
+              <span className="text-base font-semibold text-[#f2e8d8] font-[family-name:var(--menu-font-display)]">Active Orders</span>
+              <p className="text-[12px] text-[rgba(242,232,216,0.4)] font-normal mt-0.5">
                 {count === 0 ? "No pending orders" : `${count} order${count > 1 ? "s" : ""} awaiting payment`}
               </p>
             </div>
