@@ -40,7 +40,7 @@ export function ActiveOrdersDrawer({
           <button className="relative h-10 w-10 rounded-xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] flex items-center justify-center transition-colors">
             <ClipboardList className="h-5 w-5 text-[#D9843B]" />
             {count > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#D9843B] text-[#1A1512] text-[9px] font-bold flex items-center justify-center animate-pulse">
+              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#D9843B] text-[#412402] text-[9px] font-bold flex items-center justify-center animate-pulse">
                 {count}
               </span>
             )}
@@ -49,7 +49,7 @@ export function ActiveOrdersDrawer({
       </DrawerTrigger>
 
       <DrawerContent
-        className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
+        className="max-h-[88vh] rounded-t-[24px] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
         style={{ background: "radial-gradient(ellipse at top center, rgba(200,114,42,0.12), transparent 55%), #2E241B" }}
       >
         <div className="flex justify-center pt-3 pb-1">
@@ -167,7 +167,7 @@ export function ActiveOrdersDrawer({
                       )}
                       {isCash && onPayNow && (
                         <button
-                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[#1A1512] bg-gradient-to-r from-[#c8722a] to-[#e09040] hover:opacity-95 transition-opacity"
+                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[#412402] bg-gradient-to-r from-[#c8722a] to-[#e09040] hover:opacity-95 transition-opacity"
                           onClick={() => { onPayNow(order); setOpen(false) }}
                         >
                           Pay M-Pesa

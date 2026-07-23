@@ -37,7 +37,7 @@ export function OrderHistoryDrawer({
       </DrawerTrigger>
 
       <DrawerContent
-        className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
+        className="max-h-[88vh] rounded-t-[24px] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
         style={{ background: "radial-gradient(ellipse at top center, rgba(200,114,42,0.12), transparent 55%), #2E241B" }}
       >
         <div className="flex justify-center pt-3 pb-1">

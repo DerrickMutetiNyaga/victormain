@@ -80,7 +80,7 @@ export function CustomerNumberModal({
             <button
               type="button"
               onClick={handleContinue}
-              className="h-11 w-full rounded-xl bg-gradient-to-r from-[#c8722a] to-[#e09040] text-sm font-bold text-[#1A1512] shadow-[0_8px_24px_rgba(200,114,42,0.3)] transition-transform duration-500 active:scale-[0.98]"
+              className="h-11 w-full rounded-xl bg-gradient-to-r from-[#c8722a] to-[#e09040] text-sm font-bold text-[#412402] shadow-[0_8px_24px_rgba(200,114,42,0.3)] transition-transform duration-500 active:scale-[0.98]"
             >
               Continue
             </button>

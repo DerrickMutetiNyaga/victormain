@@ -93,12 +93,12 @@
 
 .tagPopular {
   background: rgba(200, 114, 42, 0.95);
-  color: #1a1512;
+  color: #412402;
 }
 
 .tagGold {
   background: rgba(185, 138, 68, 0.95);
-  color: #1a1512;
+  color: #412402;
 }
 
 .tagOxblood {
@@ -219,7 +219,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1a1512;
+  color: #412402;
   background: linear-gradient(135deg, #c8722a, #e09040);
   border: none;
   transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -256,7 +256,7 @@
   gap: 0.5rem;
   font-size: 15px;
   font-weight: 700;
-  color: #1a1512;
+  color: #412402;
   background: linear-gradient(135deg, #c8722a, #e09040);
   box-shadow: 0 10px 32px rgba(200, 114, 42, 0.3);
   transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -295,7 +295,7 @@
 .sheetShell {
   padding: 0 !important;
   overflow: hidden !important;
-  border-radius: 1.25rem 1.25rem 0 0 !important;
+  border-radius: 24px 24px 0 0 !important;
   border-top: 1px solid rgba(242, 232, 216, 0.14) !important;
   background: #2e241b !important;
   max-height: 88vh !important;

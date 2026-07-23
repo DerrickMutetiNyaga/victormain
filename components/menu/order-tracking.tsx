@@ -267,7 +267,7 @@ export function OrderTracking({
           {isUnpaid && !isCashOrder && onPayNow && (
             <button
               onClick={() => onPayNow(order)}
-              className="w-full h-12 rounded-xl font-bold text-[14px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#1A1512] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
+              className="w-full h-12 rounded-xl font-bold text-[14px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#412402] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
             >
               <CreditCard className="h-4 w-4" strokeWidth={2.5} />
               Pay Now · KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

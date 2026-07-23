@@ -9,7 +9,7 @@ import React, {
   useRef,
 } from "react"
 import { useSearchParams } from "next/navigation"
-import { Search, History, QrCode, X, TableIcon, ClipboardList } from "lucide-react"
+import { Search, History, QrCode, X, TableIcon, ClipboardList, SlidersHorizontal } from "lucide-react"
 import { ProductCard } from "@/components/menu/product-card"
 import { CartDrawer } from "@/components/menu/cart-drawer"
 import { CategoryTabs } from "@/components/menu/category-tabs"
@@ -25,9 +25,14 @@ import { orderStore } from "@/lib/orderStore"
 import { MenuItem, CartItem, Order, MenuCategory } from "@/types/menu"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
-import { SiteLogo } from "@/components/branding/site-logo"
 import { normalizeKenyaPhone } from "@/lib/phone-utils"
 import styles from "./menu.module.css"
+
+function pouringHeadline(): string {
+  if (typeof window === "undefined") return "What are we pouring tonight?"
+  const hour = new Date().getHours()
+  return hour >= 18 ? "Good evening at Infusion Jaba" : "What are we pouring tonight?"
+}
 
 const GUEST_SESSION_KEY = "menu_guest_session"
 const MENU_TABLE_KEY = "menu_table"
@@ -57,6 +62,8 @@ function MenuContent() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [searchFocused, setSearchFocused] = useState(false)
+  const [headerScrolled, setHeaderScrolled] = useState(false)
+  const [headline, setHeadline] = useState("What are we pouring tonight?")
   const [cart, setCart] = useState<CartItem[]>([])
   const [cartOpen, setCartOpen] = useState(false)
   const [productSheetOpen, setProductSheetOpen] = useState(false)
@@ -69,6 +76,7 @@ function MenuContent() {
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([])
   const [menuLoading, setMenuLoading] = useState(true)
   const jabaSectionRef = useRef<HTMLDivElement>(null)
+  const allDrinksRef = useRef<HTMLDivElement>(null)
   /** Local cart is source of truth while ordering — only hydrate once from draft. */
   const cartHydratedRef = useRef(false)
   const cartSyncGenRef = useRef(0)
@@ -78,6 +86,26 @@ function MenuContent() {
   const debouncedSearch = useDebounce(searchQuery, 150)
 
   const hasJaba = menuItems.some((i) => i.isJaba)
+
+  useEffect(() => {
+    setHeadline(pouringHeadline())
+  }, [])
+
+  useEffect(() => {
+    const onScroll = () => setHeaderScrolled(window.scrollY > 48)
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+
+  const categoryCounts = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const item of menuItems) {
+      const key = item.category || "other"
+      map[key] = (map[key] || 0) + 1
+    }
+    return map
+  }, [menuItems])
 
   useEffect(() => {
     document.title = "Menu | Catha Lounge"
@@ -674,34 +702,14 @@ function MenuContent() {
   return (
     <div className={styles.page}>
 
-      <header className={styles.header}>
-
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-5">
-          <div className={styles.brandPanel}>
-            <div className="flex items-center justify-between gap-3 pt-3 pb-2.5 px-3 sm:px-4">
-
-            <div className="min-w-0 flex-1">
-              <SiteLogo
-                className="h-10 w-[138px] sm:h-11 sm:w-[158px]"
-                imageClassName="drop-shadow-[0_5px_12px_rgba(0,0,0,0.3)]"
-                priority
-              />
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className={styles.tablePill}>
-                  <span className={cn("h-1.5 w-1.5 rounded-full bg-[#D9843B]", styles.goldShimmer)} />
-                  Table {tableNumber}
-                </span>
-                {customerNumber && (
-                  <span className={styles.phonePill}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#b98a44]/70" />
-                    {customerNumber}
-                  </span>
-                )}
-              </div>
+      <header className={cn(styles.header, headerScrolled && styles.headerScrolled)}>
+        <div className={styles.headerInner}>
+          <div className={styles.utilityRow}>
+            <div className={styles.logoMark} aria-label="Infusion Jaba">
+              IJ
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-
+            <div className={styles.utilityActions}>
               <OrderHistoryDrawer
                 orders={historyOrders}
                 onSelectOrder={(order) => {
@@ -712,6 +720,7 @@ function MenuContent() {
                 <button
                   title="Order History"
                   className={styles.iconBtn}
+                  type="button"
                 >
                   <History className="h-4 w-4" />
                 </button>
@@ -730,6 +739,7 @@ function MenuContent() {
               >
                 <button
                   title="My Orders"
+                  type="button"
                   className={cn(styles.iconBtn, activeOrders.length > 0 && styles.iconBtnActive)}
                 >
                   <ClipboardList className="h-4 w-4" />
@@ -740,27 +750,23 @@ function MenuContent() {
                   )}
                 </button>
               </ActiveOrdersDrawer>
-
-            </div>
             </div>
           </div>
-        </div>
 
-        <div className="mx-4 mt-2">
-          <div className={styles.hairline} />
-        </div>
+          <div className={cn(styles.heroBlock, headerScrolled && styles.heroBlockCollapsed)}>
+            <p className={styles.heroEyebrow}>
+              <span className={cn(styles.heroDot, styles.goldShimmer)} />
+              Table {tableNumber}
+              {customerNumber ? ` · ${customerNumber}` : ""}
+            </p>
+            <h1 className={styles.headline}>{headline}</h1>
+          </div>
 
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-5 pt-2.5 pb-2.5 sm:pt-3 sm:pb-3">
           <div className={styles.searchWrap}>
-            <div className={styles.searchGlow} />
             <div className={styles.searchField}>
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none z-10">
-                <Search
-                  className="h-4 w-4 transition-colors duration-500"
-                  style={{ color: searchFocused ? "#D9843B" : "rgba(242,232,216,0.65)" }}
-                />
-                <span className="hidden sm:block h-4 w-px bg-[rgba(242,232,216,0.10)]" />
-              </div>
+              <span className={styles.searchIconLeft}>
+                <Search className="h-4 w-4" />
+              </span>
               <input
                 type="text"
                 placeholder="Search drinks or brands…"
@@ -770,74 +776,59 @@ function MenuContent() {
                 onBlur={() => setSearchFocused(false)}
                 className={styles.searchInput}
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 rounded-xl flex items-center justify-center transition-all hover:bg-[rgba(200,114,42,0.12)] active:scale-95 z-10"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4 text-[rgba(242,232,216,0.65)]" />
-                </button>
-              )}
+              <span className={styles.searchIconRight}>
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    className={styles.searchClear}
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                )}
+              </span>
             </div>
           </div>
-        </div>
 
-        <div className="pb-1">
-          <CategoryTabs
-            categories={menuCategories}
-            selectedCategory={selectedCategory}
-            onCategoryChange={setSelectedCategory}
-            hasJaba={hasJaba}
-            onJabaClick={handleJabaClick}
-          />
-        </div>
-
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-5 pb-2.5">
-          <div className={styles.metaStrip}>
-            <p className="text-[12px] text-[rgba(242,232,216,0.65)] font-medium">
-              {menuLoading
-                ? "Loading menu..."
-                : `${filteredProducts.length} item${filteredProducts.length === 1 ? "" : "s"} in ${selectedCategory === "all"
-                  ? "all drinks"
-                  : (menuCategories.find((c) => c.id === selectedCategory)?.name ?? selectedCategory)
-                }`}
-            </p>
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className={styles.clearChip}
-              >
-                Clear search
-              </button>
-            )}
+          <div className={styles.chipsSlot}>
+            <CategoryTabs
+              categories={menuCategories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={setSelectedCategory}
+              hasJaba={hasJaba}
+              onJabaClick={handleJabaClick}
+              counts={categoryCounts}
+              totalCount={menuItems.length}
+            />
           </div>
         </div>
-
       </header>
 
       {!menuLoading && selectedCategory === "all" && !debouncedSearch && (
         <div ref={jabaSectionRef} className="pt-1 relative z-[1]">
-          <div className="max-w-screen-xl mx-auto px-4 sm:px-5">
-            <div className={styles.featuredPanel}>
-              <PopularRow
-                items={menuItems}
-                onItemClick={handleItemClick}
-                onAddItem={handleAddToCart}
-              />
-            </div>
-          </div>
+          <PopularRow
+            items={menuItems}
+            onItemClick={handleItemClick}
+            onAddItem={handleAddToCart}
+            onSeeAll={() => {
+              allDrinksRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }}
+          />
         </div>
       )}
 
-      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-36 pt-5 relative z-[1]">
+      <div
+        ref={allDrinksRef}
+        className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-36 pt-4 relative z-[1]"
+      >
         {!debouncedSearch && (
           <div className={styles.sectionLabel}>
-            <p className={styles.eyebrow}>
+            <p className={styles.sectionLabelText}>
               {selectedCategory === "all"
-                ? "All Drinks"
+                ? "All drinks"
                 : menuCategories.find((c) => c.id === selectedCategory)?.name ?? selectedCategory}
             </p>
           </div>
@@ -852,7 +843,7 @@ function MenuContent() {
         ) : filteredProducts.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
-              <Search className="h-8 w-8 text-[#D9843B]" />
+              <Search className="h-7 w-7 text-[#D9843B]" />
             </div>
             <p className={cn(styles.display, "text-xl")}>No drinks found</p>
             <p className="text-[rgba(242,232,216,0.65)] text-sm mt-2">Try a different search or category</p>
@@ -863,7 +854,9 @@ function MenuContent() {
               <ProductCard
                 key={item.id}
                 item={item}
+                quantity={getItemQuantity(item.id)}
                 onAdd={handleAddToCart}
+                onUpdateQuantity={handleUpdateQuantity}
                 onClick={handleItemClick}
               />
             ))}

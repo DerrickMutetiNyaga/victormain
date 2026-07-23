@@ -2,7 +2,16 @@
 
 import React, { memo, useRef, useEffect } from "react"
 import { MenuCategory } from "@/types/menu"
-import { Leaf } from "lucide-react"
+import {
+  Leaf,
+  Beer,
+  Wine,
+  Martini,
+  CupSoda,
+  Zap,
+  GlassWater,
+  LayoutGrid,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import styles from "./category-tabs.module.css"
 
@@ -12,6 +21,8 @@ interface CategoryTabsProps {
   onCategoryChange: (category: string) => void
   onJabaClick?: () => void
   hasJaba?: boolean
+  counts?: Record<string, number>
+  totalCount?: number
 }
 
 const shortLabelMap: Record<string, string> = {
@@ -21,12 +32,30 @@ const shortLabelMap: Record<string, string> = {
   whiskey: "Whisky",
 }
 
+function CategoryGlyph({ id }: { id: string }) {
+  const props = { className: styles.glyph, strokeWidth: 2 } as const
+  const key = id.toLowerCase()
+  if (key === "all") return <LayoutGrid {...props} />
+  if (key.includes("cider")) return <Wine {...props} />
+  if (key.includes("beer")) return <Beer {...props} />
+  if (key.includes("tequila") || key.includes("mezcal")) return <Martini {...props} />
+  if (key.includes("whisky") || key.includes("whiskey") || key.includes("spirit"))
+    return <GlassWater {...props} />
+  if (key.includes("cocktail") || key.includes("mix")) return <Martini {...props} />
+  if (key.includes("soft") || key.includes("juice")) return <Leaf {...props} />
+  if (key.includes("energy")) return <Zap {...props} />
+  if (key.includes("soda") || key.includes("water")) return <CupSoda {...props} />
+  return <Wine {...props} />
+}
+
 export const CategoryTabs = memo(function CategoryTabs({
   categories,
   selectedCategory,
   onCategoryChange,
   onJabaClick,
   hasJaba = false,
+  counts = {},
+  totalCount = 0,
 }: CategoryTabsProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
@@ -57,7 +86,7 @@ export const CategoryTabs = memo(function CategoryTabs({
                 onClick={onJabaClick}
                 className={styles.jaba}
               >
-                <Leaf className="h-3.5 w-3.5 opacity-80" />
+                <Leaf className={styles.glyph} />
                 Jaba
               </button>
               <span className={styles.divider} aria-hidden />
@@ -66,6 +95,8 @@ export const CategoryTabs = memo(function CategoryTabs({
 
           {allCategories.map((cat) => {
             const isActive = selectedCategory === cat.id
+            const label = shortLabelMap[cat.id] ?? cat.name
+            const count = cat.id === "all" ? totalCount : (counts[cat.id] ?? 0)
 
             return (
               <button
@@ -78,7 +109,10 @@ export const CategoryTabs = memo(function CategoryTabs({
                   isActive ? styles.pillActive : styles.pillIdle
                 )}
               >
-                <span>{shortLabelMap[cat.id] ?? cat.name}</span>
+                {!isActive && <CategoryGlyph id={cat.id} />}
+                <span>
+                  {isActive && count > 0 ? `${label} · ${count}` : label}
+                </span>
               </button>
             )
           })}

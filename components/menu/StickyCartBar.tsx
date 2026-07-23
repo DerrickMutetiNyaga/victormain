@@ -1,9 +1,10 @@
 "use client"
 
-import React, { memo } from "react"
-import { ShoppingCart, ArrowRight } from "lucide-react"
+import React, { memo, useEffect, useRef, useState } from "react"
+import { ShoppingCart } from "lucide-react"
 import { CartItem } from "@/types/menu"
 import { motion, AnimatePresence } from "framer-motion"
+import { cn } from "@/lib/utils"
 import styles from "./sticky-cart-bar.module.css"
 
 interface StickyCartBarProps {
@@ -18,18 +19,33 @@ export const StickyCartBar = memo(function StickyCartBar({
   onOpenCart,
 }: StickyCartBarProps) {
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
+  const [pulse, setPulse] = useState(false)
+  const prevCount = useRef(itemCount)
+
+  useEffect(() => {
+    if (itemCount > prevCount.current) {
+      setPulse(true)
+      const t = setTimeout(() => setPulse(false), 700)
+      prevCount.current = itemCount
+      return () => clearTimeout(t)
+    }
+    prevCount.current = itemCount
+  }, [itemCount])
 
   return (
     <AnimatePresence>
       {itemCount > 0 && (
         <motion.div
-          initial={{ y: 100, opacity: 0 }}
+          initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 100, opacity: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          exit={{ y: 80, opacity: 0 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           className={styles.bar}
         >
-          <button onClick={onOpenCart} className={styles.button}>
+          <button
+            onClick={onOpenCart}
+            className={cn(styles.button, pulse && styles.buttonPulse)}
+          >
             <div className={styles.left}>
               <div className={styles.iconWrap}>
                 <ShoppingCart className="h-4 w-4" />
@@ -40,8 +56,7 @@ export const StickyCartBar = memo(function StickyCartBar({
               </p>
             </div>
             <div className={styles.cta}>
-              <span>View Order</span>
-              <ArrowRight className="h-4 w-4" strokeWidth={2.5} />
+              <span>View Order →</span>
             </div>
           </button>
         </motion.div>

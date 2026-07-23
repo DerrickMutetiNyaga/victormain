@@ -10,12 +10,14 @@ interface PopularRowProps {
   items: MenuItem[]
   onItemClick: (item: MenuItem) => void
   onAddItem: (item: MenuItem) => void
+  onSeeAll?: () => void
 }
 
 export const PopularRow = memo(function PopularRow({
   items,
   onItemClick,
   onAddItem,
+  onSeeAll,
 }: PopularRowProps) {
   const jabaItems = items.filter((i) => i.isJaba === true)
   const displayItems = (jabaItems.length > 0 ? jabaItems : items).slice(0, 8)
@@ -26,12 +28,17 @@ export const PopularRow = memo(function PopularRow({
   return (
     <section className={styles.section}>
       <div className={styles.header}>
-        <div className={styles.eyebrow}>
-          <span className={styles.dot} />
-          <p className={styles.label}>
-            {isJabaMode ? "House Selections" : "Featured Drinks"}
-          </p>
+        <div className={styles.titleRow}>
+          <span className={styles.rule} aria-hidden />
+          <h2 className={styles.heading}>
+            {isJabaMode ? "House selections" : "Featured drinks"}
+          </h2>
         </div>
+        {onSeeAll && (
+          <button type="button" className={styles.seeAll} onClick={onSeeAll}>
+            See all →
+          </button>
+        )}
       </div>
 
       <div className={styles.scroll}>
@@ -47,7 +54,7 @@ export const PopularRow = memo(function PopularRow({
                 alt={item.name}
                 fill
                 className={styles.image}
-                sizes="172px"
+                sizes="160px"
               />
             </div>
             <div className={styles.body}>

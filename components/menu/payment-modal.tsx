@@ -269,7 +269,7 @@ export function PaymentModal({
                 <button
                   onClick={handleMpesaSTK}
                   disabled={!phoneNumber || phoneNumber.length < 9}
-                  className="w-full py-3.5 rounded-xl font-bold text-[15px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#1A1512] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-500 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
+                  className="w-full py-3.5 rounded-xl font-bold text-[15px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#412402] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-500 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
                 >
                   <Smartphone className="h-4 w-4" strokeWidth={2.5} />
                   Send STK Push
@@ -315,7 +315,7 @@ export function PaymentModal({
 
                 <button
                   onClick={handleCashConfirm}
-                  className="w-full py-3.5 rounded-xl font-bold text-[15px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#1A1512] transition-all duration-500 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
+                  className="w-full py-3.5 rounded-xl font-bold text-[15px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#412402] transition-all duration-500 active:scale-[0.98] flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
                 >
                   <Banknote className="h-4 w-4" strokeWidth={2.5} />
                   Send Order to Bar
