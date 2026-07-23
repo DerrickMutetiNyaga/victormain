@@ -15,6 +15,21 @@ export interface MenuItem {
   isPopular?: boolean
   isJaba?: boolean
   brand?: string
+  /** Raw size from inventory, e.g. "750" or "750ml" */
+  size?: string
+  unit?: string
+  /** Display volume line, e.g. "750ml bottle" */
+  volumeLabel?: string
+  /** Human category for chips, e.g. "Tequila" */
+  categoryLabel?: string
+  /** Optional ABV string, e.g. "40% ABV" */
+  abv?: string
+  /** Style/variant from name, e.g. "Blanco" */
+  style?: string
+  /** Pairing hint shown in detail sheet */
+  pairing?: string
+  /** Longer tasting / origin copy for detail sheet */
+  tastingNotes?: string
 }
 
 export interface CartItem {

@@ -3,9 +3,11 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { createPortal } from "react-dom"
+import { motion } from "framer-motion"
 import { Plus, Minus, Trash2 } from "lucide-react"
 import { MenuItem } from "@/types/menu"
 import { cn } from "@/lib/utils"
+import { tastingNotesFor } from "./product-meta"
 import styles from "./product-card.module.css"
 
 interface ProductCardProps {
@@ -48,21 +50,14 @@ export const ProductCard = memo(function ProductCard({
     setQuickLook({ x, y })
   }, [])
 
-  const startLongPress = useCallback(
-    (e: React.TouchEvent | React.MouseEvent) => {
-      longPressTriggered.current = false
-      clearLongPress()
-      longPressTimer.current = setTimeout(() => {
-        longPressTriggered.current = true
-        openQuickLook()
-      }, 480)
-      // prevent native context menu on long press
-      if ("touches" in e) {
-        /* touch handled via preventDefault on contextmenu */
-      }
-    },
-    [clearLongPress, openQuickLook]
-  )
+  const startLongPress = useCallback(() => {
+    longPressTriggered.current = false
+    clearLongPress()
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      openQuickLook()
+    }, 480)
+  }, [clearLongPress, openQuickLook])
 
   useEffect(() => () => clearLongPress(), [clearLongPress])
 
@@ -75,11 +70,14 @@ export const ProductCard = memo(function ProductCard({
     return () => window.removeEventListener("keydown", onKey)
   }, [quickLook])
 
+  const categoryChip = item.categoryLabel || item.category
+  const volume = item.volumeLabel || item.description
+
   return (
     <>
       <div
         ref={cardRef}
-        className={styles.card}
+        className={cn(styles.card, inCart && styles.cardInOrder)}
         onClick={() => {
           if (longPressTriggered.current) {
             longPressTriggered.current = false
@@ -92,14 +90,18 @@ export const ProductCard = memo(function ProductCard({
         onTouchEnd={clearLongPress}
         onTouchMove={clearLongPress}
         onMouseDown={(e) => {
-          if (e.button === 0) startLongPress(e)
+          if (e.button === 0) startLongPress()
         }}
         onMouseUp={clearLongPress}
         onMouseLeave={clearLongPress}
       >
         <div className={styles.glow} />
 
-        <div className={styles.imageWrap}>
+        <motion.div
+          layoutId={`product-image-${item.id}`}
+          className={cn(styles.imageWrap, !item.inStock && styles.imageWrapOos)}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        >
           <Image
             src={item.image || "/placeholder.jpg"}
             alt={item.name}
@@ -108,20 +110,23 @@ export const ProductCard = memo(function ProductCard({
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             priority={item.isPopular}
           />
-          <div className={styles.imageFade} />
-
+          <div className={styles.imageWarm} />
+          <div className={styles.imageScrim} />
+          {categoryChip && (
+            <span className={styles.categoryChip}>{categoryChip}</span>
+          )}
           {!item.inStock && (
             <div className={styles.oos}>
-              <span className={styles.oosLabel}>Out of Stock</span>
+              <span className={styles.oosLabel}>Out of stock</span>
             </div>
           )}
-        </div>
+        </motion.div>
 
         <div className={styles.body}>
           <h3 className={styles.name}>{item.name}</h3>
-          <p className={styles.desc}>{item.description || "\u00A0"}</p>
+          <p className={styles.volume}>{volume || "\u00A0"}</p>
           <div className={styles.footer}>
-            <span className={styles.price}>
+            <span className={cn(styles.price, !item.inStock && styles.priceDim)}>
               KES {(Number(item.price) || 0).toLocaleString()}
             </span>
             {inCart && onUpdateQuantity ? (
@@ -161,7 +166,7 @@ export const ProductCard = memo(function ProductCard({
                 }}
                 disabled={!item.inStock}
                 aria-label={`Add ${item.name} to cart`}
-                className={styles.addBtn}
+                className={cn(styles.addBtn, !item.inStock && styles.addBtnGhost)}
               >
                 <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
                 Add
@@ -189,14 +194,16 @@ export const ProductCard = memo(function ProductCard({
                   src={item.image || "/placeholder.jpg"}
                   alt={item.name}
                   fill
-                  className="object-cover"
+                  className={styles.image}
                   sizes="280px"
                 />
+                <div className={styles.imageWarm} />
+                <div className={styles.imageScrim} />
               </div>
               <div className={styles.quickLookBody}>
                 <h4 className={styles.quickLookName}>{item.name}</h4>
                 <p className={styles.quickLookDesc}>
-                  {item.description || "A guest favorite at Infusion Jaba."}
+                  {tastingNotesFor(item)}
                 </p>
                 <div className={styles.quickLookFooter}>
                   <span className={styles.price}>

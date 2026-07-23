@@ -22,6 +22,7 @@ import { OrderHistoryDrawer } from "@/components/menu/order-history-drawer"
 import { ActiveOrdersDrawer } from "@/components/menu/active-orders-drawer"
 import { CustomerNumberModal } from "@/components/menu/customer-number-modal"
 import { formatOrderLabel } from "@/components/menu/order-display"
+import { enrichMenuItem, findServingSiblings } from "@/components/menu/product-meta"
 import { orderStore } from "@/lib/orderStore"
 import { MenuItem, CartItem, Order, MenuCategory } from "@/types/menu"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -132,17 +133,20 @@ function MenuContent() {
       .then((r) => r.json())
       .then((data) => {
         if (!data.products) return
-        const items: MenuItem[] = data.products.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          description: p.size ? `${p.size}${p.unit ? " " + p.unit : ""}` : (p.unit || ""),
-          price: Number(p.price) || 0,
-          image: p.image && p.image !== "/placeholder.svg" ? p.image : "/placeholder.jpg",
-          category: p.category?.toLowerCase().replace(/\s+/g, "-") || "other",
-          inStock: (p.stock || 0) > 0,
-          isPopular: false,
-          isJaba: p.isJaba === true,
-        }))
+        const items: MenuItem[] = data.products.map((p: any) =>
+          enrichMenuItem({
+            id: p.id,
+            name: p.name,
+            price: Number(p.price) || 0,
+            image: p.image,
+            category: p.category,
+            stock: p.stock,
+            size: p.size,
+            unit: p.unit,
+            isJaba: p.isJaba === true,
+            brand: p.brand,
+          })
+        )
 
         const seenCats = new Set<string>()
         const cats: MenuCategory[] = []
@@ -617,22 +621,52 @@ function MenuContent() {
     [cart]
   )
 
-  const handleAddFromSheet = useCallback(() => {
-    if (selectedItem) {
-      const q = getItemQuantity(selectedItem.id)
-      handleAddToCart(selectedItem)
-      if (q === 0) setTimeout(() => setProductSheetOpen(false), 150)
-    }
-  }, [selectedItem, handleAddToCart, getItemQuantity])
+  const handleConfirmFromSheet = useCallback(
+    (item: MenuItem, quantity: number) => {
+      if (!tableNumber) return
+      if (!customerNumberResolved) {
+        setShowCustomerModal(true)
+        return
+      }
+      setCart((prev) => {
+        const existing = prev.find((i) => i.id === item.id)
+        let next: CartItem[]
+        if (quantity <= 0) {
+          next = prev.filter((i) => i.id !== item.id)
+        } else if (existing) {
+          next = prev.map((i) =>
+            i.id === item.id ? { ...i, quantity, unitPrice: Number(item.price) || i.unitPrice } : i
+          )
+        } else {
+          next = [
+            ...prev,
+            {
+              id: item.id,
+              name: item.name,
+              quantity,
+              unitPrice: Number(item.price) || 0,
+              image: item.image,
+            },
+          ]
+        }
+        syncCartToOrder(next)
+        return next
+      })
+    },
+    [tableNumber, customerNumberResolved, syncCartToOrder]
+  )
 
-  const handleRemoveFromSheet = useCallback(() => {
-    if (selectedItem) {
-      handleUpdateQuantity(
-        selectedItem.id,
-        Math.max(0, getItemQuantity(selectedItem.id) - 1)
-      )
-    }
-  }, [selectedItem, handleUpdateQuantity, getItemQuantity])
+  const handleRemoveFromSheet = useCallback(
+    (itemId: string) => {
+      handleRemoveItem(itemId)
+    },
+    [handleRemoveItem]
+  )
+
+  const sheetServings = useMemo(() => {
+    if (!selectedItem) return []
+    return findServingSiblings(selectedItem, menuItems)
+  }, [selectedItem, menuItems])
 
   const allOrders = useMemo(() => {
     if (!tableNumber || !customerNumberResolved) return []
@@ -962,8 +996,10 @@ function MenuContent() {
           onOpenChange={setProductSheetOpen}
           item={selectedItem}
           quantity={getItemQuantity(selectedItem.id)}
-          onAdd={handleAddFromSheet}
-          onRemove={handleRemoveFromSheet}
+          servings={sheetServings}
+          onSelectServing={(opt) => setSelectedItem(opt)}
+          onConfirm={handleConfirmFromSheet}
+          onRemoveFromOrder={handleRemoveFromSheet}
         />
       )}
 

@@ -49,14 +49,16 @@ function SheetContent({
   children,
   side = 'right',
   showClose = true,
+  overlayClassName,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   showClose?: boolean
+  overlayClassName?: string
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay />
+      <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(

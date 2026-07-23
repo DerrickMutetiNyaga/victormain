@@ -56,10 +56,15 @@ export const PopularRow = memo(function PopularRow({
                 className={styles.image}
                 sizes="160px"
               />
+              <div className={styles.imageWarm} />
+              <div className={styles.imageScrim} />
+              {item.categoryLabel && (
+                <span className={styles.categoryChip}>{item.categoryLabel}</span>
+              )}
             </div>
             <div className={styles.body}>
               <p className={styles.name}>{item.name}</p>
-              <p className={styles.desc}>{item.description}</p>
+              <p className={styles.desc}>{item.volumeLabel || item.description}</p>
               <div className={styles.row}>
                 <span className={styles.price}>
                   KES {(Number(item.price) || 0).toLocaleString()}
