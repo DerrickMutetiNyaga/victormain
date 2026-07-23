@@ -59,8 +59,12 @@ export const CartDrawer = memo(function CartDrawer({
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent
-        className={styles.drawer}
-        style={{ touchAction: "manipulation" }}
+        className={cn(styles.drawer, "bg-transparent")}
+        style={{
+          touchAction: "manipulation",
+          background:
+            "radial-gradient(ellipse at top center, rgba(200,114,42,0.12), transparent 55%), #2E241B",
+        }}
       >
         <div className={styles.handle}>
           <div className={styles.handleBar} />
@@ -86,7 +90,7 @@ export const CartDrawer = memo(function CartDrawer({
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    isPaidAlready ? "bg-[#b98a44]" : "bg-[#e08a3c] animate-pulse"
+                    isPaidAlready ? "bg-[#b98a44]" : "bg-[#D9843B] animate-pulse"
                   )}
                 />
                 {isPaidAlready ? "Paid" : "Unpaid · At Bar"}
@@ -101,8 +105,8 @@ export const CartDrawer = memo(function CartDrawer({
               <div className={styles.emptyIcon}>
                 <ShoppingBag className="h-8 w-8" />
               </div>
-              <p className="text-[#f2e8d8] font-semibold">Cart is empty</p>
-              <p className="text-[rgba(242,232,216,0.4)] text-sm mt-1">Add something delicious</p>
+              <p className="text-[#F5EBDC] font-semibold">Cart is empty</p>
+              <p className="text-[rgba(242,232,216,0.65)] text-sm mt-1">Add something delicious</p>
             </div>
           ) : (
             items.map((item) => (
@@ -162,19 +166,19 @@ export const CartDrawer = memo(function CartDrawer({
           <DrawerFooter className={styles.footer}>
             <div className="space-y-1.5 px-1 pb-1">
               {isAlreadySent && (
-                <p className="text-[rgba(242,232,216,0.35)] text-[10px] font-semibold uppercase tracking-[0.16em] mb-1">
+                <p className="text-[rgba(242,232,216,0.65)] text-[10px] font-semibold uppercase tracking-[0.16em] mb-1">
                   New Items
                 </p>
               )}
               <div className="flex justify-between items-center">
-                <span className="text-[rgba(242,232,216,0.4)] text-sm">Subtotal</span>
+                <span className="text-[rgba(242,232,216,0.65)] text-sm">Subtotal</span>
                 <span className="text-[rgba(242,232,216,0.7)] text-sm font-semibold tabular-nums">
                   KES {cartSubtotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t border-[rgba(185,138,68,0.14)]">
-                <span className="text-[#f2e8d8] font-bold text-base">Total</span>
-                <span className="text-xl font-extrabold text-[#f2e8d8] tabular-nums">
+              <div className="flex justify-between items-center pt-2 border-t border-[rgba(242,232,216,0.10)]">
+                <span className="text-[#F5EBDC] font-bold text-base">Total</span>
+                <span className="text-xl font-extrabold text-[#D9843B] tabular-nums">
                   KES {cartTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -190,11 +194,11 @@ export const CartDrawer = memo(function CartDrawer({
                 ) : (
                   <>
                     {activeOrderTotal != null && (
-                      <div className="flex justify-between items-center px-1 py-1 border-t border-[rgba(185,138,68,0.12)]">
-                        <span className="text-[rgba(242,232,216,0.45)] text-xs font-semibold uppercase tracking-wider">
+                      <div className="flex justify-between items-center px-1 py-1 border-t border-[rgba(242,232,216,0.14)]">
+                        <span className="text-[rgba(242,232,216,0.65)] text-xs font-semibold uppercase tracking-wider">
                           Outstanding
                         </span>
-                        <span className="text-[#c8722a] font-extrabold text-lg tabular-nums">
+                        <span className="text-[#D9843B] font-extrabold text-lg tabular-nums">
                           KES {activeOrderTotal.toLocaleString()}
                         </span>
                       </div>
@@ -203,9 +207,9 @@ export const CartDrawer = memo(function CartDrawer({
                     {isCashPending ? (
                       <>
                         <div className={styles.infoCard}>
-                          <Banknote className="h-5 w-5 text-[#e08a3c] flex-shrink-0" />
+                          <Banknote className="h-5 w-5 text-[#D9843B] flex-shrink-0" />
                           <div>
-                            <p className="text-[#e08a3c] text-sm font-bold">Pay at the Teller</p>
+                            <p className="text-[#D9843B] text-sm font-bold">Pay at the Teller</p>
                             <p className="text-[rgba(200,114,42,0.65)] text-xs mt-0.5">
                               Please have KES {(activeOrderTotal ?? 0).toLocaleString()} ready in cash
                             </p>
@@ -222,11 +226,11 @@ export const CartDrawer = memo(function CartDrawer({
                         )}
                       </>
                     ) : (
-                      <div className={cn(styles.infoCard, "bg-[rgba(28,20,16,0.7)] border-[rgba(185,138,68,0.14)]")}>
-                        <Banknote className="h-5 w-5 text-[#e08a3c] flex-shrink-0" />
+                      <div className={cn(styles.infoCard, "bg-[#261E17] border-[rgba(242,232,216,0.14)]")}>
+                        <Banknote className="h-5 w-5 text-[#D9843B] flex-shrink-0" />
                         <div>
-                          <p className="text-[#f2e8d8] text-sm font-bold">Order at Bar — Awaiting Payment</p>
-                          <p className="text-[rgba(242,232,216,0.4)] text-xs mt-0.5">Payment will be collected</p>
+                          <p className="text-[#F5EBDC] text-sm font-bold">Order at Bar — Awaiting Payment</p>
+                          <p className="text-[rgba(242,232,216,0.65)] text-xs mt-0.5">Payment will be collected</p>
                         </div>
                       </div>
                     )}

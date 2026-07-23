@@ -570,7 +570,7 @@ function MenuContent() {
             <div>
               <p className={cn(styles.eyebrow, "mb-2")}>Table Service</p>
               <h1 className={cn(styles.display, "text-3xl")}>Scan your table QR</h1>
-              <p className="text-[rgba(242,232,216,0.5)] mt-3 text-sm leading-relaxed">
+              <p className="text-[rgba(242,232,216,0.65)] mt-3 text-sm leading-relaxed">
                 Point your camera at the QR code on your table to start ordering
               </p>
             </div>
@@ -592,7 +592,7 @@ function MenuContent() {
                 Enter your table number
               </label>
               <div className="relative">
-                <TableIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[rgba(242,232,216,0.28)] pointer-events-none" />
+                <TableIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[rgba(242,232,216,0.45)] pointer-events-none" />
                 <input
                   type="text"
                   inputMode="numeric"
@@ -641,7 +641,7 @@ function MenuContent() {
           <div className="text-center space-y-2">
             <p className={styles.eyebrow}>Order Status</p>
             <h1 className={cn(styles.display, "text-3xl")}>Order sent</h1>
-            <p className="text-[rgba(242,232,216,0.5)] text-sm">
+            <p className="text-[rgba(242,232,216,0.65)] text-sm">
               Your order has been received and is being prepared
             </p>
           </div>
@@ -688,7 +688,7 @@ function MenuContent() {
               />
               <div className="flex items-center gap-2 mt-1.5">
                 <span className={styles.tablePill}>
-                  <span className={cn("h-1.5 w-1.5 rounded-full bg-[#e08a3c]", styles.goldShimmer)} />
+                  <span className={cn("h-1.5 w-1.5 rounded-full bg-[#D9843B]", styles.goldShimmer)} />
                   Table {tableNumber}
                 </span>
                 {customerNumber && (
@@ -757,9 +757,9 @@ function MenuContent() {
               <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none z-10">
                 <Search
                   className="h-4 w-4 transition-colors duration-500"
-                  style={{ color: searchFocused ? "#c8722a" : "rgba(242,232,216,0.35)" }}
+                  style={{ color: searchFocused ? "#D9843B" : "rgba(242,232,216,0.65)" }}
                 />
-                <span className="hidden sm:block h-4 w-px bg-[rgba(185,138,68,0.2)]" />
+                <span className="hidden sm:block h-4 w-px bg-[rgba(242,232,216,0.10)]" />
               </div>
               <input
                 type="text"
@@ -777,7 +777,7 @@ function MenuContent() {
                   onClick={() => setSearchQuery("")}
                   aria-label="Clear search"
                 >
-                  <X className="h-4 w-4 text-[rgba(242,232,216,0.5)]" />
+                  <X className="h-4 w-4 text-[rgba(242,232,216,0.65)]" />
                 </button>
               )}
             </div>
@@ -796,7 +796,7 @@ function MenuContent() {
 
         <div className="max-w-screen-xl mx-auto px-4 sm:px-5 pb-2.5">
           <div className={styles.metaStrip}>
-            <p className="text-[12px] text-[rgba(242,232,216,0.6)] font-medium">
+            <p className="text-[12px] text-[rgba(242,232,216,0.65)] font-medium">
               {menuLoading
                 ? "Loading menu..."
                 : `${filteredProducts.length} item${filteredProducts.length === 1 ? "" : "s"} in ${selectedCategory === "all"
@@ -852,10 +852,10 @@ function MenuContent() {
         ) : filteredProducts.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
-              <Search className="h-8 w-8 text-[rgba(242,232,216,0.2)]" />
+              <Search className="h-8 w-8 text-[#D9843B]" />
             </div>
             <p className={cn(styles.display, "text-xl")}>No drinks found</p>
-            <p className="text-[rgba(242,232,216,0.4)] text-sm mt-2">Try a different search or category</p>
+            <p className="text-[rgba(242,232,216,0.65)] text-sm mt-2">Try a different search or category</p>
           </div>
         ) : (
           <div className={styles.grid}>
@@ -936,7 +936,7 @@ export default function MenuPage() {
       fallback={
         <div className={styles.loader}>
           <div className={styles.spinner} />
-          <p className="text-[rgba(242,232,216,0.4)] text-sm">Loading menu...</p>
+          <p className="text-[rgba(242,232,216,0.65)] text-sm">Loading menu...</p>
         </div>
       }
     >

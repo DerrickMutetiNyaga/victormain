@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/drawer"
 import { ClipboardList, Banknote, Smartphone, ChevronRight } from "lucide-react"
 import { Order } from "@/types/menu"
-import { cn } from "@/lib/utils"
 
 const statusLabel: Record<string, string> = {
   sent: "At Bar",
@@ -38,10 +37,10 @@ export function ActiveOrdersDrawer({
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         {children ?? (
-          <button className="relative h-10 w-10 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] flex items-center justify-center transition-colors">
-            <ClipboardList className="h-5 w-5 text-white/70" />
+          <button className="relative h-10 w-10 rounded-xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] flex items-center justify-center transition-colors">
+            <ClipboardList className="h-5 w-5 text-[#D9843B]" />
             {count > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-amber-500 text-black text-[9px] font-bold flex items-center justify-center animate-pulse">
+              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#D9843B] text-[#1A1512] text-[9px] font-bold flex items-center justify-center animate-pulse">
                 {count}
               </span>
             )}
@@ -49,19 +48,22 @@ export function ActiveOrdersDrawer({
         )}
       </DrawerTrigger>
 
-      <DrawerContent className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(185,138,68,0.22)] bg-[#14100c]">
+      <DrawerContent
+        className="max-h-[88vh] rounded-t-[1.25rem] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
+        style={{ background: "radial-gradient(ellipse at top center, rgba(200,114,42,0.12), transparent 55%), #2E241B" }}
+      >
         <div className="flex justify-center pt-3 pb-1">
-          <div className="h-1 w-10 rounded-full bg-[rgba(242,232,216,0.2)]" />
+          <div className="h-1 w-10 rounded-full bg-[rgba(242,232,216,0.28)]" />
         </div>
 
-        <DrawerHeader className="border-b border-[rgba(185,138,68,0.14)] py-3 px-5">
+        <DrawerHeader className="border-b border-[rgba(242,232,216,0.10)] py-3 px-5">
           <DrawerTitle className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-[rgba(200,114,42,0.14)] border border-[rgba(185,138,68,0.22)] flex items-center justify-center">
-              <ClipboardList className="h-5 w-5 text-[#e08a3c]" />
+            <div className="h-10 w-10 rounded-2xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] flex items-center justify-center shadow-[0_0_20px_rgba(200,114,42,0.16)]">
+              <ClipboardList className="h-5 w-5 text-[#D9843B]" />
             </div>
             <div>
-              <span className="text-base font-semibold text-[#f2e8d8] font-[family-name:var(--menu-font-display)]">Active Orders</span>
-              <p className="text-[12px] text-[rgba(242,232,216,0.4)] font-normal mt-0.5">
+              <span className="text-base font-semibold text-[#F5EBDC] font-[family-name:var(--menu-font-display)]">Active Orders</span>
+              <p className="text-[12px] text-[rgba(242,232,216,0.65)] font-normal mt-0.5">
                 {count === 0 ? "No pending orders" : `${count} order${count > 1 ? "s" : ""} awaiting payment`}
               </p>
             </div>
@@ -70,12 +72,13 @@ export function ActiveOrdersDrawer({
 
         <div className="overflow-y-auto px-4 pb-6 pt-4 space-y-3">
           {count === 0 ? (
-            <div className="py-16 text-center">
-              <div className="h-14 w-14 rounded-2xl bg-white/[0.05] flex items-center justify-center mx-auto mb-4">
-                <ClipboardList className="h-7 w-7 text-white/20" />
+            <div className="py-16 text-center relative">
+              <div className="relative h-14 w-14 rounded-2xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] flex items-center justify-center mx-auto mb-4 shadow-[0_0_32px_rgba(200,114,42,0.2)]">
+                <div className="absolute inset-[-16px] rounded-[1.5rem] bg-[radial-gradient(circle,rgba(200,114,42,0.2),transparent_68%)] pointer-events-none -z-10" />
+                <ClipboardList className="h-7 w-7 text-[#D9843B]" />
               </div>
-              <p className="text-white/50 text-sm font-medium">No active orders</p>
-              <p className="text-white/25 text-xs mt-1">Orders you've sent will appear here until paid</p>
+              <p className="text-[#F5EBDC] text-sm font-medium">No active orders</p>
+              <p className="text-[rgba(242,232,216,0.65)] text-xs mt-1">Orders you&apos;ve sent will appear here until paid</p>
             </div>
           ) : (
             orders.map((order) => {
@@ -86,83 +89,77 @@ export function ActiveOrdersDrawer({
               return (
                 <div
                   key={order.orderId}
-                  className="rounded-2xl bg-amber-500/[0.05] border border-amber-500/20 overflow-hidden"
+                  className="rounded-2xl bg-[#261E17] border border-[rgba(242,232,216,0.14)] overflow-hidden"
                 >
-                  {/* Header row */}
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-amber-500/10">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(242,232,216,0.10)]">
                     <div>
-                      <p className="text-white font-bold text-sm">
+                      <p className="text-[#F5EBDC] font-bold text-sm">
                         #{order.orderId.slice(-8)}
                         {tableLabel && (
-                          <span className="ml-2 text-[11px] font-normal text-white/35">{tableLabel}</span>
+                          <span className="ml-2 text-[11px] font-normal text-[rgba(242,232,216,0.65)]">{tableLabel}</span>
                         )}
                       </p>
-                      <p className="text-white/35 text-[11px] mt-0.5">
+                      <p className="text-[rgba(242,232,216,0.65)] text-[11px] mt-0.5">
                         {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-400">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[rgba(217,132,59,0.14)] text-[#D9843B]">
                       {statusTag}
                     </span>
                   </div>
 
-                  {/* Items */}
                   <div className="px-4 py-3 space-y-1.5">
                     {order.items.slice(0, 3).map((item, i) => (
                       <div key={i} className="flex justify-between text-[13px]">
-                        <span className="text-white/65">{item.quantity}× {item.name}</span>
-                        <span className="text-white/45">KES {(item.unitPrice * item.quantity).toLocaleString()}</span>
+                        <span className="text-[rgba(242,232,216,0.65)]">{item.quantity}× {item.name}</span>
+                        <span className="text-[rgba(242,232,216,0.65)]">KES {(item.unitPrice * item.quantity).toLocaleString()}</span>
                       </div>
                     ))}
                     {order.items.length > 3 && (
-                      <p className="text-white/30 text-[11px]">+{order.items.length - 3} more items</p>
+                      <p className="text-[rgba(242,232,216,0.65)] text-[11px]">+{order.items.length - 3} more items</p>
                     )}
                   </div>
 
-                  {/* Totals */}
                   {(() => {
                     const sub = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
                     const grandTotal = sub
                     return (
                       <div className="px-4 pb-2 space-y-1">
                         <div className="flex justify-between text-[11px]">
-                          <span className="text-white/30">Subtotal</span>
-                          <span className="text-white/40">KES {sub.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[rgba(242,232,216,0.65)]">Subtotal</span>
+                          <span className="text-[rgba(242,232,216,0.65)]">KES {sub.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
-                        <div className="flex justify-between text-[11px] font-bold pt-0.5 border-t border-white/[0.05]">
-                          <span className="text-white/50">Total</span>
-                          <span className="text-amber-400">{grandTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <div className="flex justify-between text-[11px] font-bold pt-0.5 border-t border-[rgba(242,232,216,0.10)]">
+                          <span className="text-[#F5EBDC]">Total</span>
+                          <span className="text-[#D9843B]">{grandTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     )
                   })()}
 
-                  {/* Footer */}
-                  <div className="flex items-center justify-between px-4 pb-3 pt-1 border-t border-white/[0.06]">
-                    {/* Payment method + total */}
+                  <div className="flex items-center justify-between px-4 pb-3 pt-1 border-t border-[rgba(242,232,216,0.10)]">
                     {(() => {
                       const sub = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
                       const grandTotal = sub
                       return (
                         <div>
-                          <span className="text-amber-400 font-bold text-sm">
+                          <span className="text-[#D9843B] font-bold text-sm">
                             KES {grandTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                           <div className="flex items-center gap-1 mt-0.5">
                             {isCash
-                              ? <Banknote className="h-3 w-3 text-white/30" />
-                              : <Smartphone className="h-3 w-3 text-white/30" />}
-                            <span className="text-white/30 text-[10px]">{isCash ? "Cash at teller" : "M-Pesa"}</span>
+                              ? <Banknote className="h-3 w-3 text-[rgba(242,232,216,0.65)]" />
+                              : <Smartphone className="h-3 w-3 text-[rgba(242,232,216,0.65)]" />}
+                            <span className="text-[rgba(242,232,216,0.65)] text-[10px]">{isCash ? "Cash at teller" : "M-Pesa"}</span>
                           </div>
                         </div>
                       )
                     })()}
 
-                    {/* Actions */}
                     <div className="flex gap-1.5">
                       {onSelectOrder && (
                         <button
-                          className="h-8 px-3 rounded-lg text-xs font-semibold text-white/50 bg-white/[0.07] hover:bg-white/[0.12] transition-colors flex items-center gap-1"
+                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[rgba(242,232,216,0.65)] bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] transition-colors flex items-center gap-1"
                           onClick={() => { onSelectOrder(order); setOpen(false) }}
                         >
                           View <ChevronRight className="h-3 w-3" />
@@ -170,7 +167,7 @@ export function ActiveOrdersDrawer({
                       )}
                       {isCash && onPayNow && (
                         <button
-                          className="h-8 px-3 rounded-lg text-xs font-semibold text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/25 transition-colors"
+                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[#1A1512] bg-gradient-to-r from-[#c8722a] to-[#e09040] hover:opacity-95 transition-opacity"
                           onClick={() => { onPayNow(order); setOpen(false) }}
                         >
                           Pay M-Pesa

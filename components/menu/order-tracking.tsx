@@ -32,25 +32,25 @@ const statusConfig: Record<
   draft: {
     label: "Draft",
     icon: <Clock className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(242,232,216,0.08)] text-[rgba(242,232,216,0.55)] border-[rgba(185,138,68,0.18)]",
-    dot: "bg-[rgba(242,232,216,0.4)]",
+    pill: "bg-[rgba(242,232,216,0.08)] text-[rgba(242,232,216,0.65)] border-[rgba(242,232,216,0.14)]",
+    dot: "bg-[rgba(242,232,216,0.65)]",
   },
   active: {
     label: "Active",
     icon: <Package className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(185,138,68,0.12)] text-[#b98a44] border-[rgba(185,138,68,0.28)]",
+    pill: "bg-[rgba(185,138,68,0.12)] text-[#b98a44] border-[rgba(242,232,216,0.14)]",
     dot: "bg-[#b98a44]",
   },
   sent: {
     label: "Sent to Bar",
     icon: <Package className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(200,114,42,0.14)] text-[#e08a3c] border-[rgba(200,114,42,0.28)]",
-    dot: "bg-[#e08a3c] animate-pulse",
+    pill: "bg-[rgba(217,132,59,0.14)] text-[#D9843B] border-[rgba(242,232,216,0.14)]",
+    dot: "bg-[#D9843B] animate-pulse",
   },
   paid: {
     label: "Paid",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(185,138,68,0.14)] text-[#b98a44] border-[rgba(185,138,68,0.28)]",
+    pill: "bg-[rgba(185,138,68,0.14)] text-[#b98a44] border-[rgba(242,232,216,0.14)]",
     dot: "bg-[#b98a44]",
   },
   cancelled: {
@@ -62,19 +62,19 @@ const statusConfig: Record<
   PENDING: {
     label: "Pending",
     icon: <Clock className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(200,114,42,0.12)] text-[#e08a3c] border-[rgba(200,114,42,0.25)]",
-    dot: "bg-[#e08a3c]",
+    pill: "bg-[rgba(200,114,42,0.12)] text-[#D9843B] border-[rgba(200,114,42,0.25)]",
+    dot: "bg-[#D9843B]",
   },
   IN_PROGRESS: {
     label: "In Progress",
     icon: <Package className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(185,138,68,0.12)] text-[#b98a44] border-[rgba(185,138,68,0.28)]",
+    pill: "bg-[rgba(185,138,68,0.12)] text-[#b98a44] border-[rgba(242,232,216,0.14)]",
     dot: "bg-[#b98a44]",
   },
   RECEIVED: {
     label: "Received",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    pill: "bg-[rgba(185,138,68,0.14)] text-[#b98a44] border-[rgba(185,138,68,0.28)]",
+    pill: "bg-[rgba(185,138,68,0.14)] text-[#b98a44] border-[rgba(242,232,216,0.14)]",
     dot: "bg-[#b98a44]",
   },
   CANCELLED: {
@@ -102,8 +102,8 @@ export function OrderTracking({
 
   if (!order) {
     return (
-      <div className="rounded-[1.15rem] bg-[#14100c] border border-[rgba(185,138,68,0.18)] p-8 text-center">
-        <p className="text-[rgba(242,232,216,0.4)] text-sm">Order not found</p>
+      <div className="rounded-[1.15rem] bg-[#261E17] border border-[rgba(242,232,216,0.14)] p-8 text-center">
+        <p className="text-[rgba(242,232,216,0.65)] text-sm">Order not found</p>
       </div>
     )
   }
@@ -115,13 +115,13 @@ export function OrderTracking({
   const orderTotal = orderSubtotal
 
   return (
-    <div className="rounded-[1.15rem] bg-[#14100c] border border-[rgba(185,138,68,0.18)] overflow-hidden">
+    <div className="rounded-[1.15rem] bg-[#261E17] border border-[rgba(242,232,216,0.14)] overflow-hidden">
       {/* Status banner */}
-      <div className="px-5 pt-5 pb-4 border-b border-[rgba(185,138,68,0.12)]">
+      <div className="px-5 pt-5 pb-4 border-b border-[rgba(242,232,216,0.14)]">
         {(onBack || onClose) && (
           <button
             onClick={onBack || onClose}
-            className="flex items-center gap-1.5 text-[rgba(242,232,216,0.45)] hover:text-[rgba(242,232,216,0.8)] text-sm mb-4 transition-colors duration-500"
+            className="flex items-center gap-1.5 text-[rgba(242,232,216,0.65)] hover:text-[rgba(242,232,216,0.8)] text-sm mb-4 transition-colors duration-500"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -133,7 +133,7 @@ export function OrderTracking({
             <p className="text-[#b98a44] text-[10px] font-semibold uppercase tracking-[0.18em] mb-1">
               Order ID
             </p>
-            <p className="text-[#f2e8d8] font-mono text-sm font-bold">
+            <p className="text-[#F5EBDC] font-mono text-sm font-bold">
               #{order.orderId.slice(-10)}
             </p>
           </div>
@@ -150,28 +150,28 @@ export function OrderTracking({
       </div>
 
       {/* Info grid */}
-      <div className="px-5 py-4 grid grid-cols-3 gap-3 border-b border-[rgba(185,138,68,0.12)]">
+      <div className="px-5 py-4 grid grid-cols-3 gap-3 border-b border-[rgba(242,232,216,0.14)]">
         <div>
-          <p className="text-[rgba(242,232,216,0.35)] text-[10px] font-semibold uppercase tracking-wider mb-1">Table</p>
-          <p className="text-[#f2e8d8] font-bold text-sm">#{order.tableId}</p>
+          <p className="text-[rgba(242,232,216,0.65)] text-[10px] font-semibold uppercase tracking-wider mb-1">Table</p>
+          <p className="text-[#F5EBDC] font-bold text-sm">#{order.tableId}</p>
         </div>
         <div>
-          <p className="text-[rgba(242,232,216,0.35)] text-[10px] font-semibold uppercase tracking-wider mb-1">Total</p>
-          <p className="text-[#c8722a] font-bold text-sm tabular-nums">KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p className="text-[rgba(242,232,216,0.65)] text-[10px] font-semibold uppercase tracking-wider mb-1">Total</p>
+          <p className="text-[#D9843B] font-bold text-sm tabular-nums">KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
         <div>
-          <p className="text-[rgba(242,232,216,0.35)] text-[10px] font-semibold uppercase tracking-wider mb-1">Payment</p>
+          <p className="text-[rgba(242,232,216,0.65)] text-[10px] font-semibold uppercase tracking-wider mb-1">Payment</p>
           <div className="flex items-center gap-2">
             <span
               className={cn(
                 "font-bold text-sm",
-                order.paymentStatus === "PAID" ? "text-[#b98a44]" : "text-[#e08a3c]"
+                order.paymentStatus === "PAID" ? "text-[#b98a44]" : "text-[#D9843B]"
               )}
             >
               {order.paymentStatus === "PAID" ? "PAID" : "NOT PAID"}
             </span>
             {order.paymentStatus !== "PAID" && order.paymentMethod === "cash" && (
-              <span className="text-[rgba(242,232,216,0.4)] text-xs">· Cash</span>
+              <span className="text-[rgba(242,232,216,0.65)] text-xs">· Cash</span>
             )}
           </div>
         </div>
@@ -180,22 +180,22 @@ export function OrderTracking({
       {/* Payment method banner — explicit NOT PAID + Pay via M-Pesa option */}
       {order.paymentMethod === "cash" && order.paymentStatus !== "PAID" && (
         <div className="mx-5 mt-4 space-y-3">
-          <div className="p-3.5 rounded-2xl bg-[rgba(200,114,42,0.1)] border border-[rgba(200,114,42,0.22)] flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-[rgba(217,132,59,0.1)] border border-[rgba(242,232,216,0.14)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Banknote className="h-5 w-5 text-[#e08a3c] flex-shrink-0" />
+              <Banknote className="h-5 w-5 text-[#D9843B] flex-shrink-0" />
               <div>
-                <p className="text-[#e08a3c] text-sm font-bold">Pay at the Teller</p>
-                <p className="text-[rgba(200,114,42,0.65)] text-xs mt-0.5">Please have KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ready</p>
+                <p className="text-[#D9843B] text-sm font-bold">Pay at the Teller</p>
+                <p className="text-[rgba(242,232,216,0.65)] text-xs mt-0.5">Please have KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ready</p>
               </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[rgba(200,114,42,0.2)] text-[#e08a3c] border border-[rgba(200,114,42,0.3)] shrink-0">
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[rgba(217,132,59,0.2)] text-[#D9843B] border border-[rgba(242,232,216,0.14)] shrink-0">
               NOT PAID
             </span>
           </div>
           {onPayNow && (
             <button
               onClick={() => onPayNow(order)}
-              className="w-full h-11 rounded-xl font-semibold text-sm bg-[rgba(185,138,68,0.12)] border border-[rgba(185,138,68,0.28)] hover:bg-[rgba(185,138,68,0.18)] text-[#b98a44] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500"
+              className="w-full h-11 rounded-xl font-semibold text-sm bg-[rgba(185,138,68,0.12)] border border-[rgba(242,232,216,0.14)] hover:bg-[rgba(185,138,68,0.18)] text-[#b98a44] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500"
             >
               <Smartphone className="h-4 w-4" strokeWidth={2.5} />
               Pay via M-Pesa · KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -204,7 +204,7 @@ export function OrderTracking({
         </div>
       )}
       {order.paymentMethod === "mpesa" && order.paymentStatus === "PAID" && (
-        <div className="mx-5 mt-4 p-3.5 rounded-2xl bg-[rgba(185,138,68,0.1)] border border-[rgba(185,138,68,0.22)] flex items-center justify-between gap-3">
+        <div className="mx-5 mt-4 p-3.5 rounded-2xl bg-[rgba(185,138,68,0.1)] border border-[rgba(242,232,216,0.14)] flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Smartphone className="h-5 w-5 text-[#b98a44] flex-shrink-0" />
             <div>
@@ -217,7 +217,7 @@ export function OrderTracking({
             </div>
           </div>
           {(order as any).mpesaReceiptNumber && (
-            <span className="text-[#b98a44] font-mono text-xs font-bold bg-[rgba(185,138,68,0.18)] px-2.5 py-1 rounded-full border border-[rgba(185,138,68,0.28)] shrink-0">
+            <span className="text-[#b98a44] font-mono text-xs font-bold bg-[rgba(185,138,68,0.18)] px-2.5 py-1 rounded-full border border-[rgba(242,232,216,0.14)] shrink-0">
               {(order as any).mpesaReceiptNumber}
             </span>
           )}
@@ -225,37 +225,37 @@ export function OrderTracking({
       )}
 
       {/* Items list */}
-      <div className="px-5 py-4 border-b border-[rgba(185,138,68,0.12)]">
+      <div className="px-5 py-4 border-b border-[rgba(242,232,216,0.14)]">
         <p className="text-[#b98a44] text-[10px] font-semibold uppercase tracking-[0.18em] mb-3">Items</p>
         <div className="space-y-2">
           {order.items.map((item, idx) => (
             <div key={idx} className="flex justify-between items-center">
               <span className="text-[rgba(242,232,216,0.65)] text-sm">
-                <span className="font-semibold text-[#f2e8d8]">{item.quantity}×</span>{" "}
+                <span className="font-semibold text-[#F5EBDC]">{item.quantity}×</span>{" "}
                 {item.name}
               </span>
-              <span className="text-[rgba(242,232,216,0.55)] text-sm font-semibold tabular-nums">
+              <span className="text-[rgba(242,232,216,0.65)] text-sm font-semibold tabular-nums">
                 KES {(item.unitPrice * item.quantity).toLocaleString()}
               </span>
             </div>
           ))}
         </div>
         {/* Totals */}
-        <div className="mt-4 rounded-xl bg-[rgba(28,20,16,0.7)] border border-[rgba(185,138,68,0.14)] overflow-hidden">
-          <div className="flex justify-between items-center px-3 py-2 border-b border-[rgba(185,138,68,0.1)]">
-            <span className="text-[rgba(242,232,216,0.45)] text-sm">Subtotal</span>
+        <div className="mt-4 rounded-xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] overflow-hidden">
+          <div className="flex justify-between items-center px-3 py-2 border-b border-[rgba(242,232,216,0.10)]">
+            <span className="text-[rgba(242,232,216,0.65)] text-sm">Subtotal</span>
             <span className="text-[rgba(242,232,216,0.65)] text-sm font-semibold tabular-nums">KES {orderSubtotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="flex justify-between items-center px-3 py-2.5">
-            <span className="text-[#f2e8d8] text-sm font-bold">Total</span>
-            <span className="text-[#c8722a] text-base font-extrabold tabular-nums">KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-[#F5EBDC] text-sm font-bold">Total</span>
+            <span className="text-[#D9843B] text-base font-extrabold tabular-nums">KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         </div>
       </div>
 
       {/* Success banner */}
       {order.status === "RECEIVED" && (
-        <div className="mx-5 my-4 p-4 rounded-2xl bg-[rgba(185,138,68,0.1)] border border-[rgba(185,138,68,0.22)] flex items-center gap-3">
+        <div className="mx-5 my-4 p-4 rounded-2xl bg-[rgba(185,138,68,0.1)] border border-[rgba(242,232,216,0.14)] flex items-center gap-3">
           <CheckCircle2 className="h-5 w-5 text-[#b98a44] flex-shrink-0" />
           <p className="text-[#b98a44] text-sm font-semibold">Your order has been received!</p>
         </div>
@@ -267,7 +267,7 @@ export function OrderTracking({
           {isUnpaid && !isCashOrder && onPayNow && (
             <button
               onClick={() => onPayNow(order)}
-              className="w-full h-12 rounded-xl font-bold text-[14px] bg-gradient-to-r from-[#c8722a] to-[#b98a44] text-[#0e0c0a] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
+              className="w-full h-12 rounded-xl font-bold text-[14px] bg-gradient-to-r from-[#c8722a] to-[#e09040] text-[#1A1512] flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-500 shadow-[0_8px_24px_rgba(200,114,42,0.28)]"
             >
               <CreditCard className="h-4 w-4" strokeWidth={2.5} />
               Pay Now · KES {orderTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -276,7 +276,7 @@ export function OrderTracking({
           {onAddItems && (
             <button
               onClick={() => onAddItems(order)}
-              className="w-full h-11 rounded-xl text-sm font-semibold text-[rgba(242,232,216,0.55)] bg-[rgba(28,20,16,0.7)] hover:bg-[rgba(40,30,24,0.9)] border border-[rgba(185,138,68,0.16)] transition-colors duration-500 flex items-center justify-center gap-1.5"
+              className="w-full h-11 rounded-xl text-sm font-semibold text-[rgba(242,232,216,0.65)] bg-[#261E17] hover:bg-[#382C21] border border-[rgba(242,232,216,0.14)] transition-colors duration-500 flex items-center justify-center gap-1.5"
             >
               <Plus className="h-4 w-4" />
               Add More Items

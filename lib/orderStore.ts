@@ -315,7 +315,13 @@ class OrderStore {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(menuOrderPutApiPayload(orderId, patch)),
       })
-      if (!response.ok) throw new Error("Failed to update")
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null)
+        throw new Error(
+          (errBody && (errBody.error || errBody.message)) ||
+            `Failed to update (${response.status})`
+        )
+      }
       const data = await response.json().catch(() => null)
       const saved = data?.order
       if (saved) {

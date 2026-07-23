@@ -1,12 +1,12 @@
-/* Ember & Oak — ProductSheet */
+/* Ember & Oak — ProductSheet (sheet surface) */
 
 .panel {
   display: flex;
   flex-direction: column;
   height: 100%;
   background:
-    radial-gradient(ellipse at top, rgba(200, 114, 42, 0.12), transparent 55%),
-    #14100c;
+    radial-gradient(ellipse at top center, rgba(200, 114, 42, 0.12), transparent 55%),
+    #2e241b;
 }
 
 .hero {
@@ -15,7 +15,7 @@
   width: 100%;
   overflow: hidden;
   flex-shrink: 0;
-  background: #0e0c0a;
+  background: #261e17;
 }
 
 .heroImage {
@@ -27,7 +27,7 @@
   inset-inline: 0;
   bottom: 0;
   height: 6rem;
-  background: linear-gradient(to top, #14100c, transparent);
+  background: linear-gradient(to top, #2e241b, transparent);
 }
 
 .handle {
@@ -47,7 +47,7 @@
   height: 0.25rem;
   width: 2.5rem;
   border-radius: 999px;
-  background: rgba(242, 232, 216, 0.2);
+  background: rgba(242, 232, 216, 0.28);
 }
 
 @media (min-width: 768px) {
@@ -67,9 +67,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f2e8d8;
-  background: rgba(8, 6, 4, 0.55);
-  border: 1px solid rgba(185, 138, 68, 0.25);
+  color: #f5ebdc;
+  background: #382c21;
+  border: 1px solid rgba(242, 232, 216, 0.14);
   backdrop-filter: blur(8px);
   transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -92,18 +92,18 @@
 }
 
 .tagPopular {
-  background: rgba(200, 114, 42, 0.9);
-  color: #0e0c0a;
+  background: rgba(200, 114, 42, 0.95);
+  color: #1a1512;
 }
 
 .tagGold {
-  background: rgba(185, 138, 68, 0.9);
-  color: #0e0c0a;
+  background: rgba(185, 138, 68, 0.95);
+  color: #1a1512;
 }
 
 .tagOxblood {
   background: rgba(94, 31, 31, 0.9);
-  color: #f2e8d8;
+  color: #f5ebdc;
 }
 
 .content {
@@ -119,7 +119,7 @@
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(185, 138, 68, 0.85);
+  color: #d9843b;
 }
 
 .title {
@@ -129,22 +129,22 @@
   line-height: 1.2 !important;
   letter-spacing: -0.02em !important;
   text-align: left !important;
-  color: #f2e8d8 !important;
+  color: #f5ebdc !important;
 }
 
 .desc {
   margin-top: 0.75rem;
   font-size: 0.875rem;
   line-height: 1.6;
-  color: rgba(242, 232, 216, 0.5);
+  color: rgba(242, 232, 216, 0.65);
 }
 
 .priceBox {
   margin-top: 1.25rem;
   padding: 0.85rem 1rem;
   border-radius: 0.85rem;
-  border: 1px solid rgba(185, 138, 68, 0.18);
-  background: rgba(28, 20, 16, 0.65);
+  border: 1px solid rgba(242, 232, 216, 0.14);
+  background: #261e17;
 }
 
 .priceLabel {
@@ -152,7 +152,7 @@
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(242, 232, 216, 0.35);
+  color: rgba(242, 232, 216, 0.65);
 }
 
 .priceValue {
@@ -161,7 +161,7 @@
   font-weight: 700;
   font-variant-numeric: lining-nums;
   letter-spacing: -0.02em;
-  color: #c8722a;
+  color: #d9843b;
 }
 
 .qtyRow {
@@ -170,7 +170,7 @@
   justify-content: space-between;
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid rgba(185, 138, 68, 0.14);
+  border-top: 1px solid rgba(242, 232, 216, 0.10);
 }
 
 .qtyLabel {
@@ -178,14 +178,14 @@
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(242, 232, 216, 0.4);
+  color: rgba(242, 232, 216, 0.65);
 }
 
 .qtyValue {
   margin-top: 0.25rem;
   font-size: 1.05rem;
   font-weight: 700;
-  color: #f2e8d8;
+  color: #f5ebdc;
 }
 
 .qtyControls {
@@ -201,14 +201,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f2e8d8;
-  background: rgba(28, 20, 16, 0.8);
-  border: 1px solid rgba(185, 138, 68, 0.22);
+  color: #f5ebdc;
+  background: #382c21;
+  border: 1px solid rgba(242, 232, 216, 0.14);
   transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .qtyBtn:disabled {
-  opacity: 0.35;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -219,8 +219,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0e0c0a;
-  background: linear-gradient(135deg, #c8722a, #b98a44);
+  color: #1a1512;
+  background: linear-gradient(135deg, #c8722a, #e09040);
   border: none;
   transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -234,15 +234,15 @@
   text-align: center;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #f2e8d8;
+  color: #f5ebdc;
   font-variant-numeric: lining-nums;
 }
 
 .footer {
   flex-shrink: 0;
   padding: 0.75rem 1.25rem max(1.5rem, env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(185, 138, 68, 0.14);
-  background: rgba(14, 12, 10, 0.72);
+  border-top: 1px solid rgba(242, 232, 216, 0.10);
+  background: rgba(46, 36, 27, 0.92);
   backdrop-filter: blur(16px);
 }
 
@@ -256,8 +256,8 @@
   gap: 0.5rem;
   font-size: 15px;
   font-weight: 700;
-  color: #0e0c0a;
-  background: linear-gradient(135deg, #c8722a, #b98a44);
+  color: #1a1512;
+  background: linear-gradient(135deg, #c8722a, #e09040);
   box-shadow: 0 10px 32px rgba(200, 114, 42, 0.3);
   transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -273,8 +273,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(94, 31, 31, 0.2);
-  border: 1px solid rgba(94, 31, 31, 0.4);
+  background: rgba(94, 31, 31, 0.25);
+  border: 1px solid rgba(94, 31, 31, 0.45);
 }
 
 .oosText {
@@ -286,8 +286,8 @@
 .dialogShell {
   padding: 0 !important;
   overflow: hidden !important;
-  border: 1px solid rgba(185, 138, 68, 0.22) !important;
-  background: #14100c !important;
+  border: 1px solid rgba(242, 232, 216, 0.14) !important;
+  background: #2e241b !important;
   max-width: 36rem !important;
   border-radius: 1.25rem !important;
 }
@@ -296,7 +296,7 @@
   padding: 0 !important;
   overflow: hidden !important;
   border-radius: 1.25rem 1.25rem 0 0 !important;
-  border-top: 1px solid rgba(185, 138, 68, 0.2) !important;
-  background: #14100c !important;
+  border-top: 1px solid rgba(242, 232, 216, 0.14) !important;
+  background: #2e241b !important;
   max-height: 88vh !important;
 }

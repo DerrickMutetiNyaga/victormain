@@ -147,6 +147,7 @@ export const ProductSheet = memo(function ProductSheet({
       <DialogContent
         showCloseButton={false}
         className={styles.dialogShell}
+        aria-describedby={undefined}
       >
         {content}
       </DialogContent>

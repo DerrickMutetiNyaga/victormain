@@ -173,22 +173,29 @@ export async function PUT(request: Request) {
     sanitizePublicMenuPaymentFields(updateData as Record<string, unknown>, existing as any)
 
     if (Array.isArray(updateData.items)) {
-      const priced = await pricingForMenuOrderLines(db, updateData.items as unknown[])
-      if (!priced.ok) {
-        logOrderSecurityEvent({
-          route: "/api/menu-orders",
-          action: "PUT",
-          ip,
-          userAgent: request.headers.get("user-agent"),
-          rejected: true,
-          reason: priced.code,
-          requestSummary: { orderId },
-        })
-        return NextResponse.json({ error: priced.error, code: priced.code }, { status: 400 })
+      // Draft cart sync may clear all lines — allow empty without pricing.
+      if (updateData.items.length === 0) {
+        updateData.items = []
+        updateData.total = 0
+        updateData.subtotal = 0
+      } else {
+        const priced = await pricingForMenuOrderLines(db, updateData.items as unknown[])
+        if (!priced.ok) {
+          logOrderSecurityEvent({
+            route: "/api/menu-orders",
+            action: "PUT",
+            ip,
+            userAgent: request.headers.get("user-agent"),
+            rejected: true,
+            reason: priced.code,
+            requestSummary: { orderId },
+          })
+          return NextResponse.json({ error: priced.error, code: priced.code }, { status: 400 })
+        }
+        updateData.items = priced.items
+        updateData.total = priced.total
+        updateData.subtotal = priced.subtotal
       }
-      updateData.items = priced.items
-      updateData.total = priced.total
-      updateData.subtotal = priced.subtotal
     } else {
       delete updateData.total
       delete updateData.subtotal

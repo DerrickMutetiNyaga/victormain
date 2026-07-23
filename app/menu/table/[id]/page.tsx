@@ -17,8 +17,8 @@ export default function MenuTableRedirectPage() {
   }, [tableId, router])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0e0c0a]">
-      <div className="text-[rgba(242,232,216,0.45)] text-sm tracking-wide">Redirecting...</div>
+    <div className="min-h-screen flex items-center justify-center bg-[#1A1512]">
+      <div className="text-[rgba(242,232,216,0.65)] text-sm tracking-wide">Redirecting...</div>
     </div>
   )
 }
