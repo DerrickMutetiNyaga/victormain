@@ -4,43 +4,299 @@ import React from "react"
 import {
   Drawer,
   DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer"
-import { ClipboardList, Banknote, Smartphone, ChevronRight } from "lucide-react"
+import { Check, ClipboardList, Receipt, ChevronDown } from "lucide-react"
 import { Order } from "@/types/menu"
+import { cn } from "@/lib/utils"
+import styles from "./order-lifecycle.module.css"
+import {
+  formatOrderLabel,
+  formatOrderTime,
+  orderItemCount,
+  orderTotal,
+  itemsSummary,
+  trackerStep,
+  statusPillLabel,
+  groupOrdersByDay,
+  relativeDayLabel,
+  maskPhone,
+} from "./order-display"
 
-const statusLabel: Record<string, string> = {
-  sent: "At Bar",
-  active: "Preparing",
-  draft: "Draft",
+const STEPS = ["Sent", "Preparing", "Served", "Paid"] as const
+
+function StatusTracker({ step }: { step: number }) {
+  const fillPct = step <= 0 ? 0 : (step / (STEPS.length - 1)) * 100
+
+  return (
+    <div className={styles.tracker}>
+      <div className={styles.trackerLine} aria-hidden>
+        <div className={styles.trackerLineFill} style={{ width: `${fillPct}%` }} />
+      </div>
+      {STEPS.map((label, i) => {
+        const done = i < step
+        const current = i === step
+        const reached = i <= step
+        return (
+          <div key={label} className={styles.trackerStep}>
+            <div
+              className={cn(
+                styles.dot,
+                done && styles.dotDone,
+                current && styles.dotCurrent,
+                !done && !current && styles.dotPending
+              )}
+            >
+              {done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+            </div>
+            <span
+              className={cn(
+                styles.stepLabel,
+                reached ? styles.stepLabelReached : styles.stepLabelPending
+              )}
+            >
+              {label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActiveOrderCard({
+  order,
+  onPayNow,
+  onCallWaiter,
+}: {
+  order: Order
+  onPayNow?: (order: Order) => void
+  onCallWaiter?: (order: Order) => void
+}) {
+  const [expanded, setExpanded] = React.useState(false)
+  const [called, setCalled] = React.useState(false)
+  const step = trackerStep(order)
+  const count = orderItemCount(order)
+  const total = orderTotal(order)
+  const sentAt = order.lastSentAt ?? order.createdAt
+
+  return (
+    <div
+      className={styles.card}
+      onClick={() => setExpanded((v) => !v)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          setExpanded((v) => !v)
+        }
+      }}
+    >
+      <div className={styles.cardHeader}>
+        <div>
+          <p className={styles.orderTitle}>Order {formatOrderLabel(order)}</p>
+          <p className={styles.meta}>
+            Sent {formatOrderTime(sentAt)} · {count} {count === 1 ? "item" : "items"}
+          </p>
+        </div>
+        <span className={styles.pill} key={statusPillLabel(order)}>
+          {statusPillLabel(order)}
+        </span>
+      </div>
+
+      <StatusTracker step={step} />
+
+      {!expanded ? (
+        <p className={styles.summary}>{itemsSummary(order)}</p>
+      ) : (
+        <div className={styles.expandedItems}>
+          {order.items.map((item, i) => (
+            <div key={`${item.id}-${i}`} className={styles.itemRow}>
+              <span className={styles.itemName}>
+                {item.quantity}× {item.name}
+              </span>
+              <span className={styles.itemLine}>
+                KES {(item.unitPrice * item.quantity).toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className={styles.footer} onClick={(e) => e.stopPropagation()}>
+        <span className={styles.total}>
+          KES {total.toLocaleString()}
+        </span>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={cn(styles.ghostBtn, called && styles.ghostBtnCalled)}
+            onClick={() => {
+              setCalled(true)
+              onCallWaiter?.(order)
+              setTimeout(() => setCalled(false), 2500)
+            }}
+          >
+            {called ? "Called ✓" : "Call waiter"}
+          </button>
+          {onPayNow && step < 3 && (
+            <button
+              type="button"
+              className={styles.payBtn}
+              onClick={() => onPayNow(order)}
+            >
+              Pay now
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HistoryReceipt({
+  order,
+  onReorder,
+}: {
+  order: Order
+  onReorder?: (order: Order) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const total = orderTotal(order)
+  const count = orderItemCount(order)
+  const method =
+    order.paymentMethod === "mpesa"
+      ? "M-Pesa"
+      : order.paymentMethod === "cash"
+        ? "Cash"
+        : "Paid"
+  const paidAt = order.updatedAt ?? order.createdAt
+
+  return (
+    <div className={styles.receipt}>
+      <button
+        type="button"
+        className={styles.receiptHeader}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <div className={styles.receiptIcon}>
+          <Receipt className="h-4 w-4" />
+        </div>
+        <div className={styles.receiptMid}>
+          <div className={styles.receiptTitleRow}>
+            <span className={styles.orderTitle}>Order {formatOrderLabel(order)}</span>
+            <span className={styles.paidBadge}>
+              Paid · {method}
+            </span>
+          </div>
+          <p className={styles.meta}>
+            {relativeDayLabel(order.createdAt)} · {formatOrderTime(order.createdAt)} ·{" "}
+            {count} {count === 1 ? "item" : "items"}
+          </p>
+        </div>
+        <div className={styles.receiptRight}>
+          <span className={styles.total}>KES {total.toLocaleString()}</span>
+          <ChevronDown
+            className={cn(styles.chevron, open && styles.chevronOpen)}
+            size={16}
+          />
+        </div>
+      </button>
+
+      {open && (
+        <div className={styles.receiptBody}>
+          <div className={styles.receiptLines}>
+            {order.items.map((item, i) => (
+              <div key={`${item.id}-${i}`} className={styles.receiptLine}>
+                <div>
+                  <p className={styles.itemName}>{item.name}</p>
+                  <p className={styles.itemMeta}>
+                    {item.quantity}× KES {item.unitPrice.toLocaleString()}
+                  </p>
+                </div>
+                <span className={styles.itemLine}>
+                  KES {(item.unitPrice * item.quantity).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className={styles.subtotalRow}>
+            <span>Subtotal</span>
+            <span>KES {total.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className={styles.totalRow}>
+            <span>Total</span>
+            <span className={styles.totalRowAmt}>KES {total.toLocaleString()}</span>
+          </div>
+          <p className={styles.paymentLine}>
+            {method}
+            {order.paymentMethod === "mpesa" && ` ${maskPhone(order.customerPhone ?? order.customerNumber)}`}
+            {" · "}
+            {formatOrderTime(paidAt)}
+          </p>
+          {onReorder && (
+            <button
+              type="button"
+              className={styles.reorderBtn}
+              onClick={() => onReorder(order)}
+            >
+              Reorder
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface ActiveOrdersDrawerProps {
   orders: Order[]
+  historyOrders?: Order[]
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   onSelectOrder?: (order: Order) => void
   onPayNow?: (order: Order) => void
+  onCallWaiter?: (order: Order) => void
+  onReorder?: (order: Order) => void
   children?: React.ReactNode
 }
 
 export function ActiveOrdersDrawer({
   orders,
-  onSelectOrder,
+  historyOrders = [],
+  open: controlledOpen,
+  onOpenChange,
   onPayNow,
+  onCallWaiter,
+  onReorder,
   children,
 }: ActiveOrdersDrawerProps) {
-  const [open, setOpen] = React.useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = onOpenChange ?? setUncontrolledOpen
   const count = orders.length
+  const sorted = React.useMemo(
+    () => [...orders].sort((a, b) => (b.lastSentAt ?? b.createdAt) - (a.lastSentAt ?? a.createdAt)),
+    [orders]
+  )
+  const historyGroups = React.useMemo(
+    () => groupOrdersByDay(historyOrders),
+    [historyOrders]
+  )
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         {children ?? (
-          <button className="relative h-10 w-10 rounded-xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] flex items-center justify-center transition-colors">
+          <button
+            type="button"
+            className="relative h-10 w-10 rounded-xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] flex items-center justify-center transition-colors"
+          >
             <ClipboardList className="h-5 w-5 text-[#D9843B]" />
             {count > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#D9843B] text-[#412402] text-[9px] font-bold flex items-center justify-center animate-pulse">
+              <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-[#D9843B] text-[#412402] text-[9px] font-bold flex items-center justify-center">
                 {count}
               </span>
             )}
@@ -48,137 +304,68 @@ export function ActiveOrdersDrawer({
         )}
       </DrawerTrigger>
 
-      <DrawerContent
-        className="max-h-[88vh] rounded-t-[24px] border-t border-[rgba(242,232,216,0.14)] bg-transparent"
-        style={{ background: "radial-gradient(ellipse at top center, rgba(200,114,42,0.12), transparent 55%), #2E241B" }}
-      >
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="h-1 w-10 rounded-full bg-[rgba(242,232,216,0.28)]" />
+      <DrawerContent className={cn(styles.sheet, "bg-transparent")}>
+        <div className={styles.handle}>
+          <div className={styles.handleBar} />
         </div>
 
-        <DrawerHeader className="border-b border-[rgba(242,232,216,0.10)] py-3 px-5">
-          <DrawerTitle className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] flex items-center justify-center shadow-[0_0_20px_rgba(200,114,42,0.16)]">
-              <ClipboardList className="h-5 w-5 text-[#D9843B]" />
-            </div>
-            <div>
-              <span className="text-base font-semibold text-[#F5EBDC] font-[family-name:var(--menu-font-display)]">Active Orders</span>
-              <p className="text-[12px] text-[rgba(242,232,216,0.65)] font-normal mt-0.5">
-                {count === 0 ? "No pending orders" : `${count} order${count > 1 ? "s" : ""} awaiting payment`}
-              </p>
-            </div>
-          </DrawerTitle>
-        </DrawerHeader>
-
-        <div className="overflow-y-auto px-4 pb-6 pt-4 space-y-3">
-          {count === 0 ? (
-            <div className="py-16 text-center relative">
-              <div className="relative h-14 w-14 rounded-2xl bg-[#382C21] border border-[rgba(242,232,216,0.14)] flex items-center justify-center mx-auto mb-4 shadow-[0_0_32px_rgba(200,114,42,0.2)]">
-                <div className="absolute inset-[-16px] rounded-[1.5rem] bg-[radial-gradient(circle,rgba(200,114,42,0.2),transparent_68%)] pointer-events-none -z-10" />
-                <ClipboardList className="h-7 w-7 text-[#D9843B]" />
+        <div className={styles.body}>
+          <section>
+            <h2 className={styles.sectionLabel}>Active orders</h2>
+            {count === 0 ? (
+              <div className={styles.empty}>
+                <div className={styles.emptyIcon}>
+                  <ClipboardList className="h-7 w-7" />
+                </div>
+                <p className={styles.emptyTitle}>No active orders</p>
+                <p className={styles.emptySub}>
+                  Orders you&apos;ve sent will appear here until paid
+                </p>
               </div>
-              <p className="text-[#F5EBDC] text-sm font-medium">No active orders</p>
-              <p className="text-[rgba(242,232,216,0.65)] text-xs mt-1">Orders you&apos;ve sent will appear here until paid</p>
-            </div>
-          ) : (
-            orders.map((order) => {
-              const isCash = order.paymentMethod === "cash"
-              const tableLabel = order.tableId ? `Table ${order.tableId}` : ""
-              const statusTag = statusLabel[order.status] ?? order.status
+            ) : (
+              <div className={styles.stack}>
+                {sorted.map((order) => (
+                  <ActiveOrderCard
+                    key={order.orderId}
+                    order={order}
+                    onPayNow={(o) => {
+                      onPayNow?.(o)
+                      setOpen(false)
+                    }}
+                    onCallWaiter={onCallWaiter}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
 
-              return (
-                <div
-                  key={order.orderId}
-                  className="rounded-2xl bg-[#261E17] border border-[rgba(242,232,216,0.14)] overflow-hidden"
-                >
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(242,232,216,0.10)]">
-                    <div>
-                      <p className="text-[#F5EBDC] font-bold text-sm">
-                        #{order.orderId.slice(-8)}
-                        {tableLabel && (
-                          <span className="ml-2 text-[11px] font-normal text-[rgba(242,232,216,0.65)]">{tableLabel}</span>
-                        )}
-                      </p>
-                      <p className="text-[rgba(242,232,216,0.65)] text-[11px] mt-0.5">
-                        {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[rgba(217,132,59,0.14)] text-[#D9843B]">
-                      {statusTag}
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-3 space-y-1.5">
-                    {order.items.slice(0, 3).map((item, i) => (
-                      <div key={i} className="flex justify-between text-[13px]">
-                        <span className="text-[rgba(242,232,216,0.65)]">{item.quantity}× {item.name}</span>
-                        <span className="text-[rgba(242,232,216,0.65)]">KES {(item.unitPrice * item.quantity).toLocaleString()}</span>
-                      </div>
+          <section>
+            <h2 className={styles.sectionLabel}>Order history</h2>
+            {historyOrders.length === 0 ? (
+              <div className={styles.empty} style={{ padding: "2rem 1rem" }}>
+                <p className={styles.emptyTitle}>No paid orders yet</p>
+                <p className={styles.emptySub}>Completed orders will appear here</p>
+              </div>
+            ) : (
+              historyGroups.map((group) => (
+                <div key={group.key}>
+                  <p className={styles.dayLabel}>{group.label}</p>
+                  <div className={styles.stack}>
+                    {group.orders.map((order) => (
+                      <HistoryReceipt
+                        key={order.orderId}
+                        order={order}
+                        onReorder={(o) => {
+                          onReorder?.(o)
+                          setOpen(false)
+                        }}
+                      />
                     ))}
-                    {order.items.length > 3 && (
-                      <p className="text-[rgba(242,232,216,0.65)] text-[11px]">+{order.items.length - 3} more items</p>
-                    )}
-                  </div>
-
-                  {(() => {
-                    const sub = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
-                    const grandTotal = sub
-                    return (
-                      <div className="px-4 pb-2 space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-[rgba(242,232,216,0.65)]">Subtotal</span>
-                          <span className="text-[rgba(242,232,216,0.65)]">KES {sub.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px] font-bold pt-0.5 border-t border-[rgba(242,232,216,0.10)]">
-                          <span className="text-[#F5EBDC]">Total</span>
-                          <span className="text-[#D9843B]">{grandTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  <div className="flex items-center justify-between px-4 pb-3 pt-1 border-t border-[rgba(242,232,216,0.10)]">
-                    {(() => {
-                      const sub = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
-                      const grandTotal = sub
-                      return (
-                        <div>
-                          <span className="text-[#D9843B] font-bold text-sm">
-                            KES {grandTotal.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {isCash
-                              ? <Banknote className="h-3 w-3 text-[rgba(242,232,216,0.65)]" />
-                              : <Smartphone className="h-3 w-3 text-[rgba(242,232,216,0.65)]" />}
-                            <span className="text-[rgba(242,232,216,0.65)] text-[10px]">{isCash ? "Cash at teller" : "M-Pesa"}</span>
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    <div className="flex gap-1.5">
-                      {onSelectOrder && (
-                        <button
-                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[rgba(242,232,216,0.65)] bg-[#382C21] border border-[rgba(242,232,216,0.14)] hover:bg-[#403428] transition-colors flex items-center gap-1"
-                          onClick={() => { onSelectOrder(order); setOpen(false) }}
-                        >
-                          View <ChevronRight className="h-3 w-3" />
-                        </button>
-                      )}
-                      {isCash && onPayNow && (
-                        <button
-                          className="h-8 px-3 rounded-lg text-xs font-semibold text-[#412402] bg-gradient-to-r from-[#c8722a] to-[#e09040] hover:opacity-95 transition-opacity"
-                          onClick={() => { onPayNow(order); setOpen(false) }}
-                        >
-                          Pay M-Pesa
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
-              )
-            })
-          )}
+              ))
+            )}
+          </section>
         </div>
       </DrawerContent>
     </Drawer>

@@ -64,6 +64,49 @@
   color: #d9843b;
   background: #382c21;
   border: 1px solid rgba(242, 232, 216, 0.14);
+  position: relative;
+}
+
+.countBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: #d9843b;
+  color: #412402;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.iconFlash {
+  box-shadow: 0 0 16px rgba(217, 132, 59, 0.55);
+}
+
+.countFlash {
+  animation: countFlashAnim 300ms ease;
+}
+
+.countTick {
+  color: #d9843b;
+  animation: countFlashAnim 300ms ease;
+}
+
+@keyframes countFlashAnim {
+  0% {
+    background: #e09040;
+    color: #412402;
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .summary {

@@ -21,6 +21,7 @@ import { OrderTracking } from "@/components/menu/order-tracking"
 import { OrderHistoryDrawer } from "@/components/menu/order-history-drawer"
 import { ActiveOrdersDrawer } from "@/components/menu/active-orders-drawer"
 import { CustomerNumberModal } from "@/components/menu/customer-number-modal"
+import { formatOrderLabel } from "@/components/menu/order-display"
 import { orderStore } from "@/lib/orderStore"
 import { MenuItem, CartItem, Order, MenuCategory } from "@/types/menu"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -72,6 +73,12 @@ function MenuContent() {
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null)
   const [showOrderTracking, setShowOrderTracking] = useState(false)
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
+  const [activeOrdersOpen, setActiveOrdersOpen] = useState(false)
+  const [orderSentConfirm, setOrderSentConfirm] = useState<{
+    orderLabel: string
+    tableNumber: string
+  } | null>(null)
+  const [sendingOrder, setSendingOrder] = useState(false)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([])
   const [menuLoading, setMenuLoading] = useState(true)
@@ -408,29 +415,104 @@ function MenuContent() {
     [syncCartToOrder]
   )
 
-  // Clicking "Send Order" in cart opens the payment method selection
+  // Send Order → send to bar (unpaid), show confirmation in cart sheet
   const handleSendNow = useCallback(async () => {
-    if (!tableNumber || cart.length === 0) return
+    if (!tableNumber || cart.length === 0 || sendingOrder) return
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     const payload = pendingSyncItemsRef.current ?? cart
     await flushCartSync(payload)
-    setCartOpen(false)
-    setShowPaymentModal(true)
-  }, [tableNumber, cart, flushCartSync])
 
-  const handlePayNow = useCallback(async () => {
-    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
-    const payload = pendingSyncItemsRef.current ?? cart
-    await flushCartSync(payload)
+    setSendingOrder(true)
+    try {
+      const cust = customerNumber ?? null
+      const guest = customerNumber == null ? guestSessionId : null
+      const resolvedActiveOrder =
+        activeOrder ?? orderStore.getActiveUnpaidOrder(tableNumber, cust, guest)
+      const isSentOrder =
+        resolvedActiveOrder &&
+        (resolvedActiveOrder.status === "sent" || resolvedActiveOrder.status === "active")
+
+      let sent: Order | null = null
+
+      if (resolvedActiveOrder && !isSentOrder) {
+        sent = await orderStore.updateOrder(resolvedActiveOrder.orderId, {
+          status: "sent" as const,
+          paymentMethod: "cash" as const,
+          lastSentAt: Date.now(),
+        })
+      } else {
+        sent = await orderStore.createOrder({
+          tableId: tableNumber,
+          tableNumber,
+          customerNumber: cust,
+          guestSessionId: null,
+          status: "sent",
+          paymentStatus: "UNPAID",
+          paymentMethod: "cash",
+          items: cart,
+          total,
+          lastSentAt: Date.now(),
+        })
+      }
+
+      if (sent) {
+        setCart([])
+        setPlacedOrderId(sent.orderId)
+        setOrderSentConfirm({
+          orderLabel: formatOrderLabel(sent),
+          tableNumber,
+        })
+      }
+    } finally {
+      setSendingOrder(false)
+    }
+  }, [
+    tableNumber,
+    cart,
+    sendingOrder,
+    flushCartSync,
+    customerNumber,
+    guestSessionId,
+    activeOrder,
+    total,
+  ])
+
+  const handleTrackOrder = useCallback(() => {
+    setOrderSentConfirm(null)
     setCartOpen(false)
-    setShowPaymentModal(true)
-  }, [cart, flushCartSync])
+    setActiveOrdersOpen(true)
+  }, [])
 
   // When order already at bar and customer wants to switch from cash → M-Pesa
   const handlePayMpesa = useCallback(() => {
     setCartOpen(false)
     setShowPaymentModal(true)
   }, [])
+
+  const handleReorder = useCallback(
+    (order: Order) => {
+      if (!tableNumber) return
+      if (!customerNumberResolved) {
+        setShowCustomerModal(true)
+        return
+      }
+      setCart((prev) => {
+        const next = [...prev]
+        for (const item of order.items) {
+          const existing = next.find((i) => i.id === item.id)
+          if (existing) {
+            existing.quantity += item.quantity
+          } else {
+            next.push({ ...item })
+          }
+        }
+        syncCartToOrder(next)
+        return next
+      })
+      setCartOpen(true)
+    },
+    [tableNumber, customerNumberResolved, syncCartToOrder]
+  )
 
   const handlePaymentSuccess = useCallback(async (
     method: "mpesa" | "cash",
@@ -516,7 +598,13 @@ function MenuContent() {
 
     setShowPaymentModal(false)
     setCartOpen(false)
-    setShowOrderTracking(true)
+    // Paid orders land in history; unpaid/sent stay trackable via Active Orders
+    if (method === "mpesa") {
+      setShowOrderTracking(false)
+      setActiveOrdersOpen(true)
+    } else {
+      setShowOrderTracking(true)
+    }
   }, [activeOrder, cart, customerNumber, guestSessionId, tableNumber, total])
 
   const handleItemClick = useCallback((item: MenuItem) => {
@@ -712,10 +800,7 @@ function MenuContent() {
             <div className={styles.utilityActions}>
               <OrderHistoryDrawer
                 orders={historyOrders}
-                onSelectOrder={(order) => {
-                  setPlacedOrderId(order.orderId)
-                  setShowOrderTracking(true)
-                }}
+                onReorder={handleReorder}
               >
                 <button
                   title="Order History"
@@ -728,14 +813,14 @@ function MenuContent() {
 
               <ActiveOrdersDrawer
                 orders={activeOrders}
-                onSelectOrder={(order) => {
-                  setPlacedOrderId(order.orderId)
-                  setShowOrderTracking(true)
-                }}
+                historyOrders={historyOrders}
+                open={activeOrdersOpen}
+                onOpenChange={setActiveOrdersOpen}
                 onPayNow={(order) => {
                   setActiveOrder(order)
                   setShowPaymentModal(true)
                 }}
+                onReorder={handleReorder}
               >
                 <button
                   title="My Orders"
@@ -868,6 +953,7 @@ function MenuContent() {
         items={cart}
         total={total}
         onOpenCart={() => setCartOpen(true)}
+        hidden={cartOpen || productSheetOpen || showPaymentModal || activeOrdersOpen}
       />
 
       {selectedItem && (
@@ -882,8 +968,14 @@ function MenuContent() {
       )}
 
       <CartDrawer
-        open={cartOpen}
-        onOpenChange={setCartOpen}
+        open={cartOpen || !!orderSentConfirm}
+        onOpenChange={(open) => {
+          if (!open && orderSentConfirm) {
+            handleTrackOrder()
+            return
+          }
+          setCartOpen(open)
+        }}
         items={cart}
         tableNumber={tableNumber}
         customerNumber={customerNumber}
@@ -899,6 +991,9 @@ function MenuContent() {
         activeOrderStatus={activeOrder?.status}
         activeOrderPaymentMethod={activeOrder?.paymentMethod}
         activeOrderTotal={activeOrder?.total}
+        sentConfirmation={orderSentConfirm}
+        onTrackOrder={handleTrackOrder}
+        sending={sendingOrder}
       />
 
       <CustomerNumberModal
@@ -911,6 +1006,15 @@ function MenuContent() {
         onOpenChange={setShowPaymentModal}
         amount={activeOrder?.total ?? total}
         phone={customerNumber ?? ""}
+        orderMeta={
+          activeOrder
+            ? `Order ${formatOrderLabel(activeOrder)}${
+                tableNumber ? ` · Table ${tableNumber}` : ""
+              }`
+            : tableNumber
+              ? `Table ${tableNumber}`
+              : undefined
+        }
         onSuccess={handlePaymentSuccess}
         skipToMpesa={
           !!(activeOrder?.status === "sent" || activeOrder?.status === "active")

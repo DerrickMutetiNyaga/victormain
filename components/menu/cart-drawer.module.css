@@ -323,3 +323,140 @@
   font-weight: 700;
   font-size: 15px;
 }
+
+/* ── Order sent confirmation ───────────────────────────────────── */
+
+.sentWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3.5rem 1.5rem 2.5rem;
+  min-height: 280px;
+}
+
+.sentGlow {
+  position: relative;
+  margin-bottom: 1.35rem;
+}
+
+.sentGlow::before {
+  content: "";
+  position: absolute;
+  inset: -28px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(217, 132, 59, 0.35), transparent 68%);
+  pointer-events: none;
+  animation: sentGlowIn 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sentCircle {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d9843b;
+  color: #412402;
+  box-shadow: 0 8px 28px rgba(200, 114, 42, 0.35);
+  animation: sentScaleIn 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sentTitle {
+  font-family: var(--menu-font-display), Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #f5ebdc;
+  letter-spacing: -0.01em;
+}
+
+.sentSub {
+  margin-top: 0.45rem;
+  font-size: 13px;
+  color: rgba(242, 232, 216, 0.65);
+  line-height: 1.4;
+}
+
+.trackBtn {
+  margin-top: 1.75rem;
+  height: 2.75rem;
+  padding: 0 1.35rem;
+  border-radius: 0.75rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(242, 232, 216, 0.9);
+  background: transparent;
+  border: 1px solid rgba(242, 232, 216, 0.2);
+  transition: background 280ms ease;
+}
+
+.trackBtn:hover {
+  background: rgba(242, 232, 216, 0.06);
+}
+
+.planeFly {
+  animation: planeFly 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes sentScaleIn {
+  from {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes sentGlowIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes planeFly {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-8px) scale(0.92);
+    opacity: 0;
+  }
+}
+
+.itemPress {
+  transition: background 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.itemPress:active {
+  background: #3e3126;
+}
+
+.qtyTrash {
+  color: rgba(245, 235, 220, 0.45);
+}
+
+.qtyCountCrossfade {
+  animation: qtyFade 220ms ease;
+}
+
+@keyframes qtyFade {
+  from {
+    opacity: 0.35;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

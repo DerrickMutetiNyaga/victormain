@@ -1,9 +1,11 @@
 "use client"
 
-import React, { memo } from "react"
+import React, { memo, useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
-import { Plus, Minus } from "lucide-react"
+import { createPortal } from "react-dom"
+import { Plus, Minus, Trash2 } from "lucide-react"
 import { MenuItem } from "@/types/menu"
+import { cn } from "@/lib/utils"
 import styles from "./product-card.module.css"
 
 interface ProductCardProps {
@@ -22,78 +24,202 @@ export const ProductCard = memo(function ProductCard({
   onClick,
 }: ProductCardProps) {
   const inCart = quantity > 0
+  const cardRef = useRef<HTMLDivElement>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggered = useRef(false)
+  const [quickLook, setQuickLook] = useState<{ x: number; y: number } | null>(null)
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const openQuickLook = useCallback(() => {
+    const el = cardRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const width = Math.min(280, window.innerWidth - 32)
+    let x = rect.left + rect.width / 2 - width / 2
+    x = Math.max(16, Math.min(x, window.innerWidth - width - 16))
+    let y = rect.top - 8
+    if (y + 320 > window.innerHeight) y = Math.max(16, rect.bottom - 320)
+    setQuickLook({ x, y })
+  }, [])
+
+  const startLongPress = useCallback(
+    (e: React.TouchEvent | React.MouseEvent) => {
+      longPressTriggered.current = false
+      clearLongPress()
+      longPressTimer.current = setTimeout(() => {
+        longPressTriggered.current = true
+        openQuickLook()
+      }, 480)
+      // prevent native context menu on long press
+      if ("touches" in e) {
+        /* touch handled via preventDefault on contextmenu */
+      }
+    },
+    [clearLongPress, openQuickLook]
+  )
+
+  useEffect(() => () => clearLongPress(), [clearLongPress])
+
+  useEffect(() => {
+    if (!quickLook) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQuickLook(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [quickLook])
 
   return (
-    <div
-      className={styles.card}
-      onClick={() => onClick?.(item)}
-    >
-      <div className={styles.glow} />
+    <>
+      <div
+        ref={cardRef}
+        className={styles.card}
+        onClick={() => {
+          if (longPressTriggered.current) {
+            longPressTriggered.current = false
+            return
+          }
+          onClick?.(item)
+        }}
+        onContextMenu={(e) => e.preventDefault()}
+        onTouchStart={startLongPress}
+        onTouchEnd={clearLongPress}
+        onTouchMove={clearLongPress}
+        onMouseDown={(e) => {
+          if (e.button === 0) startLongPress(e)
+        }}
+        onMouseUp={clearLongPress}
+        onMouseLeave={clearLongPress}
+      >
+        <div className={styles.glow} />
 
-      <div className={styles.imageWrap}>
-        <Image
-          src={item.image || "/placeholder.jpg"}
-          alt={item.name}
-          fill
-          className={styles.image}
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          priority={item.isPopular}
-        />
-        <div className={styles.imageFade} />
+        <div className={styles.imageWrap}>
+          <Image
+            src={item.image || "/placeholder.jpg"}
+            alt={item.name}
+            fill
+            className={styles.image}
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            priority={item.isPopular}
+          />
+          <div className={styles.imageFade} />
 
-        {!item.inStock && (
-          <div className={styles.oos}>
-            <span className={styles.oosLabel}>Out of Stock</span>
-          </div>
-        )}
-      </div>
-
-      <div className={styles.body}>
-        <h3 className={styles.name}>{item.name}</h3>
-        <p className={styles.desc}>{item.description || "\u00A0"}</p>
-        <div className={styles.footer}>
-          <span className={styles.price}>
-            KES {(Number(item.price) || 0).toLocaleString()}
-          </span>
-          {inCart && onUpdateQuantity ? (
-            <div
-              className={styles.stepper}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                className={styles.stepBtn}
-                aria-label="Decrease quantity"
-                onClick={() => onUpdateQuantity(item.id, quantity - 1)}
-              >
-                <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
-              </button>
-              <span className={styles.stepCount}>{quantity}</span>
-              <button
-                type="button"
-                className={styles.stepBtn}
-                aria-label="Increase quantity"
-                onClick={() => onUpdateQuantity(item.id, quantity + 1)}
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-              </button>
+          {!item.inStock && (
+            <div className={styles.oos}>
+              <span className={styles.oosLabel}>Out of Stock</span>
             </div>
-          ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                if (item.inStock) onAdd(item)
-              }}
-              disabled={!item.inStock}
-              aria-label={`Add ${item.name} to cart`}
-              className={styles.addBtn}
-            >
-              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-              Add
-            </button>
           )}
         </div>
+
+        <div className={styles.body}>
+          <h3 className={styles.name}>{item.name}</h3>
+          <p className={styles.desc}>{item.description || "\u00A0"}</p>
+          <div className={styles.footer}>
+            <span className={styles.price}>
+              KES {(Number(item.price) || 0).toLocaleString()}
+            </span>
+            {inCart && onUpdateQuantity ? (
+              <div
+                className={styles.stepper}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className={cn(styles.stepBtn, quantity === 1 && styles.stepTrash)}
+                  aria-label={quantity === 1 ? "Remove from cart" : "Decrease quantity"}
+                  onClick={() => onUpdateQuantity(item.id, quantity - 1)}
+                >
+                  {quantity === 1 ? (
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  ) : (
+                    <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  )}
+                </button>
+                <span key={quantity} className={styles.stepCount}>
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  className={styles.stepBtn}
+                  aria-label="Increase quantity"
+                  onClick={() => onUpdateQuantity(item.id, quantity + 1)}
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (item.inStock) onAdd(item)
+                }}
+                disabled={!item.inStock}
+                aria-label={`Add ${item.name} to cart`}
+                className={styles.addBtn}
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                Add
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {quickLook &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div
+              className={styles.quickLookBackdrop}
+              onClick={() => setQuickLook(null)}
+            />
+            <div
+              className={styles.quickLook}
+              style={{ left: quickLook.x, top: quickLook.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={styles.quickLookImg}>
+                <Image
+                  src={item.image || "/placeholder.jpg"}
+                  alt={item.name}
+                  fill
+                  className="object-cover"
+                  sizes="280px"
+                />
+              </div>
+              <div className={styles.quickLookBody}>
+                <h4 className={styles.quickLookName}>{item.name}</h4>
+                <p className={styles.quickLookDesc}>
+                  {item.description || "A guest favorite at Infusion Jaba."}
+                </p>
+                <div className={styles.quickLookFooter}>
+                  <span className={styles.price}>
+                    KES {(Number(item.price) || 0).toLocaleString()}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.addBtn}
+                    disabled={!item.inStock}
+                    onClick={() => {
+                      if (item.inStock) onAdd(item)
+                      setQuickLook(null)
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
+    </>
   )
 })
