@@ -15,7 +15,6 @@ import {
   formatOrderTime,
   orderItemCount,
   orderTotal,
-  itemsSummary,
   trackerStep,
   statusPillLabel,
   groupOrdersByDay,
@@ -47,7 +46,7 @@ function StatusTracker({ step }: { step: number }) {
                 !done && !current && styles.dotPending
               )}
             >
-              {done && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+              {done && <Check className="h-3 w-3" strokeWidth={3} />}
             </div>
             <span
               className={cn(
@@ -107,22 +106,20 @@ function ActiveOrderCard({
 
       <StatusTracker step={step} />
 
-      {!expanded ? (
-        <p className={styles.summary}>{itemsSummary(order)}</p>
-      ) : (
-        <div className={styles.expandedItems}>
-          {order.items.map((item, i) => (
-            <div key={`${item.id}-${i}`} className={styles.itemRow}>
-              <span className={styles.itemName}>
-                {item.quantity}× {item.name}
-              </span>
+      <div className={styles.itemsBox}>
+        {order.items.map((item, i) => (
+          <div key={`${item.id}-${i}`} className={styles.itemsBoxRow}>
+            <span className={styles.itemsBoxLine}>
+              {item.quantity}× {item.name}
+            </span>
+            {expanded && (
               <span className={styles.itemLine}>
                 KES {(item.unitPrice * item.quantity).toLocaleString()}
               </span>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
+        ))}
+      </div>
 
       <div className={styles.footer} onClick={(e) => e.stopPropagation()}>
         <span className={styles.total}>
@@ -311,7 +308,15 @@ export function ActiveOrdersDrawer({
 
         <div className={styles.body}>
           <section>
-            <h2 className={styles.sectionLabel}>Active orders</h2>
+            <div className={styles.sectionHeader}>
+              <div className={styles.sectionHeaderLeft}>
+                <ClipboardList className={styles.sectionIcon} size={16} strokeWidth={2.25} />
+                <h2 className={styles.sectionLabel}>Active orders</h2>
+              </div>
+              <span className={styles.sectionCount}>
+                {count} in progress
+              </span>
+            </div>
             {count === 0 ? (
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>
@@ -339,12 +344,29 @@ export function ActiveOrdersDrawer({
             )}
           </section>
 
+          <hr className={styles.sectionBreak} />
+
           <section>
-            <h2 className={styles.sectionLabel}>Order history</h2>
+            <div className={styles.sectionHeader}>
+              <div className={styles.sectionHeaderLeft}>
+                <Receipt className={styles.sectionIcon} size={16} strokeWidth={2.25} />
+                <h2 className={styles.sectionLabel}>Order history</h2>
+              </div>
+              <span className={styles.sectionCount}>
+                {historyOrders.length} paid
+              </span>
+            </div>
             {historyOrders.length === 0 ? (
-              <div className={styles.empty} style={{ padding: "2rem 1rem" }}>
-                <p className={styles.emptyTitle}>No paid orders yet</p>
-                <p className={styles.emptySub}>Completed orders will appear here</p>
+              <div className={styles.emptyInline}>
+                <div className={styles.emptyInlineIcon}>
+                  <Receipt className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className={styles.emptyInlineTitle}>No paid orders yet</p>
+                  <p className={styles.emptyInlineSub}>
+                    Completed orders will appear here
+                  </p>
+                </div>
               </div>
             ) : (
               historyGroups.map((group) => (
