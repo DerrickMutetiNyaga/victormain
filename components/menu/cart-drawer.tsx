@@ -50,7 +50,10 @@ export const CartDrawer = memo(function CartDrawer({
   const isCashPending = isAlreadySent && !isPaidAlready && activeOrderPaymentMethod === "cash"
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
-  const cartSubtotal = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
+  const cartSubtotal = items.reduce(
+    (sum, i) => sum + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0),
+    0
+  )
   const cartTotal = cartSubtotal
 
   return (

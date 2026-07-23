@@ -225,7 +225,7 @@ function MenuContent() {
   }, [menuItems, selectedCategory, debouncedSearch])
 
   const subtotal = useMemo(
-    () => cart.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0),
+    () => cart.reduce((sum, i) => sum + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0), 0),
     [cart]
   )
   // Prices are VAT-inclusive in this app; do not add tax on top.
@@ -253,7 +253,7 @@ function MenuContent() {
                 id: item.id,
                 name: item.name,
                 quantity: 1,
-                unitPrice: item.price,
+                unitPrice: Number(item.price) || 0,
                 image: item.image,
               },
             ]
@@ -278,7 +278,10 @@ function MenuContent() {
         return
       }
 
-      const newSubtotal = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+      const newSubtotal = items.reduce(
+        (s, i) => s + (Number(i.unitPrice) || 0) * (Number(i.quantity) || 0),
+        0
+      )
       const newTotal = newSubtotal
 
       if (existing) {

@@ -33,22 +33,6 @@ function menuOrderPutApiPayload(orderId: string, patch: Partial<Order> & Record<
   return body
 }
 
-function mapServerLineItemsToCart(serverItems: unknown, fallback: CartItem[]): CartItem[] {
-  if (!Array.isArray(serverItems) || serverItems.length === 0) return fallback
-  return serverItems.map((it: any, idx: number) => {
-    const id = String(it.productId ?? it.id ?? "")
-    const prev = fallback.find((x) => x.id === id) || fallback[idx]
-    return {
-      id: id || prev?.id || `line-${idx}`,
-      name: String(it.name || prev?.name || ""),
-      quantity: Number(it.quantity) || 0,
-      unitPrice: Number(it.price ?? it.unitPrice) || 0,
-      image: prev?.image || "",
-      notes: prev?.notes,
-    }
-  })
-}
-
 type OrderUpdateCallback = (orders: Order[]) => void
 
 const LEGACY_STATUS_MAP: Record<string, OrderStatus> = {
@@ -56,6 +40,32 @@ const LEGACY_STATUS_MAP: Record<string, OrderStatus> = {
   IN_PROGRESS: "sent",
   RECEIVED: "sent",
   CANCELLED: "cancelled",
+}
+
+function mapServerLineItemsToCart(serverItems: unknown, fallback: CartItem[] = []): CartItem[] {
+  if (!Array.isArray(serverItems) || serverItems.length === 0) return fallback
+  return serverItems.map((it: any, idx: number) => {
+    const id = String(it.productId ?? it.id ?? it.skuId ?? "")
+    const prev =
+      (id ? fallback.find((x) => x.id === id) : undefined) ||
+      fallback[idx]
+    const unitPrice = Number(
+      it.unitPrice ?? it.price ?? prev?.unitPrice ?? 0
+    )
+    return {
+      id: id || prev?.id || `line-${idx}`,
+      name: String(it.name || prev?.name || ""),
+      quantity: Number(it.quantity) || 0,
+      unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+      image: prev?.image || (typeof it.image === "string" ? it.image : "") || "",
+      notes: prev?.notes,
+    }
+  })
+}
+
+function normalizeCartItems(items: unknown): CartItem[] {
+  if (!Array.isArray(items)) return []
+  return mapServerLineItemsToCart(items, [])
 }
 
 function normalizeOrder(o: any): Order {
@@ -76,6 +86,8 @@ function normalizeOrder(o: any): Order {
     guestSessionId: o.guestSessionId ?? null,
     lastSentAt: o.lastSentAt ?? undefined,
     updatedAt: o.updatedAt ?? o.createdAt ?? Date.now(),
+    items: normalizeCartItems(o.items),
+    total: Number(o.total) || 0,
   }
 }
 
@@ -260,13 +272,20 @@ class OrderStore {
       })
       if (!response.ok) throw new Error("Failed to save")
       const saved = await response.json().catch(() => null)
-      if (saved && typeof saved.total === "number") {
-        merged = {
+      if (saved) {
+        merged = normalizeOrder({
           ...newOrder,
-          total: saved.total,
-          subtotal: typeof saved.subtotal === "number" ? saved.subtotal : saved.total,
-          items: mapServerLineItemsToCart(saved.items, newOrder.items),
-        }
+          ...saved,
+          // Keep client cart images; server lines are authoritative for id/price/qty/name
+          items: Array.isArray(saved.items)
+            ? mapServerLineItemsToCart(saved.items, newOrder.items)
+            : newOrder.items,
+          total:
+            typeof saved.total === "number"
+              ? saved.total
+              : newOrder.total,
+          createdAt: newOrder.createdAt,
+        })
       }
     } catch (e) {
       console.error("Error saving order:", e)
@@ -299,13 +318,27 @@ class OrderStore {
       if (!response.ok) throw new Error("Failed to update")
       const data = await response.json().catch(() => null)
       const saved = data?.order
-      if (saved && typeof saved.total === "number") {
-        updated.total = saved.total
-        updated.subtotal = typeof saved.subtotal === "number" ? saved.subtotal : saved.total
-        if (Array.isArray(saved.items)) {
-          updated.items = mapServerLineItemsToCart(saved.items, updated.items)
+      if (saved) {
+        const normalized = normalizeOrder({
+          ...updated,
+          ...saved,
+          items: Array.isArray(saved.items)
+            ? mapServerLineItemsToCart(saved.items, updated.items)
+            : updated.items,
+          total:
+            typeof saved.total === "number" ? saved.total : updated.total,
+        })
+        this.orders[index] = normalized
+        this.saveToStorage()
+        this.notifySubscribers()
+
+        if (patch.status === "sent" || patch.status === "active") {
+          await this.alertBar(normalized)
         }
-        this.orders[index] = updated
+        if (patch.status === "paid" || patch.paymentStatus === "PAID") {
+          await this.syncPaymentToAdmin(normalized)
+        }
+        return normalized
       }
     } catch (e) {
       console.error("Error updating order:", e)
